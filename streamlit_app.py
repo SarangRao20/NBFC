@@ -1,112 +1,82 @@
-"""NBFC Loan Processing — Streamlit UI
+"""FinServe NBFC — Master Agent Streamlit Application.
 
-Flow:  Sales Agent (chat) → Registration Agent (form wizard)
+Pages:
+  1. Login (OTP-based via Registration Agent)
+  2. Chat (Sales → Document Upload → Underwriting pipeline)
+  3. Profile (Loan history, document history, download letters)
 """
 
 import streamlit as st
-import hashlib
+import os
+import json
 import time
 
-from mock_apis.otp_service import send_otp, verify_otp
-from mock_apis.digilocker_api import initiate_digilocker_session, verify_digilocker_otp
-from mock_apis.bank_details_api import get_bank_details
-from mock_apis.loan_products import LOAN_PRODUCTS, calculate_emi
-from utils.validators import validate_phone, validate_email, validate_pan, validate_pin, validate_positive_number
+from config import get_master_llm, get_extraction_llm, get_vision_llm
+from agents.registration import build_registration_agent, RegistrationState, pull_customer_from_db
+from agents.sales_agent import sales_chat_response
+from agents.emi_agent import emi_agent_node
+from agents.document_agent import document_agent_node
+from agents.kyc_agent import verification_agent_node
+from agents.fraud_agent import fraud_agent_node
+from agents.underwriting import underwriting_agent_node
+from agents.advisor_agent import advisor_agent_node
+from agents.sanction_agent import sanction_agent_node
+from db.database import (
+    save_loan_application, get_loan_history,
+    save_chat_session, update_chat_session, get_chat_sessions, get_chat_messages,
+    save_document_record, get_document_history
+)
+from langchain_core.messages import HumanMessage, AIMessage
 
-# ─── Page Config ─────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="NBFC Loan — FinServe", page_icon="🏦", layout="centered")
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PAGE CONFIG
+# ═══════════════════════════════════════════════════════════════════════════════
+st.set_page_config(page_title="FinServe NBFC", page_icon="🏦", layout="wide")
 
-# ─── Custom CSS ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Pipeline progress bar */
-    .pipeline-bar {
-        display: flex;
-        gap: 0;
-        margin: 1rem 0 2rem 0;
-    }
-    .pipeline-step {
-        flex: 1;
-        text-align: center;
-        padding: 0.6rem 0.2rem;
-        font-size: 0.8rem;
-        font-weight: 600;
-        border-bottom: 4px solid #333;
-        color: #888;
-        transition: all 0.3s ease;
-    }
-    .pipeline-step.active {
-        border-bottom-color: #4CAF50;
-        color: #4CAF50;
-    }
-    .pipeline-step.done {
-        border-bottom-color: #2196F3;
-        color: #2196F3;
-    }
-
-    /* Chat message styling */
-    .sales-chat-container {
-        max-height: 500px;
-        overflow-y: auto;
-        padding: 1rem;
-        border-radius: 12px;
-        background: #0E1117;
-        margin-bottom: 1rem;
-    }
-
-    /* Summary cards */
-    .summary-card {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 1px solid #2a3a5c;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin: 0.5rem 0;
-    }
-    .summary-card h4 {
-        color: #4CAF50;
-        margin-bottom: 0.5rem;
-    }
-
-    /* Hide default streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    .stApp { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); }
+    [data-testid="stSidebar"] { background: rgba(15,12,41,0.95); border-right: 1px solid rgba(255,255,255,0.1); }
+    .metric-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 16px; margin: 8px 0; backdrop-filter: blur(10px); }
+    .status-approved { color: #4ade80; font-weight: 700; }
+    .status-rejected { color: #f87171; font-weight: 700; }
+    .status-pending { color: #fbbf24; font-weight: 700; }
+    h1, h2, h3 { color: #e2e8f0 !important; }
+    p, span, label, .stMarkdown { color: #cbd5e1 !important; }
+    .loan-card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 20px; margin: 12px 0; transition: transform 0.2s; }
+    .loan-card:hover { transform: translateY(-2px); }
+    div[data-testid="stChatMessage"] { background: rgba(255,255,255,0.03) !important; border-radius: 12px; margin: 4px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ─── Session State Init ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SESSION STATE INIT
+# ═══════════════════════════════════════════════════════════════════════════════
 def init_session():
     defaults = {
-        # Pipeline control
-        "current_phase": "sales",       # "sales" or "registration"
-        "reg_step": 0,                  # Registration sub-step (0-7)
-
-        # Sales Agent state
-        "sales_chat_history": [],       # [{"role": ..., "content": ...}]
-        "sales_complete": False,
-        "loan_type": "",
-        "loan_amount": 0.0,
-        "tenure": 0,
-        "interest_rate": 0.0,
-
+        "page": "login",  # login | chat | profile
+        "logged_in": False,
+        "customer": None,  # Full CRM profile dict
+        "phone": None,
         # Registration Agent state
-        "full_name": "",
-        "phone": "",
-        "email": "",
-        "address": "",
-        "otp_sent": False,
-        "otp_verified": False,
-        "employment_type": "salaried",
-        "monthly_income": 50000.0,
-        "pan": "",
-        "aadhaar": "",
-        "kyc_verified": False,
-        "dl_session_id": "",
-        "dl_otp_sent": False,
-        "bank_name": "",
-        "bank_account_number": "",
-        "bank_ifsc": "",
-        "pin_hash": "",
+        "reg_state": {
+            "messages": [], "phone": None, "otp_sent": False,
+            "otp_verified": False, "customer_profile": None
+        },
+        # Chat pipeline state
+        "chat_history": [],
+        "pipeline_phase": "sales",  # sales | document | processing | complete
+        "loan_terms": {},
+        "documents": {},
+        "kyc_status": None,
+        "fraud_score": -1,
+        "decision": None,
+        "dti_ratio": 0,
+        "sanction_pdf": "",
+        "chat_session_id": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -115,436 +85,417 @@ def init_session():
 init_session()
 
 
-# ─── Pipeline Progress Bar ──────────────────────────────────────────────────────
-def render_pipeline_bar():
-    """Show overall pipeline progress."""
-    phase = st.session_state.current_phase
-    sales_done = st.session_state.sales_complete
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SIDEBAR
+# ═══════════════════════════════════════════════════════════════════════════════
+def render_sidebar():
+    with st.sidebar:
+        st.markdown("## 🏦 FinServe NBFC")
+        st.caption("AI-Powered Loan Platform")
+        st.divider()
 
-    steps = [
-        ("💼 Sales Agent", "sales"),
-        ("📋 Registration Agent", "registration"),
-    ]
+        if st.session_state.logged_in and st.session_state.customer:
+            c = st.session_state.customer
+            st.markdown(f"👤 **{c.get('name', 'User')}**")
+            st.caption(f"📱 {c.get('phone', '')}")
+            st.caption(f"📍 {c.get('city', 'N/A')}")
+            st.divider()
 
-    cols = st.columns(len(steps))
-    for i, (label, step_id) in enumerate(steps):
-        with cols[i]:
-            if step_id == "sales" and sales_done:
-                st.markdown(f"✅ **{label}**")
-            elif step_id == phase:
-                st.markdown(f"🔵 **{label}**")
-            else:
-                st.markdown(f"⬜ {label}")
+            if st.button("💬 New Loan Chat", use_container_width=True):
+                # Reset chat state for new application
+                for k in ["chat_history", "loan_terms", "documents", "kyc_status",
+                           "fraud_score", "decision", "dti_ratio", "sanction_pdf", "chat_session_id"]:
+                    st.session_state[k] = [] if k == "chat_history" else ({} if k in ("loan_terms", "documents") else None)
+                st.session_state.pipeline_phase = "sales"
+                st.session_state.fraud_score = -1
+                st.session_state.page = "chat"
+                st.rerun()
+
+            if st.button("👤 My Profile", use_container_width=True):
+                st.session_state.page = "profile"
+                st.rerun()
+
+            # Past chat sessions
+            sessions = get_chat_sessions(c.get("phone", ""))
+            if sessions:
+                st.divider()
+                st.markdown("**📂 Past Sessions**")
+                for s in sessions[:5]:
+                    if st.button(f"📝 {s['session_label']}", key=f"sess_{s['id']}", use_container_width=True):
+                        msgs = get_chat_messages(s["id"])
+                        st.session_state.chat_history = msgs
+                        st.session_state.chat_session_id = s["id"]
+                        st.session_state.page = "chat"
+                        st.session_state.pipeline_phase = "complete"
+                        st.rerun()
+
+            st.divider()
+            if st.button("🚪 Logout", use_container_width=True):
+                for k in list(st.session_state.keys()):
+                    del st.session_state[k]
+                st.rerun()
+        else:
+            st.info("Please login to continue.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  LOGIN PAGE (Registration Agent)
+# ═══════════════════════════════════════════════════════════════════════════════
+def render_login():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("# 🏦 FinServe NBFC")
+        st.markdown("### Welcome to India's Smartest Loan Platform")
+        st.caption("Powered by 9 AI Agents working together")
+        st.divider()
+
+        # Show registration chat
+        for msg in st.session_state.reg_state.get("messages", []):
+            cls = msg.__class__.__name__
+            if cls == "SystemMessage":
+                continue
+            role = "assistant" if cls == "AIMessage" else "user"
+            with st.chat_message(role, avatar="🏦" if role == "assistant" else "👤"):
+                st.markdown(msg.content)
+
+        # Check if login is complete
+        if st.session_state.reg_state.get("otp_verified") and st.session_state.reg_state.get("customer_profile"):
+            profile = st.session_state.reg_state["customer_profile"]
+            st.session_state.logged_in = True
+            st.session_state.customer = profile
+            st.session_state.phone = profile.get("phone")
+
+            # Auto-start new chat
+            greeting = (
+                f"Hello {profile.get('name', '')}! 👋 Welcome to FinServe NBFC.\n\n"
+                f"📊 Your Profile: Credit Score **{profile.get('credit_score', 'N/A')}** | "
+                f"Pre-approved Limit **₹{profile.get('pre_approved_limit', 0):,}**\n\n"
+                f"How can I help you today? Would you like to explore a **Personal Loan**, "
+                f"**Home Loan**, **Business Loan**, or **Education Loan**?"
+            )
+            st.session_state.chat_history = [{"role": "assistant", "content": greeting}]
+            st.session_state.page = "chat"
+            st.session_state.pipeline_phase = "sales"
+
+            # Create chat session in DB
+            sid = save_chat_session(profile.get("phone", ""), "Loan Chat", st.session_state.chat_history)
+            st.session_state.chat_session_id = sid
+            st.rerun()
+
+        # Chat input for login
+        if user_input := st.chat_input("Enter your phone number...", key="login_input"):
+            st.session_state.reg_state["messages"].append(HumanMessage(content=user_input))
+            with st.spinner("🔐 Processing..."):
+                try:
+                    agent = build_registration_agent()
+                    new_state = agent.invoke(st.session_state.reg_state)
+                    st.session_state.reg_state = new_state
+                except Exception as e:
+                    print(f"❌ LOGIN AGENT ERROR: {str(e)}")
+                    st.session_state.reg_state["messages"].append(
+                        AIMessage(content=f"⚠️ Service busy. Please wait a moment and try again. (Technical: {str(e)[:50]})")
+                    )
+            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CHAT PAGE (9-Agent Pipeline)
+# ═══════════════════════════════════════════════════════════════════════════════
+def render_chat():
+    customer = st.session_state.customer or {}
+    phase = st.session_state.pipeline_phase
+
+    # Pipeline progress indicator
+    phases = ["sales", "document", "processing", "complete"]
+    phase_labels = ["💬 Sales", "📄 Documents", "⚙️ Processing", "✅ Complete"]
+    current_idx = phases.index(phase) if phase in phases else 0
+    progress = (current_idx + 1) / len(phases)
+    st.progress(progress, text=f"Pipeline: {phase_labels[current_idx]}")
+
+    # Render chat history
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"], avatar="🏦" if msg["role"] == "assistant" else "👤"):
+            st.markdown(msg["content"])
+
+    # ── SALES PHASE ──────────────────────────────────────────────────────────
+    if phase == "sales":
+        if user_input := st.chat_input("Tell me about the loan you need...", key="sales_input"):
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(user_input)
+
+            with st.chat_message("assistant", avatar="🏦"):
+                with st.spinner("Sales Agent thinking..."):
+                    try:
+                        hist = [m for m in st.session_state.chat_history[:-1]]
+                        res = sales_chat_response(user_input, hist)
+                        reply = res["reply"]
+                        st.markdown(reply)
+                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+
+                        if res.get("extracted") and res["extracted"].get("confirmed"):
+                            ext = res["extracted"]
+                            st.session_state.loan_terms = {
+                                "principal": float(ext.get("loan_amount", 0)),
+                                "rate": float(ext.get("interest_rate", 12)),
+                                "tenure": int(ext.get("tenure", 12)),
+                                "loan_type": ext.get("loan_type", "personal")
+                            }
+
+                            # Auto-run EMI agent
+                            emi_result = emi_agent_node({"loan_terms": st.session_state.loan_terms})
+                            st.session_state.loan_terms = emi_result["loan_terms"]
+                            emi_msg = emi_result["messages"][0].content
+                            st.markdown(emi_msg)
+                            st.session_state.chat_history.append({"role": "assistant", "content": emi_msg})
+
+                            # Check pre-approved limit logic
+                            limit = customer.get("pre_approved_limit", 0)
+                            principal = st.session_state.loan_terms["principal"]
+
+                            if principal <= limit:
+                                doc_msg = "✅ Your loan amount is within pre-approved limits! Basic KYC docs are sufficient.\n\n📄 Please upload your **PAN Card** or **Aadhaar Card** image below."
+                            elif principal <= 2 * limit:
+                                doc_msg = "📄 Your loan exceeds your pre-approved limit. We'll need **extended verification**.\n\nPlease upload your **Salary Slip** for income verification."
+                            else:
+                                # > 2x limit — will be rejected at underwriting, but let them proceed
+                                doc_msg = "📄 Please upload your **identity document** (PAN/Aadhaar) to proceed with verification."
+
+                            st.markdown(doc_msg)
+                            st.session_state.chat_history.append({"role": "assistant", "content": doc_msg})
+                            st.session_state.pipeline_phase = "document"
+
+                    except Exception as e:
+                        print(f"❌ SALES AGENT ERROR: {str(e)}")
+                        err_msg = f"⚠️ Service is momentarily busy. Please wait a few seconds and try again. (Technical: {str(e)[:50]}...)"
+                        st.markdown(err_msg)
+                        st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
+
+                    # Persist chat
+                    if st.session_state.chat_session_id:
+                        update_chat_session(st.session_state.chat_session_id, st.session_state.chat_history)
+            st.rerun()
+
+    # ── DOCUMENT UPLOAD PHASE ────────────────────────────────────────────────
+    elif phase == "document":
+        uploaded = st.file_uploader("📎 Upload Document (PAN / Aadhaar / Salary Slip)", type=["jpg", "png", "jpeg", "pdf"])
+
+        if uploaded and st.button("🔍 Submit for AI Verification", type="primary", use_container_width=True):
+            # Save to data/uploads
+            os.makedirs("data/uploads", exist_ok=True)
+            save_path = os.path.join("data", "uploads", uploaded.name)
+            with open(save_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+
+            st.session_state.chat_history.append({"role": "user", "content": f"📎 Uploaded: {uploaded.name}"})
+            st.session_state.pipeline_phase = "processing"
+
+            with st.spinner("🤖 Running 4-Agent verification pipeline..."):
+                # 1. Document Agent (Gemini Vision OCR)
+                doc_state = {"documents": {"salary_slip_path": save_path}}
+                doc_result = document_agent_node(doc_state)
+                st.session_state.documents = doc_result.get("documents", {})
+                doc_msg = doc_result["messages"][0].content
+                st.session_state.chat_history.append({"role": "assistant", "content": doc_msg})
+
+                # Save document to DB audit trail
+                docs = st.session_state.documents
+                save_document_record(
+                    st.session_state.phone or "", docs.get("document_type", ""),
+                    uploaded.name, docs.get("audit_path", ""),
+                    docs.get("name_extracted", ""), docs.get("salary_extracted", 0),
+                    docs.get("confidence", 0), docs.get("tampered", False)
+                )
+
+                # 2. KYC Verification Agent
+                kyc_state = {"customer_data": customer, "documents": st.session_state.documents}
+                kyc_result = verification_agent_node(kyc_state)
+                st.session_state.kyc_status = kyc_result.get("kyc_status")
+                kyc_msg = kyc_result["messages"][0].content
+                st.session_state.chat_history.append({"role": "assistant", "content": kyc_msg})
+
+                # 3. Fraud Detection Agent
+                fraud_state = {
+                    "customer_data": customer,
+                    "documents": st.session_state.documents,
+                    "loan_terms": st.session_state.loan_terms
+                }
+                fraud_result = fraud_agent_node(fraud_state)
+                st.session_state.fraud_score = fraud_result.get("fraud_score", 0)
+                fraud_msg = fraud_result["messages"][0].content
+                st.session_state.chat_history.append({"role": "assistant", "content": fraud_msg})
+
+                # 4. Underwriting Agent
+                uw_state = {
+                    "customer_data": customer,
+                    "loan_terms": st.session_state.loan_terms,
+                    "documents": st.session_state.documents,
+                    "fraud_score": st.session_state.fraud_score
+                }
+                uw_result = underwriting_agent_node(uw_state)
+                st.session_state.decision = uw_result.get("decision")
+                st.session_state.dti_ratio = uw_result.get("dti_ratio", 0)
+                uw_msg = uw_result["messages"][0].content
+                st.session_state.chat_history.append({"role": "assistant", "content": uw_msg})
+
+                # 5. If approved → Sanction PDF
+                if st.session_state.decision == "approve":
+                    san_state = {
+                        "customer_id": customer.get("id", "NEW"),
+                        "customer_data": customer,
+                        "loan_terms": st.session_state.loan_terms,
+                        "dti_ratio": st.session_state.dti_ratio
+                    }
+                    san_result = sanction_agent_node(san_state)
+                    st.session_state.sanction_pdf = san_result.get("sanction_pdf", "")
+                    san_msg = san_result["messages"][0].content
+                    st.session_state.chat_history.append({"role": "assistant", "content": san_msg})
+
+                # 6. Advisor Agent (always runs — tips for both outcomes)
+                adv_state = {
+                    "customer_data": customer,
+                    "loan_terms": st.session_state.loan_terms,
+                    "decision": st.session_state.decision,
+                    "dti_ratio": st.session_state.dti_ratio,
+                    "fraud_score": st.session_state.fraud_score
+                }
+                try:
+                    adv_result = advisor_agent_node(adv_state)
+                    adv_msg = adv_result["messages"][0].content
+                    st.session_state.chat_history.append({"role": "assistant", "content": adv_msg})
+                except Exception:
+                    pass
+
+                # Save loan application to DB
+                save_loan_application(
+                    phone=st.session_state.phone or "",
+                    name=customer.get("name", "User"),
+                    terms=st.session_state.loan_terms,
+                    decision=st.session_state.decision or "unknown",
+                    dti=st.session_state.dti_ratio,
+                    score=customer.get("credit_score", 0),
+                    fraud=st.session_state.fraud_score,
+                    reasons=[],
+                    pdf=st.session_state.sanction_pdf
+                )
+
+                st.session_state.pipeline_phase = "complete"
+
+                # Persist chat
+                if st.session_state.chat_session_id:
+                    update_chat_session(st.session_state.chat_session_id, st.session_state.chat_history)
+
+            st.rerun()
+
+    # ── COMPLETE PHASE ───────────────────────────────────────────────────────
+    elif phase in ("complete", "processing"):
+        # Show download buttons if approved
+        if st.session_state.sanction_pdf and os.path.exists(st.session_state.sanction_pdf):
+            with open(st.session_state.sanction_pdf, "rb") as f:
+                st.download_button(
+                    "📥 Download Sanction Letter PDF",
+                    data=f, file_name="Sanction_Letter.pdf",
+                    type="primary", use_container_width=True
+                )
+
+        st.info("💬 Pipeline complete! Use the sidebar to start a new loan application or view your profile.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PROFILE PAGE
+# ═══════════════════════════════════════════════════════════════════════════════
+def render_profile():
+    customer = st.session_state.customer or {}
+    phone = st.session_state.phone or ""
+
+    st.markdown("# 👤 My Profile")
+
+    # Profile Card
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Name", customer.get("name", "N/A"))
+    col2.metric("Credit Score", customer.get("credit_score", "N/A"))
+    col3.metric("Pre-approved", f"₹{customer.get('pre_approved_limit', 0):,}")
+    col4.metric("Monthly Salary", f"₹{customer.get('salary', 0):,}")
 
     st.divider()
 
+    # Loan History
+    st.markdown("## 📋 Loan Application History")
+    loans = get_loan_history(phone)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  SALES AGENT — Chat Interface
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def render_sales_agent():
-    st.header("💼 Sales Agent")
-    st.caption("Chat with our sales advisor to find the perfect loan product for you.")
-
-    # Show product catalog in an expander
-    with st.expander("📦 View Available Loan Products", expanded=False):
-        for key, prod in LOAN_PRODUCTS.items():
-            st.markdown(f"""
-**{prod['name']}** (`{key}`)
-- Amount: ₹{prod['min_amount']:,} – ₹{prod['max_amount']:,}
-- Tenure: {prod['min_tenure']} – {prod['max_tenure']} months
-- Rate: {prod['base_rate']}% p.a.
-- {prod['description']}
-""")
-            st.markdown("---")
-
-    # Render chat history
-    for msg in st.session_state.sales_chat_history:
-        role = msg["role"]
-        with st.chat_message("assistant" if role == "assistant" else "user",
-                             avatar="💼" if role == "assistant" else "👤"):
-            st.markdown(msg["content"])
-
-    # If no history yet, show a greeting
-    if not st.session_state.sales_chat_history:
-        greeting = (
-            "Hello! 👋 Welcome to **FinServe NBFC**. I'm your loan sales advisor.\n\n"
-            "I'd love to help you find the right loan. Could you tell me **what you "
-            "need the loan for**? For example:\n"
-            "- 🏠 Buying or renovating a home\n"
-            "- 🎓 Education / tuition fees\n"
-            "- 💼 Business expansion\n"
-            "- 💰 Personal needs (wedding, travel, medical)\n\n"
-            "Just tell me your needs and I'll guide you through!"
-        )
-        st.session_state.sales_chat_history.append({"role": "assistant", "content": greeting})
-        st.rerun()
-
-    # Chat input
-    if user_input := st.chat_input("Type your message...", key="sales_chat_input"):
-        # Add user message
-        st.session_state.sales_chat_history.append({"role": "user", "content": user_input})
-
-        # Get LLM response
-        with st.spinner("Sales Agent is thinking..."):
-            from agents.sales_agent import sales_chat_response
-            result = sales_chat_response(user_input, st.session_state.sales_chat_history[:-1])
-
-        assistant_reply = result["reply"]
-        extracted = result.get("extracted")
-
-        st.session_state.sales_chat_history.append({"role": "assistant", "content": assistant_reply})
-
-        # If the LLM confirmed loan details, finalize
-        if extracted and extracted.get("confirmed"):
-            st.session_state.loan_type = extracted.get("loan_type", "personal")
-            st.session_state.loan_amount = float(extracted.get("loan_amount", 0))
-            st.session_state.tenure = int(extracted.get("tenure", 0))
-            st.session_state.interest_rate = float(extracted.get("interest_rate", 0))
-            st.session_state.sales_complete = True
-
-        st.rerun()
-
-    # If sales is done, show confirmation + proceed button
-    if st.session_state.sales_complete:
-        st.success("✅ Loan details confirmed!")
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Loan Type", st.session_state.loan_type.title())
-        col2.metric("Amount", f"₹{st.session_state.loan_amount:,.0f}")
-        col3.metric("Tenure", f"{st.session_state.tenure} months")
-        col4.metric("Rate", f"{st.session_state.interest_rate}% p.a.")
-
-        # EMI calculation
-        if st.session_state.loan_amount > 0 and st.session_state.tenure > 0:
-            emi_data = calculate_emi(
-                st.session_state.loan_amount,
-                st.session_state.interest_rate,
-                st.session_state.tenure,
-            )
-            if "emi" in emi_data:
-                st.info(f"📊 **Estimated EMI: ₹{emi_data['emi']:,.2f}/month** | "
-                        f"Total Interest: ₹{emi_data['total_interest']:,.2f} | "
-                        f"Total Payment: ₹{emi_data['total_payment']:,.2f}")
-
-        st.divider()
-
-        col_left, col_right = st.columns(2)
-        with col_left:
-            if st.button("🔄 Modify Loan Details", use_container_width=True):
-                st.session_state.sales_complete = False
-                st.session_state.sales_chat_history.append(
-                    {"role": "user", "content": "I want to change my loan details."}
-                )
-                st.rerun()
-        with col_right:
-            if st.button("➡️ Proceed to Registration", type="primary", use_container_width=True):
-                st.session_state.current_phase = "registration"
-                st.session_state.reg_step = 1
-                st.rerun()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  REGISTRATION AGENT — Form Wizard
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def render_registration_agent():
-    step = st.session_state.reg_step
-
-    st.header("📋 Registration Agent")
-
-    # Show loan info summary from sales
-    with st.expander("📦 Your Loan Details (from Sales Agent)", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Type", st.session_state.loan_type.title())
-        c2.metric("Amount", f"₹{st.session_state.loan_amount:,.0f}")
-        c3.metric("Tenure", f"{st.session_state.tenure} mo")
-        c4.metric("Rate", f"{st.session_state.interest_rate}%")
-
-    # Progress indicator
-    total_steps = 7
-    st.progress(min(step / total_steps, 1.0), text=f"Step {step} of {total_steps}")
-
-    # ── Step 1: Personal Info ────────────────────────────────────────────────
-    if step == 1:
-        st.subheader("Step 1: Personal Information")
-        full_name = st.text_input("Full Name", value=st.session_state.full_name)
-        phone = st.text_input("Phone Number (10 digits)", value=st.session_state.phone)
-        email = st.text_input("Email (optional)", value=st.session_state.email)
-        address = st.text_area("Current Address", value=st.session_state.address)
-
-        if st.button("Next ➡️"):
-            errors = []
-            if not full_name.strip():
-                errors.append("Name cannot be empty.")
-            if not address.strip():
-                errors.append("Address cannot be empty.")
-            import re
-            if not re.fullmatch(r"\d{10}", phone.strip()):
-                errors.append("Phone must be exactly 10 digits.")
-            if email.strip():
-                is_valid_email, email_err = validate_email(email)
-                if not is_valid_email:
-                    errors.append(email_err)
-
-            if errors:
-                for e in errors:
-                    st.error(e)
+    if not loans:
+        st.info("No loan applications yet. Start a new chat to apply!")
+    else:
+        for loan in loans:
+            decision = loan.get("decision", "pending")
+            if decision == "approve":
+                icon, color_cls = "✅", "status-approved"
+            elif decision == "reject":
+                icon, color_cls = "❌", "status-rejected"
             else:
-                st.session_state.full_name = full_name.strip()
-                st.session_state.phone = phone.strip()
-                st.session_state.email = email.strip()
-                st.session_state.address = address.strip()
-                st.session_state.reg_step = 2
-                st.rerun()
+                icon, color_cls = "⏳", "status-pending"
 
-    # ── Step 2: OTP Verification ─────────────────────────────────────────────
-    elif step == 2:
-        st.subheader("Step 2: OTP Verification")
-        st.write(f"Phone Number: **{st.session_state.phone}**")
+            with st.expander(f"{icon} {loan.get('loan_type', 'Personal').title()} Loan — ₹{loan.get('principal', 0):,.0f} | {loan.get('created_at', '')}"):
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Amount", f"₹{loan.get('principal', 0):,.0f}")
+                c2.metric("EMI", f"₹{loan.get('emi', 0):,.2f}")
+                c3.metric("Tenure", f"{loan.get('tenure', 0)} months")
+                c4.metric("Rate", f"{loan.get('rate', 0)}%")
 
-        if not st.session_state.otp_sent:
-            if st.button("Send OTP"):
-                res = send_otp(st.session_state.phone)
-                if res["sent"]:
-                    st.session_state.otp_sent = True
-                    st.session_state.current_otp = res.get("otp")
-                    st.success("OTP sent!")
-                    st.rerun()
-                else:
-                    st.error(res["message"])
-        else:
-            if st.session_state.get("current_otp"):
-                st.info(f"*(Development Mode) Your OTP is: **{st.session_state.current_otp}***")
+                c5, c6, c7, c8 = st.columns(4)
+                c5.metric("Decision", decision.upper())
+                c6.metric("Credit Score", loan.get("credit_score", "N/A"))
+                c7.metric("DTI Ratio", f"{loan.get('dti_ratio', 0)*100:.1f}%")
+                c8.metric("Fraud Score", f"{loan.get('fraud_score', 0):.2f}")
 
-            user_otp = st.text_input("Enter the OTP")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Verify"):
-                    res = verify_otp(st.session_state.phone, user_otp)
-                    if res["verified"]:
-                        st.session_state.otp_verified = True
-                        st.success(res["message"])
-                        st.session_state.reg_step = 3
-                        st.rerun()
-                    else:
-                        st.error(res["message"])
-            with col2:
-                if st.button("Resend OTP"):
-                    st.session_state.otp_sent = False
-                    st.rerun()
-
-    # ── Step 3: Employment Info ──────────────────────────────────────────────
-    elif step == 3:
-        st.subheader("Step 3: Employment Information")
-        emp_type = st.selectbox(
-            "Employment Type",
-            ["salaried", "self-employed"],
-            index=0 if st.session_state.employment_type == "salaried" else 1,
-        )
-        income = st.number_input(
-            "Monthly Income (₹)",
-            min_value=0.0,
-            value=st.session_state.monthly_income,
-            step=1000.0,
-        )
-
-        if st.button("Next ➡️"):
-            st.session_state.employment_type = emp_type
-            st.session_state.monthly_income = float(income)
-            st.session_state.reg_step = 4
-            st.rerun()
-
-    # ── Step 4: DigiLocker KYC (Aadhaar) ─────────────────────────────────────
-    elif step == 4:
-        st.subheader("Step 4: DigiLocker KYC (Aadhaar)")
-        aadhaar = st.text_input("Aadhaar Number (12 digits)", value=st.session_state.aadhaar)
-
-        if not st.session_state.dl_otp_sent:
-            if st.button("Send UIDAI OTP"):
-                if not aadhaar.isdigit() or len(aadhaar) != 12:
-                    st.error("Aadhaar must be exactly 12 digits.")
-                else:
-                    res = initiate_digilocker_session(aadhaar)
-                    if res["success"]:
-                        st.session_state.dl_otp_sent = True
-                        st.session_state.dl_session_id = res["session_id"]
-                        st.session_state.aadhaar = aadhaar
-                        st.success(res["message"])
-                        st.rerun()
-                    else:
-                        st.error(res["message"])
-        else:
-            st.info("*(Development Mode) Use OTP: 123456*")
-            dl_otp = st.text_input("Enter UIDAI OTP")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Verify & Fetch Documents"):
-                    res = verify_digilocker_otp(
-                        st.session_state.dl_session_id, dl_otp, st.session_state.aadhaar
-                    )
-                    if res["success"]:
-                        fetched_pan = (
-                            res["documents"]
-                            .get("pan_record", {})
-                            .get("pan_number", "NOT_FOUND")
+                # Download sanction letter
+                pdf_path = loan.get("sanction_pdf", "")
+                if pdf_path and os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            f"📥 Download {'Sanction' if decision == 'approve' else 'Decision'} Letter",
+                            data=f, file_name=os.path.basename(pdf_path),
+                            key=f"dl_{loan['id']}", use_container_width=True
                         )
-                        st.session_state.kyc_verified = True
-                        st.session_state.pan = fetched_pan
-                        st.success("Documents fetched successfully from DigiLocker!")
-                        st.session_state.reg_step = 5
-                        st.rerun()
-                    else:
-                        st.error(res["message"])
-            with col2:
-                if st.button("Cancel & Try Another Aadhaar"):
-                    st.session_state.dl_otp_sent = False
-                    st.rerun()
 
-    # ── Step 5: Bank Details ─────────────────────────────────────────────────
-    elif step == 5:
-        st.subheader("Step 5: Bank Details")
-        bank_name = st.text_input(
-            "Bank Name (e.g., SBI, HDFC, ICICI)", value=st.session_state.bank_name
-        )
+                if decision == "reject":
+                    reasons = json.loads(loan.get("rejection_reasons", "[]"))
+                    if reasons:
+                        st.error("**Rejection Reasons:**\n" + "\n".join(f"• {r}" for r in reasons))
 
-        if st.button("Verify & Next ➡️"):
-            if not bank_name.strip():
-                st.error("Bank name cannot be empty.")
-            else:
-                res = get_bank_details(bank_name)
-                if res.get("found"):
-                    st.session_state.bank_name = res["bank_name"]
-                    st.session_state.bank_account_number = res["account_number"]
-                    st.session_state.bank_ifsc = res["ifsc"]
-                    st.success("Bank details fetched successfully!")
-                    st.session_state.reg_step = 6
-                    st.rerun()
-                else:
-                    st.error(res.get("error", "Bank not found."))
+    st.divider()
 
-    # ── Step 6: Set Security PIN ─────────────────────────────────────────────
-    elif step == 6:
-        st.subheader("Step 6: Set Security PIN")
-        choice = st.radio("PIN Options", ("Set a new PIN", "Use Bank Account PIN"))
-
-        if choice == "Set a new PIN":
-            pin = st.text_input("Create a 4-digit PIN", type="password")
-            confirm = st.text_input("Confirm PIN", type="password")
-
-            if st.button("Complete Registration ➡️"):
-                is_valid, err = validate_pin(pin)
-                if not is_valid:
-                    st.error(err)
-                elif pin != confirm:
-                    st.error("PINs do not match.")
-                else:
-                    st.session_state.pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-                    st.session_state.reg_step = 7
-                    st.rerun()
-        else:
-            pin = st.text_input("Enter your Bank Account PIN (4 digits)", type="password")
-            if st.button("Complete Registration ➡️"):
-                is_valid, err = validate_pin(pin)
-                if not is_valid:
-                    st.error(err)
-                else:
-                    st.session_state.pin_hash = hashlib.sha256(pin.encode()).hexdigest()
-                    st.session_state.reg_step = 7
-                    st.rerun()
-
-    # ── Step 7: Complete ─────────────────────────────────────────────────────
-    elif step == 7:
-        st.header("🎉 Registration Complete!")
-        st.balloons()
-
-        # Loan Details
-        st.subheader("📦 Loan Details")
-        lc1, lc2, lc3, lc4 = st.columns(4)
-        lc1.metric("Type", st.session_state.loan_type.title())
-        lc2.metric("Amount", f"₹{st.session_state.loan_amount:,.0f}")
-        lc3.metric("Tenure", f"{st.session_state.tenure} months")
-        lc4.metric("Rate", f"{st.session_state.interest_rate}% p.a.")
-
-        if st.session_state.loan_amount > 0 and st.session_state.tenure > 0:
-            emi_data = calculate_emi(
-                st.session_state.loan_amount,
-                st.session_state.interest_rate,
-                st.session_state.tenure,
-            )
-            if "emi" in emi_data:
-                st.info(
-                    f"📊 **Monthly EMI: ₹{emi_data['emi']:,.2f}** | "
-                    f"Total Interest: ₹{emi_data['total_interest']:,.2f} | "
-                    f"Total Payment: ₹{emi_data['total_payment']:,.2f}"
-                )
-
-        st.divider()
-
-        # Profile Summary
-        st.subheader("👤 Profile Summary")
-        st.write(f"**Name:** {st.session_state.full_name}")
-        st.write(f"**Phone:** {st.session_state.phone}")
-        st.write(f"**Email:** {st.session_state.email or 'N/A'}")
-        st.write(f"**Address:** {st.session_state.address}")
-        st.write(f"**Employment:** {st.session_state.employment_type.title()}")
-        st.write(f"**Income:** ₹{st.session_state.monthly_income:,.0f}")
-        st.write(f"**PAN (Auto-fetched):** {st.session_state.pan}")
-
-        st.subheader("🔒 KYC Details")
-        st.write(f"**Aadhaar:** {st.session_state.aadhaar}")
-        st.write(
-            f"**Digilocker Status:** "
-            f"{'✅ Verified' if st.session_state.kyc_verified else '❌ Failed'}"
-        )
-
-        st.subheader("🏦 Bank Details")
-        st.write(f"**Bank:** {st.session_state.bank_name}")
-        st.write(f"**Account:** {st.session_state.bank_account_number}")
-        st.write(f"**IFSC:** {st.session_state.bank_ifsc}")
-
-        st.divider()
-        st.success(
-            "✅ You are successfully registered. "
-            "Ready for the next agent in the pipeline!"
-        )
-
-        if st.button("🔄 Start Over"):
-            st.session_state.clear()
-            st.rerun()
+    # Document Upload History
+    st.markdown("## 📄 Document Upload History")
+    docs = get_document_history(phone)
+    if not docs:
+        st.info("No documents uploaded yet.")
+    else:
+        for d in docs:
+            tamper_badge = " 🚨 TAMPERED" if d.get("tampered") else " ✅"
+            with st.expander(f"📄 {d.get('doc_type', 'Unknown')} — {d.get('uploaded_at', '')}{tamper_badge}"):
+                st.write(f"**File:** {d.get('original_filename', 'N/A')}")
+                st.write(f"**Name Extracted:** {d.get('name_extracted', 'N/A')}")
+                st.write(f"**Salary Extracted:** ₹{d.get('salary_extracted', 0):,.0f}")
+                st.write(f"**OCR Confidence:** {d.get('confidence', 0):.0%}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MAIN ROUTING
+#  MAIN ROUTER
 # ═══════════════════════════════════════════════════════════════════════════════
+render_sidebar()
 
-st.title("🏦 FinServe NBFC — Loan Processing")
+page = st.session_state.page
 
-render_pipeline_bar()
-
-if st.session_state.current_phase == "sales":
-    render_sales_agent()
-elif st.session_state.current_phase == "registration":
-    render_registration_agent()
-
-# Sidebar info
-with st.sidebar:
-    st.markdown("### 🔄 Pipeline Status")
-    st.markdown(
-        f"**Current Phase:** {st.session_state.current_phase.title()}"
-    )
-
-    if st.session_state.sales_complete:
-        st.markdown("---")
-        st.markdown("### 📦 Selected Loan")
-        st.write(f"**Type:** {st.session_state.loan_type.title()}")
-        st.write(f"**Amount:** ₹{st.session_state.loan_amount:,.0f}")
-        st.write(f"**Tenure:** {st.session_state.tenure} months")
-        st.write(f"**Rate:** {st.session_state.interest_rate}% p.a.")
-
-    st.markdown("---")
-    if st.button("🔄 Reset Everything", use_container_width=True):
-        st.session_state.clear()
+if page == "login":
+    render_login()
+elif page == "chat":
+    if not st.session_state.logged_in:
+        st.session_state.page = "login"
         st.rerun()
+    render_chat()
+elif page == "profile":
+    if not st.session_state.logged_in:
+        st.session_state.page = "login"
+        st.rerun()
+    render_profile()

@@ -1,18 +1,16 @@
 # Environments
 .env
-<<<<<<< HEAD
+
+# Virtual Environments
 venv/
 env/
-ENV/
 .venv/
-=======
->>>>>>> fdf0f1c766b5af07ca96d71ab41387176bb2314e
+ENV/
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-<<<<<<< HEAD
 *.so
 
 # MyPy
@@ -20,18 +18,17 @@ __pycache__/
 
 # OS generated files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-=======
-venv/
-.venv/
-env/
-.env/
-
-# Mac / Windows
-.DS_Store
->>>>>>> fdf0f1c766b5af07ca96d71ab41387176bb2314e
 Thumbs.db
+
+# Data (generated at runtime)
+data/uploads/
+data/sanctions/
+data/nbfc.db
+
+# LangGraph Studio
+.langgraph_api/
+
+# Temp files
+temp_*.jpg
+temp_*.png
+*.pdf

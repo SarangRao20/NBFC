@@ -41,3 +41,5 @@ def validate_positive_number(value: str, field_name: str = "Value") -> tuple[boo
         return True, ""
     except ValueError:
         return False, f"{field_name} must be a valid number."
+
+

@@ -1,35 +1,90 @@
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+"""LLM Configuration with automatic fallback chain."""
 
-# Load environment variables (e.g., OPENAI_API_KEY for OpenRouter)
+import os
+import time
+from dotenv import load_dotenv
+
 load_dotenv()
 
-# We use OpenRouter's base URL and your key from .env
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-API_KEY = os.getenv("OPENAI_API_KEY") # Ensure this is in your .env
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not API_KEY:
-    raise ValueError("Missing OPENAI_API_KEY in .env file (for OpenRouter access).")
 
-# 1. Vision LLM Instance (For Document/Verification Agent)
-# Recommended: Claude 3.5 Sonnet for top-tier OCR + Structured JSON capability.
+def get_master_llm():
+    """Sales/Advisor Agent — tries Gemini → Groq → OpenRouter."""
+    return _get_llm_with_fallback(temperature=0.4)
+
+
+def get_extraction_llm():
+    """Registration Agent — tries Groq (fast) → Gemini."""
+    return _get_llm_with_fallback(temperature=0.0)
+
+
 def get_vision_llm():
-    return ChatOpenAI(
-        model="anthropic/claude-3.5-sonnet", # OpenRouter model tag
-        openai_api_base=OPENROUTER_BASE,
-        openai_api_key=API_KEY,
-        temperature=0.0,
-        max_tokens=1024
+    """Document Agent — Gemini 2.5 Flash for multimodal OCR."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=GEMINI_API_KEY,
+        temperature=0.0
     )
 
-# 2. Text LLM Instance (For Registration Chatbot Agent)
-# Recommended: Claude 3 Haiku or GPT-4o-mini for speed and human-like chat.
-def get_chat_llm():
-    return ChatOpenAI(
-        model="openai/gpt-4o-mini", # OpenRouter model tag
-        openai_api_base=OPENROUTER_BASE,
-        openai_api_key=API_KEY,
-        temperature=0.3,
-        max_tokens=500
-    )
+
+
+
+def _get_llm_with_fallback(temperature: float = 0.3):
+    """Try multiple providers in order until one works."""
+    errors = []
+
+    # Try 1: Groq (fastest, 30 RPM limit)
+    if GROQ_API_KEY:
+        try:
+            from langchain_groq import ChatGroq
+            llm = ChatGroq(
+                model="llama-3.1-8b-instant",
+                groq_api_key=GROQ_API_KEY,
+                temperature=temperature
+            )
+            # Quick test
+            llm.invoke("hi")
+            print("  🟢 Using: Groq (llama-3.1-8b)")
+            return llm
+        except Exception as e:
+            errors.append(f"Groq: {str(e)[:60]}")
+
+    # Try 2: Gemini
+    if GEMINI_API_KEY:
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
+                google_api_key=GEMINI_API_KEY,
+                temperature=temperature
+            )
+            llm.invoke("hi")
+            print("  🟢 Using: Gemini (1.5-flash)")
+            return llm
+        except Exception as e:
+            errors.append(f"Gemini: {str(e)[:60]}")
+
+    # Try 3: OpenRouter
+    if OPENROUTER_API_KEY:
+        try:
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(
+                model="meta-llama/llama-3.3-70b-instruct:free",
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY,
+                temperature=temperature
+            )
+            llm.invoke("hi")
+            print("  🟢 Using: OpenRouter (llama-3.3-70b)")
+            return llm
+        except Exception as e:
+            errors.append(f"OpenRouter: {str(e)[:60]}")
+
+    # All failed — return Groq anyway (will error at call time with clear message)
+    print(f"  ⚠️ All LLM providers failed: {errors}")
+    from langchain_groq import ChatGroq
+    return ChatGroq(model="llama-3.1-8b-instant", groq_api_key=GROQ_API_KEY or "missing", temperature=temperature)
