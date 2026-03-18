@@ -1,35 +1,33 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI, HarmCategory, HarmBlockThreshold
+from langchain_groq import ChatGroq
 
-# Load environment variables (e.g., OPENAI_API_KEY for OpenRouter)
 load_dotenv()
 
-# We use OpenRouter's base URL and your key from .env
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-API_KEY = os.getenv("OPENAI_API_KEY") # Ensure this is in your .env
+# The API Keys
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not API_KEY:
-    raise ValueError("Missing OPENAI_API_KEY in .env file (for OpenRouter access).")
+safety_rules = {
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+}
 
-# 1. Vision LLM Instance (For Document/Verification Agent)
-# Recommended: Claude 3.5 Sonnet for top-tier OCR + Structured JSON capability.
+# 1. Vision LLM Instance (Directly pointing to Gemini 2.5 Flash using new key)
 def get_vision_llm():
-    return ChatOpenAI(
-        model="anthropic/claude-3.5-sonnet", # OpenRouter model tag
-        openai_api_base=OPENROUTER_BASE,
-        openai_api_key=API_KEY,
-        temperature=0.0,
-        max_tokens=1024
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash", 
+        google_api_key=GEMINI_API_KEY,
+        safety_settings=safety_rules,
+        temperature=0.0
     )
 
-# 2. Text LLM Instance (For Registration Chatbot Agent)
-# Recommended: Claude 3 Haiku or GPT-4o-mini for speed and human-like chat.
+# 2. Text LLM Instance 
+# Groq handles LangGraph structured extraction flawlessly with massive LLM sizes and lightning speed.
 def get_chat_llm():
-    return ChatOpenAI(
-        model="openai/gpt-4o-mini", # OpenRouter model tag
-        openai_api_base=OPENROUTER_BASE,
-        openai_api_key=API_KEY,
-        temperature=0.3,
-        max_tokens=500
+    return ChatGroq(
+        model="llama-3.3-70b-versatile", 
+        groq_api_key=GROQ_API_KEY,
+        temperature=0.3
     )
