@@ -55,8 +55,15 @@ def send_otp(phone: str) -> dict:
             )
             print(f"  [Twilio] Sent real SMS OTP to {formatted_phone} (SID: {message.sid})")
         except Exception as e:
-            print(f"  ⚠️ Twilio Error: {e}")
-            print(f"  falling back to mock print out -> OTP is: {otp}")
+            error_msg = str(e)
+            print(f"  ⚠️ Twilio Error: {error_msg}")
+            
+            # Delete the local OTP cache so they can actually retry properly
+            if phone in _otp_store:
+                del _otp_store[phone]
+            _send_count[phone] -= 1
+            
+            return {"sent": False, "message": f"Twilio blocked the SMS: {error_msg}"}
     else:
         # Mock behavior
         print(f"\n{'='*40}")
