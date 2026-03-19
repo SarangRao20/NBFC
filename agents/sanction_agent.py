@@ -11,7 +11,7 @@ os.makedirs("data/sanctions", exist_ok=True)
 
 
 def sanction_agent_node(state: dict) -> dict:
-    """Generates a PDF sanction letter using ReportLab."""
+    """Generates a PDF sanction or rejection letter using ReportLab."""
     print("📜 [SANCTION AGENT] Generating PDF...")
 
     customer = state.get("customer_data", {})
@@ -27,82 +27,155 @@ def sanction_agent_node(state: dict) -> dict:
     dti = state.get("dti_ratio", 0)
     score = customer.get("score", 0)
 
-    filename = f"{cust_id}_Sanction_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    # Determine letter type (approved or rejected)
+    status = state.get("status", "approved").strip().lower()
+    is_approved = status != "rejected"
+    status_text = "Approved" if is_approved else "Rejected"
+
+    rejection_reason = state.get("rejection_reason", "Not specified")
+
+    letter_label = "Sanction" if is_approved else "Rejection"
+    filename = f"{cust_id}_{letter_label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     filepath = os.path.join("data", "sanctions", filename)
 
     try:
-        from reportlab.pdfgen import canvas
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.pagesizes import letter
 
-        c = canvas.Canvas(filepath, pagesize=letter)
-        w, h = letter
+        doc = SimpleDocTemplate(
+            filepath,
+            pagesize=letter,
+            rightMargin=50,
+            leftMargin=50,
+            topMargin=50,
+            bottomMargin=50,
+        )
+        styles = getSampleStyleSheet()
 
-        # Header
-        c.setFont("Helvetica-Bold", 20)
-        c.drawString(50, h - 60, "FinServe NBFC")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, h - 78, "Registered Office: Financial District, Mumbai | CIN: U65100MH2024PLC123456")
-        c.line(50, h - 85, w - 50, h - 85)
+        elements = []
 
-        # Title
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, h - 115, "LOAN SANCTION LETTER")
-        c.setFont("Helvetica", 11)
-        c.drawString(50, h - 135, f"Date: {datetime.now().strftime('%d %B %Y')}")
-        c.drawString(50, h - 150, f"Reference No: NBFC/SL/{cust_id}/{datetime.now().strftime('%Y%m%d')}")
+        # ================= HEADER =================
+        elements.append(Paragraph("<b>FinServe NBFC Ltd.</b>", styles["Title"]))
+        elements.append(Paragraph("Registered Office: Financial District, Mumbai", styles["Normal"]))
+        elements.append(Paragraph("CIN: U65100MH2024PLC123456", styles["Normal"]))
+        elements.append(Spacer(1, 12))
 
-        # Applicant Details
-        y = h - 185
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(50, y, "Applicant Details")
-        c.setFont("Helvetica", 11)
-        y -= 20; c.drawString(70, y, f"Name: {cust_name}")
-        y -= 18; c.drawString(70, y, f"Phone: {cust_phone}")
-        y -= 18; c.drawString(70, y, f"Customer ID: {cust_id}")
-        y -= 18; c.drawString(70, y, f"Credit Score: {score}")
+        letter_title = "LOAN SANCTION LETTER" if is_approved else "LOAN REJECTION LETTER"
+        elements.append(Paragraph(f"<b>{letter_title}</b>", styles["Heading2"]))
+        elements.append(Spacer(1, 10))
 
-        # Loan Details
-        y -= 35
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(50, y, "Sanctioned Loan Details")
-        c.setFont("Helvetica", 11)
-        y -= 20; c.drawString(70, y, f"Sanctioned Amount: INR {principal:,.2f}")
-        y -= 18; c.drawString(70, y, f"Interest Rate: {rate}% per annum")
-        y -= 18; c.drawString(70, y, f"Tenure: {tenure} months")
-        y -= 18; c.drawString(70, y, f"Monthly EMI: INR {emi:,.2f}")
-        y -= 18; c.drawString(70, y, f"DTI Ratio: {dti*100:.1f}%")
-        y -= 18; c.drawString(70, y, f"EMI Due Date: 15th of every month")
+        elements.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%d %B %Y')}", styles["Normal"]))
+        elements.append(Paragraph(
+            f"<b>Reference No:</b> NBFC/SL/{cust_id}/{datetime.now().strftime('%Y%m%d')}",
+            styles["Normal"],
+        ))
+        elements.append(Spacer(1, 14))
 
-        # Terms
-        y -= 35
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(50, y, "Terms & Conditions")
-        c.setFont("Helvetica", 10)
-        terms_list = [
-            "1. This sanction is valid for 30 days from the date of issue.",
-            "2. Disbursement is subject to completion of all documentation.",
-            "3. Late payment will attract a penalty of 2% per month on the overdue EMI.",
-            "4. Prepayment is allowed after 6 months with no additional charges.",
-            "5. The NBFC reserves the right to modify terms based on regulatory changes.",
+        # ================= APPLICANT DETAILS =================
+        elements.append(Paragraph("<b>Applicant Details</b>", styles["Heading3"]))
+        elements.append(Spacer(1, 6))
+
+        app_data = [
+            ["Name", cust_name],
+            ["Phone", cust_phone],
+            ["Customer ID", cust_id],
+            ["Credit Score", str(score)],
+            ["Application Status", status_text],
         ]
-        for t in terms_list:
-            y -= 16
-            c.drawString(70, y, t)
 
-        # Footer
-        y -= 45
-        c.setFont("Helvetica-Oblique", 9)
-        c.drawString(50, y, "This is a system-generated document from FinServe NBFC AI Pipeline.")
-        y -= 14
-        c.drawString(50, y, "For queries, contact: support@finserve-nbfc.in | 1800-XXX-XXXX")
+        if not is_approved:
+            app_data.append(["Reason for Rejection", rejection_reason])
 
-        c.save()
+        table = Table(app_data, colWidths=[150, 300])
+        table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 14))
 
+        # ================= LOAN DETAILS =================
+        elements.append(Paragraph("<b>Loan Details</b>", styles["Heading3"]))
+        elements.append(Spacer(1, 6))
+
+        loan_data = [
+            ["Sanctioned Amount", f"INR {principal:,.2f}"],
+            ["Interest Rate", f"{rate}% p.a."],
+            ["Tenure", f"{tenure} months"],
+            ["EMI", f"INR {emi:,.2f}"],
+            ["DTI Ratio", f"{dti*100:.1f}%"],
+            ["EMI Due Date", "15th of every month"],
+        ]
+
+        loan_table = Table(loan_data, colWidths=[200, 250])
+        loan_table.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ]))
+        elements.append(loan_table)
+        elements.append(Spacer(1, 14))
+
+        # ================= STATUS MESSAGE =================
+        if is_approved:
+            status_message = (
+                "Congratulations! Your loan application has been approved. "
+                "Please complete your documentation within 30 days for disbursement."
+            )
+        else:
+            status_message = (
+                "Thank you for applying. Unfortunately, your loan application has been declined. "
+                "Please review the reason above and feel free to reapply after addressing the concerns."
+            )
+
+        elements.append(Paragraph(status_message, styles["Normal"]))
+        elements.append(Spacer(1, 30))
+
+        # ================= SIGNATURE PAGE (page 1) =================
+        elements.append(Paragraph(
+            "This is a system-generated letter and does not require a physical signature.",
+            styles["Italic"],
+        ))
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph("<b>For FinServe NBFC Ltd.</b>", styles["Normal"]))
+        elements.append(Spacer(1, 40))
+        elements.append(Paragraph("Authorized Signatory", styles["Normal"]))
+
+        # Force a new page for terms & conditions
+        elements.append(PageBreak())
+
+        # ================= TERMS (page 2) =================
+        elements.append(Paragraph("<b>Terms & Conditions</b>", styles["Heading3"]))
+        elements.append(Spacer(1, 8))
+
+        terms_text = (
+            "1. This sanction is valid for 30 days from the date of issue. <br/>"
+            "2. Disbursement is subject to completion of all documentation. <br/>"
+            "3. Late payment attracts penal interest at 2% per month on overdue amounts. <br/>"
+            "4. Prepayment is permitted after 6 months, subject to applicable policies. <br/>"
+            "5. The Company reserves the right to revise terms in accordance with regulatory guidelines. <br/>"
+        )
+        elements.append(Paragraph(terms_text, styles["Normal"]))
+        elements.append(Spacer(1, 14))
+
+        elements.append(Paragraph(
+            "This is a system-generated document from FinServe NBFC." ,
+            styles["Italic"],
+        ))
+
+        doc.build(elements)
     except ImportError:
         # ReportLab not installed — create a text fallback
         filepath = filepath.replace(".pdf", ".txt")
         with open(filepath, "w") as f:
-            f.write(f"SANCTION LETTER — {cust_name}\nAmount: {principal}\nEMI: {emi}\n")
+            f.write(
+                f"{letter_label.upper()} LETTER — {cust_name}\n"
+                f"Status: {status_text}\n"
+                f"Amount: {principal}\n"
+                f"EMI: {emi}\n"
+                f"Reason: {rejection_reason if not is_approved else 'N/A'}\n"
+            )
 
-    msg = f"📜 **Sanction Letter Generated!**\nFile: `{filepath}`\nYou can download it from the chat."
+    msg = f"📜 **{letter_label} Letter Generated!**\nFile: `{filepath}`\nYou can download it from the chat."
     return {"sanction_pdf": filepath, "messages": [AIMessage(content=msg)]}

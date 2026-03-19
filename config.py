@@ -21,9 +21,9 @@ def _setup_redis_cache():
         client = redis.Redis(host="localhost", port=6379, db=0, socket_connect_timeout=1)
         client.ping()  # test connection
         langchain.llm_cache = RedisCache(redis_=client)
-        print("  ✅ Redis LLM Cache connected (Memurai)")
+        print("   Redis LLM Cache connected (Memurai)")
     except Exception as e:
-        print(f"  ℹ️  Redis cache unavailable ({e.__class__.__name__}: {str(e)[:40]}), running without cache.")
+        print(f"    Redis cache unavailable ({e.__class__.__name__}: {str(e)[:40]}), running without cache.")
 
 _setup_redis_cache()
 
@@ -66,7 +66,7 @@ def _get_llm_with_fallback(temperature: float = 0.3):
             )
             # Quick test
             llm.invoke("hi")
-            print("  🟢 Using: Groq (llama-3.1-8b)")
+            print("   Using: Groq (llama-3.1-8b)")
             return llm
         except Exception as e:
             errors.append(f"Groq: {str(e)[:60]}")
@@ -81,7 +81,7 @@ def _get_llm_with_fallback(temperature: float = 0.3):
                 temperature=temperature
             )
             llm.invoke("hi")
-            print("  🟢 Using: Gemini (1.5-flash)")
+            print("   Using: Gemini (1.5-flash)")
             return llm
         except Exception as e:
             errors.append(f"Gemini: {str(e)[:60]}")
@@ -97,12 +97,12 @@ def _get_llm_with_fallback(temperature: float = 0.3):
                 temperature=temperature
             )
             llm.invoke("hi")
-            print("  🟢 Using: OpenRouter (llama-3.3-70b)")
+            print("   Using: OpenRouter (llama-3.3-70b)")
             return llm
         except Exception as e:
             errors.append(f"OpenRouter: {str(e)[:60]}")
 
     # All failed — return Groq anyway (will error at call time with clear message)
-    print(f"  ⚠️ All LLM providers failed: {errors}")
+    print(f"   All LLM providers failed: {errors}")
     from langchain_groq import ChatGroq
     return ChatGroq(model="llama-3.1-8b-instant", groq_api_key=GROQ_API_KEY or "missing", temperature=temperature)

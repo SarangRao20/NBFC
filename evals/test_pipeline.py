@@ -24,7 +24,7 @@ def test_emi_calculation():
     result = emi_agent_node(state)
     emi = result["loan_terms"]["emi"]
     assert 6600 < emi < 6700, f"EMI should be ~6642, got {emi}"
-    print("✅ PASS: EMI calculation correct")
+    print(" PASS: EMI calculation correct")
 
 
 def test_fraud_clean():
@@ -36,7 +36,7 @@ def test_fraud_clean():
     }
     result = fraud_agent_node(state)
     assert result["fraud_score"] < 0.3, f"Clean customer should have low fraud, got {result['fraud_score']}"
-    print("✅ PASS: Clean customer — low fraud score")
+    print(" PASS: Clean customer — low fraud score")
 
 
 def test_fraud_name_mismatch():
@@ -48,7 +48,7 @@ def test_fraud_name_mismatch():
     }
     result = fraud_agent_node(state)
     assert result["fraud_score"] >= 0.35, f"Name mismatch should trigger fraud, got {result['fraud_score']}"
-    print("✅ PASS: Name mismatch detected — fraud score elevated")
+    print(" PASS: Name mismatch detected — fraud score elevated")
 
 
 def test_fraud_salary_inflation():
@@ -60,7 +60,7 @@ def test_fraud_salary_inflation():
     }
     result = fraud_agent_node(state)
     assert result["fraud_score"] >= 0.25, f"Salary inflation should flag fraud, got {result['fraud_score']}"
-    print("✅ PASS: Salary inflation detected")
+    print(" PASS: Salary inflation detected")
 
 
 def test_fraud_crm_flags():
@@ -72,7 +72,7 @@ def test_fraud_crm_flags():
     }
     result = fraud_agent_node(state)
     assert result["fraud_score"] >= 0.35, f"CRM flags should elevate fraud, got {result['fraud_score']}"
-    print("✅ PASS: CRM risk flags detected")
+    print(" PASS: CRM risk flags detected")
 
 
 def test_underwriting_approve():
@@ -85,7 +85,7 @@ def test_underwriting_approve():
     }
     result = underwriting_agent_node(state)
     assert result["decision"] == "approve", f"Should approve, got {result['decision']}"
-    print("✅ PASS: Loan within limit — approved")
+    print(" PASS: Loan within limit — approved")
 
 
 def test_underwriting_reject_low_score():
@@ -98,7 +98,7 @@ def test_underwriting_reject_low_score():
     }
     result = underwriting_agent_node(state)
     assert result["decision"] == "reject", f"Score 620 should reject, got {result['decision']}"
-    print("✅ PASS: Low credit score — rejected")
+    print(" PASS: Low credit score — rejected")
 
 
 def test_underwriting_reject_over_2x():
@@ -111,7 +111,7 @@ def test_underwriting_reject_over_2x():
     }
     result = underwriting_agent_node(state)
     assert result["decision"] == "reject", f"Over 2x limit should reject, got {result['decision']}"
-    print("✅ PASS: Over 2x limit — rejected")
+    print(" PASS: Over 2x limit — rejected")
 
 
 def test_underwriting_reject_high_foir():
@@ -125,7 +125,7 @@ def test_underwriting_reject_high_foir():
     result = underwriting_agent_node(state)
     # Total EMI = 3000+6000 = 9000, salary=15000, FOIR=60% > 50%
     assert result["decision"] == "reject", f"FOIR 60% should reject, got {result['decision']}"
-    print("✅ PASS: High FOIR — rejected")
+    print(" PASS: High FOIR — rejected")
 
 
 def test_underwriting_pending_docs():
@@ -138,7 +138,7 @@ def test_underwriting_pending_docs():
     }
     result = underwriting_agent_node(state)
     assert result["decision"] == "pending_docs", f"Should need docs, got {result['decision']}"
-    print("✅ PASS: Extended range without docs — pending")
+    print(" PASS: Extended range without docs — pending")
 
 
 def test_kyc_name_match():
@@ -149,7 +149,7 @@ def test_kyc_name_match():
     }
     result = verification_agent_node(state)
     assert result["kyc_status"] == "verified", f"Should verify, got {result['kyc_status']}"
-    print("✅ PASS: KYC name match — verified")
+    print(" PASS: KYC name match — verified")
 
 
 def test_kyc_name_mismatch():
@@ -160,13 +160,13 @@ def test_kyc_name_mismatch():
     }
     result = verification_agent_node(state)
     assert result["kyc_status"] == "failed", f"Should fail, got {result['kyc_status']}"
-    print("✅ PASS: KYC name mismatch — failed")
+    print(" PASS: KYC name mismatch — failed")
 
 
 # ─── Run All Tests ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
-    print("  🧪 NBFC 9-AGENT PIPELINE — EVALUATION SUITE")
+    print("   NBFC 9-AGENT PIPELINE — EVALUATION SUITE")
     print("=" * 60)
 
     tests = [
@@ -191,10 +191,10 @@ if __name__ == "__main__":
             test()
             passed += 1
         except AssertionError as e:
-            print(f"❌ FAIL: {test.__name__} — {e}")
+            print(f" FAIL: {test.__name__} — {e}")
             failed += 1
         except Exception as e:
-            print(f"💥 ERROR: {test.__name__} — {e}")
+            print(f" ERROR: {test.__name__} — {e}")
             failed += 1
 
     print("=" * 60)
