@@ -32,3 +32,4 @@ data/nbfc.db
 temp_*.jpg
 temp_*.png
 *.pdf
+node_modules/

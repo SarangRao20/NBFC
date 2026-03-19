@@ -3,3 +3,6 @@ langchain-ollama
 langchain-core
 langchain
 streamlit
+langchain-groq
+langchain-openai
+langchain-google-genai
