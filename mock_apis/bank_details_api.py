@@ -50,7 +50,7 @@ def get_bank_details(bank_name: str) -> dict:
     account_number = "".join([str(random.randint(0, 9)) for _ in range(bank["account_length"])])
     ifsc = bank["ifsc_prefix"] + "".join([str(random.randint(0, 9)) for _ in range(6)])
 
-    print(f"\n  🏦 Bank Details Retrieved:")
+    print(f"\n   Bank Details Retrieved:")
     print(f"     Bank: {bank['full_name']}")
     print(f"     Account: {account_number}")
     print(f"     IFSC: {ifsc}\n")
