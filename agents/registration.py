@@ -55,6 +55,19 @@ def pull_customer_from_db(phone: str) -> dict | None:
     return None
 
 
+def pull_customer_by_email(email: str, password: str) -> dict | None:
+    """Lookup a customer by email + password. Returns the profile dict or None."""
+    email = email.strip().lower()
+    try:
+        with open("mock_apis/customers.json", "r") as f:
+            for c in json.load(f):
+                if c.get("email", "").lower() == email and c.get("password", "") == password:
+                    return c
+    except Exception:
+        pass
+    return None
+
+
 # ─── Nodes ───────────────────────────────────────────────────────────────────────
 def chat_node(state: RegistrationState):
     """Dynamic system-prompt chatbot that adapts based on registration progress."""

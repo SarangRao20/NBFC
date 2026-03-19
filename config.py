@@ -11,6 +11,24 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
+# ── Redis LLM Cache (Memurai / Redis on Windows) ─────────────────────────────
+def _setup_redis_cache():
+    """Connect to local Redis/Memurai for LLM response caching. Silently skips if unavailable."""
+    try:
+        import redis
+        import langchain
+        from langchain_community.cache import RedisCache
+        client = redis.Redis(host="localhost", port=6379, db=0, socket_connect_timeout=1)
+        client.ping()  # test connection
+        langchain.llm_cache = RedisCache(redis_=client)
+        print("  ✅ Redis LLM Cache connected (Memurai)")
+    except Exception as e:
+        print(f"  ℹ️  Redis cache unavailable ({e.__class__.__name__}: {str(e)[:40]}), running without cache.")
+
+_setup_redis_cache()
+
+
+
 def get_master_llm():
     """Sales/Advisor Agent — tries Gemini → Groq → OpenRouter."""
     return _get_llm_with_fallback(temperature=0.4)

@@ -23,8 +23,12 @@ def verification_agent_node(state: dict) -> dict:
         issues.append("Document has not been verified yet.")
 
     if reg_name and doc_name:
-        # Fuzzy name matching: check if one contains the other
-        if reg_name not in doc_name and doc_name not in reg_name:
+        # Token overlap: all tokens from shorter name must exist in longer name's tokens
+        reg_tokens = set(reg_name.split())
+        doc_tokens = set(doc_name.split())
+        shorter = reg_tokens if len(reg_tokens) <= len(doc_tokens) else doc_tokens
+        longer = doc_tokens if len(reg_tokens) <= len(doc_tokens) else reg_tokens
+        if not shorter.issubset(longer):
             issues.append(f"Name mismatch: CRM='{customer.get('name')}' vs Document='{docs.get('name_extracted')}'")
 
     if docs.get("tampered"):

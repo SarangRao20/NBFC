@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Salary Slip - Sarang Rao - March 2026</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; padding: 30px; background: #fff; color: #333; font-size: 13px; }
+  .header { text-align: center; border-bottom: 2px solid #1a3c6e; padding-bottom: 12px; margin-bottom: 20px; }
+  .company-name { font-size: 22px; font-weight: bold; color: #1a3c6e; }
+  .company-sub { font-size: 12px; color: #555; margin-top: 4px; }
+  .slip-title { font-size: 16px; font-weight: bold; background: #1a3c6e; color: white; padding: 6px 12px; margin: 16px 0 12px; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 20px; }
+  .info-row { display: flex; gap: 8px; }
+  .info-label { font-weight: bold; min-width: 140px; color: #555; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th { background: #1a3c6e; color: white; padding: 8px; text-align: left; font-size: 12px; }
+  td { padding: 7px 8px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) { background: #f7f9fc; }
+  .total-row td { background: #e8edf5; font-weight: bold; }
+  .net-pay { text-align: center; margin-top: 20px; padding: 14px; background: #1a3c6e; color: white; font-size: 18px; border-radius: 6px; }
+  .footer { margin-top: 30px; display: flex; justify-content: space-between; }
+  .signature { text-align: center; border-top: 1px solid #333; padding-top: 6px; margin-top: 40px; width: 180px; font-size: 11px; color: #555; }
+  .notice { margin-top: 20px; font-size: 10px; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="company-name">TechSolutions Pvt. Ltd.</div>
+  <div class="company-sub">Plot 14, Jalna Road, Aurangabad - 431001, Maharashtra | CIN: U72200MH2018PTC123456</div>
+</div>
+
+<div class="slip-title">SALARY SLIP — March 2026</div>
+
+<div class="info-grid">
+  <div>
+    <div class="info-row"><span class="info-label">Employee Name:</span> <span>Sarang Gajanan Rao</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Employee ID:</span> <span>EMP-2021-042</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Designation:</span> <span>Software Engineer</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Department:</span> <span>Technology</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Date of Joining:</span> <span>01-Aug-2021</span></div>
+  </div>
+  <div>
+    <div class="info-row"><span class="info-label">PAN Number:</span> <span>ABCDE1234F</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">PF Account No:</span> <span>MH/AUR/0012345/000/0000042</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Bank Name:</span> <span>State Bank of India</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Account Number:</span> <span>XXXX XXXX 4892</span></div>
+    <div class="info-row" style="margin-top:6px"><span class="info-label">Pay Period:</span> <span>01-Mar-2026 to 31-Mar-2026</span></div>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:50%">Earnings</th>
+      <th style="width:20%; text-align:right">Amount (₹)</th>
+      <th style="width:30%">Deductions</th>
+      <th style="text-align:right">Amount (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Basic Salary</td><td style="text-align:right">25,000</td>
+      <td>PF (Employee 12%)</td><td style="text-align:right">3,000</td>
+    </tr>
+    <tr>
+      <td>House Rent Allowance (HRA)</td><td style="text-align:right">10,000</td>
+      <td>Professional Tax</td><td style="text-align:right">200</td>
+    </tr>
+    <tr>
+      <td>Conveyance Allowance</td><td style="text-align:right">2,500</td>
+      <td>Income Tax (TDS)</td><td style="text-align:right">1,500</td>
+    </tr>
+    <tr>
+      <td>Special Allowance</td><td style="text-align:right">5,500</td>
+      <td>Health Insurance</td><td style="text-align:right">800</td>
+    </tr>
+    <tr>
+      <td>Performance Bonus</td><td style="text-align:right">2,000</td>
+      <td></td><td></td>
+    </tr>
+    <tr class="total-row">
+      <td>Gross Earnings</td><td style="text-align:right">45,000</td>
+      <td>Total Deductions</td><td style="text-align:right">5,500</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="net-pay">Net Pay (Take Home): ₹39,500</div>
+
+<div style="margin-top:14px; font-size:12px; color:#555;">
+  <strong>Net Pay in Words:</strong> Thirty Nine Thousand Five Hundred Rupees Only
+</div>
+
+<div class="footer">
+  <div class="signature">
+    <br><br>
+    Employee Signature<br>Sarang Gajanan Rao
+  </div>
+  <div class="signature">
+    <br><br>
+    HR Manager<br>TechSolutions Pvt. Ltd.
+  </div>
+  <div class="signature">
+    <br><br>
+    Authorized Signatory<br>Finance Department
+  </div>
+</div>
+
+<div class="notice">
+  This is a computer-generated salary slip and does not require a physical signature. | TechSolutions Pvt. Ltd. is registered under Maharashtra Shops & Establishments Act.
+</div>
+
+</body>
+</html>

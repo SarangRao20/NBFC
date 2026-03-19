@@ -89,5 +89,6 @@ def underwriting_agent_node(state: dict) -> dict:
     return {
         "decision": decision,
         "dti_ratio": dti,
+        "reasons": reasons,
         "messages": [AIMessage(content=msg)]
     }
