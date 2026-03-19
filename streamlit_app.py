@@ -749,7 +749,7 @@ def render_login():
                 import json as _json
                 cust_path = "mock_apis/customers.json"
                 try:
-                    with open(cust_path, "r") as f:
+                    with open(cust_path, "r", encoding="utf-8") as f:
                         all_customers = _json.load(f)
 
                     # Check if email already registered
@@ -773,7 +773,7 @@ def render_login():
                             "risk_flags": []
                         }
                         all_customers.append(new_cust)
-                        with open(cust_path, "w") as f:
+                        with open(cust_path, "w", encoding="utf-8") as f:
                             _json.dump(all_customers, f, indent=4, ensure_ascii=False)
 
                         st.session_state.logged_in = True

@@ -11,139 +11,21 @@
         "pre_approved_limit": 150000,
         "existing_emi_total": 12000,
         "current_loans": [
-            "Education Loan - \u20b92L @9%"
+            "HDFC Personal Loan"
         ],
         "risk_flags": []
     },
     {
         "id": "CUST002",
-        "name": "Priya Sharma",
-        "phone": "9421140800",
-        "email": "priya@example.com",
-        "password": "priya123",
-        "city": "Mumbai",
-        "salary": 85000,
-        "credit_score": 820,
-        "pre_approved_limit": 500000,
-        "existing_emi_total": 0,
-        "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST003",
-        "name": "Raj Patel",
-        "phone": "9421140800",
-        "email": "raj@example.com",
-        "password": "raj123",
-        "city": "Delhi",
-        "salary": 28000,
-        "credit_score": 620,
-        "pre_approved_limit": 75000,
-        "existing_emi_total": 5000,
-        "current_loans": [
-            "Personal Loan - \u20b930k @14%"
-        ],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST004",
-        "name": "Anjali Gupta",
-        "phone": "9421140800",
-        "email": "anjali@example.com",
-        "password": "anjali123",
-        "city": "Bangalore",
-        "salary": 52000,
-        "credit_score": 710,
-        "pre_approved_limit": 200000,
-        "existing_emi_total": 8000,
-        "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST005",
-        "name": "Vikram Singh",
-        "phone": "9421140800",
-        "email": "vikram@example.com",
-        "password": "vikram123",
-        "city": "Chennai",
-        "salary": 22000,
-        "credit_score": 550,
-        "pre_approved_limit": 50000,
-        "existing_emi_total": 0,
-        "current_loans": [],
-        "risk_flags": [
-            "FRAUD_SUSPICION"
-        ]
-    },
-    {
-        "id": "CUST006",
-        "name": "Neha Desai",
-        "phone": "9421140800",
-        "email": "neha@example.com",
-        "password": "neha123",
-        "city": "Pune",
-        "salary": 65000,
-        "credit_score": 780,
-        "pre_approved_limit": 300000,
-        "existing_emi_total": 15000,
-        "current_loans": [
-            "Home Loan - \u20b915L @9.5%"
-        ],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST007",
-        "name": "Arjun Reddy",
-        "phone": "9421140800",
-        "email": "arjun@example.com",
-        "password": "arjun123",
-        "city": "Hyderabad",
-        "salary": 38000,
-        "credit_score": 690,
+        "name": "Sanvi Nyati",
+        "phone": "7248915106",
+        "email": "sanvinyati6@gmail.com",
+        "password": "1510",
+        "city": "Unknown",
+        "salary": 0,
+        "credit_score": 700,
         "pre_approved_limit": 100000,
-        "existing_emi_total": 4000,
-        "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST008",
-        "name": "Kavya Menon",
-        "phone": "9421140800",
-        "email": "kavya@example.com",
-        "password": "kavya123",
-        "city": "Kochi",
-        "salary": 72000,
-        "credit_score": 810,
-        "pre_approved_limit": 400000,
         "existing_emi_total": 0,
-        "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST009",
-        "name": "Sameer Khan",
-        "phone": "9421140800",
-        "email": "sameer@example.com",
-        "password": "sameer123",
-        "city": "Lucknow",
-        "salary": 41000,
-        "credit_score": 730,
-        "pre_approved_limit": 180000,
-        "existing_emi_total": 6000,
-        "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST010",
-        "name": "Riya Malhotra",
-        "phone": "9421140800",
-        "email": "riya@example.com",
-        "password": "riya123",
-        "city": "Jaipur",
-        "salary": 29000,
-        "credit_score": 640,
-        "pre_approved_limit": 80000,
-        "existing_emi_total": 3000,
         "current_loans": [],
         "risk_flags": []
     }
