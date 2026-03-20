@@ -35,7 +35,7 @@ export default function EmiDonutChart({ principal, emi, tenure }: Props) {
               ))}
             </Pie>
             <Tooltip 
-              formatter={(value: number) => `₹${new Intl.NumberFormat('en-IN').format(value)}`}
+              formatter={(value: any) => `₹${new Intl.NumberFormat('en-IN').format(value)}`}
               contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px -3px rgba(0,0,0,0.1)' }}
             />
           </PieChart>

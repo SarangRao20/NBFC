@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
 import type { AppState, ChatMessage } from './types';
+import { apiClient } from './api/client';
 
 const INITIAL_APP_STATE: AppState = {
   requestedAmount: 500000,
@@ -22,7 +23,7 @@ const INITIAL_CHAT_HISTORY: ChatMessage[] = [
     id: 'msg-1',
     sender: 'agent',
     type: 'text',
-    content: 'Hi Sumit! I see you are an existing customer. How can I help you regarding your loan today?',
+    content: 'Hi Sumit! I see you are an existing customer. I am initializing your application file on our new API backend...',
     timestamp: new Date(),
   }
 ];
@@ -30,8 +31,49 @@ const INITIAL_CHAT_HISTORY: ChatMessage[] = [
 function App() {
   const [appState, setAppState] = useState<AppState>(INITIAL_APP_STATE);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(INITIAL_CHAT_HISTORY);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const handleSendMessage = (text: string) => {
+  // Initialize Backend Session and warm up the pipeline (Steps 1 to 10)
+  useEffect(() => {
+    async function initBackend() {
+      try {
+        const { session_id } = await apiClient.startSession();
+        setSessionId(session_id);
+
+        // Pre-warm the APIs through Step 10 so we can demo underwriting
+        await apiClient.identifyCustomer(session_id, '9876543210');
+        await apiClient.captureLoan(session_id, 'personal', 500000, 48);
+        await apiClient.requestDocuments(session_id);
+        
+        // Mock a file upload for OCR
+        const mockFile = new File([new Blob(['mock pdf data'])], 'bank_statement.pdf', { type: 'application/pdf' });
+        await apiClient.extractOcr(session_id, mockFile);
+        
+        await apiClient.checkTampering(session_id);
+        await apiClient.verifyIncome(session_id);
+        await apiClient.kycVerify(session_id);
+        await apiClient.fraudCheck(session_id);
+
+        setChatHistory(prev => [
+          ...prev,
+          {
+            id: 'msg-ready',
+            sender: 'system',
+            type: 'text',
+            content: 'Backend is fully synced (Phase 1-10 complete). Type "evaluate" to run Underwriting, or "negotiate" to trigger the Persuasion loop.',
+            timestamp: new Date(),
+          }
+        ]);
+      } catch (error) {
+        console.error('Failed to initialize backend:', error);
+      }
+    }
+    initBackend();
+  }, []);
+
+  const handleSendMessage = async (text: string) => {
+    if (!sessionId) return;
+
     // 1. Add user message
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
@@ -40,153 +82,138 @@ function App() {
       content: text,
       timestamp: new Date(),
     };
-    
     setChatHistory((prev) => [...prev, userMsg]);
 
-    // Mock workflows based on keywords
-    if (text.toLowerCase().includes('negotiate')) {
-      const thinkingMsgId = 'msg-thinking-' + Date.now();
-      
-      // Step 1: Master Agent routing
-      setAppState(prev => ({ ...prev, activeAgent: '🧠 Master Agent is routing...' }));
-      
-      setTimeout(() => {
-        // Step 2: Underwriting Agent
-        setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is analyzing risk...' }));
-      }, 1000);
+    const lowerText = text.toLowerCase();
 
-      setTimeout(() => {
-        // Step 3: Sales Agent
-        setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent is drafting counter-offer...' }));
+    try {
+      if (lowerText.includes('evaluate') || lowerText.includes('underwrite') || lowerText.includes('approve')) {
+        const thinkingMsgId = 'msg-thinking-' + Date.now();
+        setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is evaluating...' }));
         
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: thinkingMsgId,
-            sender: 'agent',
-            type: 'thinking',
-            content: 'Sales Agent is preparing an interactive offer...',
-            timestamp: new Date(),
-          }
-        ]);
-      }, 2000);
-
-      setTimeout(() => {
-        setAppState(prev => ({ ...prev, activeAgent: null }));
-        setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
-        
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: 'msg-response-' + Date.now(),
-            sender: 'agent',
-            type: 'emi_slider',
-            content: "Here is your customized tenure and EMI plan. Adjust the slider to see options.",
-            timestamp: new Date(),
-          }
-        ]);
-      }, 4000);
-
-    } else if (text.toLowerCase().includes('document')) {
-      setAppState(prev => ({ ...prev, activeAgent: '🔍 Verification Agent is checking requirements...' }));
-      
-      setTimeout(() => {
-        setAppState(prev => ({ ...prev, activeAgent: null, needsDocument: true }));
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: 'msg-response-' + Date.now(),
-            sender: 'agent',
-            type: 'text',
-            content: "Please upload your Bank Statement for verification.",
-            timestamp: new Date(),
-          }
-        ]);
-      }, 1500);
-
-    } else if (text.toLowerCase().includes('approve')) {
-      const thinkingMsgId = 'msg-thinking-' + Date.now();
-      setAppState(prev => ({ ...prev, activeAgent: '🔍 Verification Agent confirming final checks...' }));
-      
-      setChatHistory((prev) => [
-        ...prev,
-        {
+        setChatHistory(prev => [...prev, {
           id: thinkingMsgId,
           sender: 'agent',
           type: 'thinking',
-          content: 'Verification Agent checking documents...',
+          content: 'Consulting decision engine...',
           timestamp: new Date(),
-        }
-      ]);
+        }]);
 
-      setTimeout(() => {
-        setAppState(prev => ({ ...prev, activeAgent: '✍️ Master Agent issuing sanction...' }));
-      }, 1500);
+        // Trigger Step 11: Underwrite
+        const uwResult = await apiClient.underwrite(sessionId);
+        
+        setChatHistory(prev => prev.filter(m => m.id !== thinkingMsgId));
+        setAppState(prev => ({ 
+          ...prev, 
+          activeAgent: null,
+          underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
+        }));
 
-      setTimeout(() => {
-        setAppState(prev => ({ ...prev, activeAgent: null, underwritingStatus: 'Approved' }));
-        setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: 'msg-response-' + Date.now(),
+        if (uwResult.decision === 'approve') {
+          // Proceed to Sanction
+          await apiClient.sanction(sessionId);
+          setChatHistory(prev => [...prev, {
+            id: 'msg-sanction-' + Date.now(),
             sender: 'agent',
             type: 'sanction_letter',
-            content: "Congratulations! Your loan has been fully approved. Please review the Sanction Document below.",
+            content: "Congratulations! The Underwriting Agent approved your loan. Review your Sanction Letter below.",
             timestamp: new Date(),
-          }
-        ]);
-      }, 3000);
-      
-    } else if (text.toLowerCase().includes('too high')) {
-      const thinkingMsgId = 'msg-thinking-' + Date.now();
-      setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent evaluating risk boundaries...' }));
-      
-      setChatHistory((prev) => [
-        ...prev,
-        {
+          }]);
+        } else {
+          setChatHistory(prev => [...prev, {
+            id: 'msg-reject-' + Date.now(),
+            sender: 'agent',
+            type: 'text',
+            content: `Your loan was soft-rejected. Reason: ${uwResult.reasons?.join(', ')}. Type "negotiate" to explore options.`,
+            timestamp: new Date(),
+          }]);
+        }
+
+      } else if (lowerText.includes('negotiate')) {
+        const thinkingMsgId = 'msg-thinking-' + Date.now();
+        setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent building counter-offer...' }));
+        
+        setChatHistory(prev => [...prev, {
           id: thinkingMsgId,
           sender: 'agent',
           type: 'thinking',
-          content: 'Underwriting Agent evaluating risk boundaries...',
+          content: 'Persuasion loop activated...',
           timestamp: new Date(),
-        }
-      ]);
+        }]);
 
-      setTimeout(() => {
+        // Step 12 & 13
+        await apiClient.analyzeRejection(sessionId);
+        const suggestion = await apiClient.suggestFix(sessionId);
+
+        setChatHistory(prev => prev.filter(m => m.id !== thinkingMsgId));
         setAppState(prev => ({ ...prev, activeAgent: null }));
-        setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
 
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: 'msg-response-' + Date.now(),
+        if (suggestion.options && suggestion.options.length > 0) {
+          setChatHistory(prev => [...prev, {
+            id: 'msg-slider-' + Date.now(),
+            sender: 'agent',
+            type: 'emi_slider',
+            content: "We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.",
+            timestamp: new Date(),
+          }]);
+        } else {
+           setChatHistory(prev => [...prev, {
+            id: 'msg-no-option',
             sender: 'agent',
             type: 'text',
-            content: "I've negotiated a lower rate for you based on your excellent repayment history.",
+            content: "Unfortunately, we cannot offer a restructured loan at this time.",
             timestamp: new Date(),
-          }
-        ]);
+          }]);
+        }
 
-        setAppState((prev) => ({
+      } else if (lowerText.includes('accept')) {
+        // Step 14 & 15
+        setAppState(prev => ({ ...prev, activeAgent: '✍️ Finalizing terms...' }));
+        await apiClient.respondToOffer(sessionId, 'accept_option_a');
+        const state = await apiClient.getState(sessionId);
+
+        setAppState(prev => ({
           ...prev,
-          roi: 11.5,
-          emi: 13000
+          activeAgent: null,
+          roi: state.loan_terms?.rate || prev.roi,
+          emi: state.loan_terms?.emi || prev.emi,
+          requestedAmount: state.loan_terms?.principal || prev.requestedAmount,
+          tenure: state.loan_terms?.tenure || prev.tenure,
+          underwritingStatus: 'Approved'
         }));
-      }, 2000);
-    } else {
-      setTimeout(() => {
+
+        await apiClient.sanction(sessionId);
+
+        setChatHistory(prev => [...prev, {
+          id: 'msg-accepted-' + Date.now(),
+          sender: 'agent',
+          type: 'sanction_letter',
+          content: "Terms accepted! Your loan is formally approved. Here is your final Sanction document.",
+          timestamp: new Date(),
+        }]);
+
+      } else {
+        // Fallback or general chatter -> step 17 advisory trigger maybe?
         setChatHistory((prev) => [
           ...prev,
           {
             id: 'msg-response-' + Date.now(),
             sender: 'agent',
             type: 'text',
-            content: "I'm checking that for you. Anything else?",
+            content: "I've registered your response in the API. Try typing 'evaluate', 'negotiate', or 'accept' to observe the backend workflow in action.",
             timestamp: new Date(),
           }
         ]);
-      }, 1000);
+      }
+    } catch (err) {
+      console.error("API flow error:", err);
+      setChatHistory(prev => [...prev, {
+        id: 'msg-error',
+        sender: 'system',
+        type: 'text',
+        content: "System Error: Failed to communicate with backend API. Ensure FastAPI is running on port 8000.",
+        timestamp: new Date(),
+      }]);
     }
   };
 

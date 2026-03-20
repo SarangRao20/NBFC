@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated, Sequence, TypedDict, Any, List, Dict
+from typing import Annotated, Sequence, TypedDict, Any, List, Dict, Optional
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
@@ -47,6 +47,15 @@ class MasterState(TypedDict):
     # Final Decision Output
     decision: str
     sanction_pdf: str
+    
+    # Underwriting Enrichment
+    risk_level: str
+    alternative_offer: float
+    reasons: List[str]
+    
+    # Persuasion Loop State
+    negotiation_round: int
+    persuasion_options: List[Dict]
     
     # Routing Tracker: which agent holds the baton currently
     next_agent: str

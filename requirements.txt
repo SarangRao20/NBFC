@@ -6,3 +6,8 @@ streamlit
 langchain-groq
 langchain-openai
 langchain-google-genai
+fastapi
+uvicorn
+python-dotenv
+python-multipart
+motor
