@@ -44,3 +44,6 @@ GSD-STYLE.md
 PROJECT_RULES.md
 CHANGELOG.md
 LICENSEStep
+FRONTEND_SPEC.md
+
+node_modules/
