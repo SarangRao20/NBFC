@@ -9,6 +9,8 @@ const INITIAL_APP_STATE: AppState = {
   tenure: 48,
   emi: 13200,
   underwritingStatus: 'Pending Evaluation',
+  activeAgent: null,
+  needsDocument: false,
   documents: {
     pan: 'pending',
     bankStatement: 'pending',
@@ -41,10 +43,71 @@ function App() {
     
     setChatHistory((prev) => [...prev, userMsg]);
 
-    // 2. Mock Agent Logic based on keyword
-    if (text.toLowerCase().includes('too high')) {
-      // Show thinking state
+    // Mock workflows based on keywords
+    if (text.toLowerCase().includes('negotiate')) {
       const thinkingMsgId = 'msg-thinking-' + Date.now();
+      
+      // Step 1: Master Agent routing
+      setAppState(prev => ({ ...prev, activeAgent: '🧠 Master Agent is routing...' }));
+      
+      setTimeout(() => {
+        // Step 2: Underwriting Agent
+        setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is analyzing risk...' }));
+      }, 1000);
+
+      setTimeout(() => {
+        // Step 3: Sales Agent
+        setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent is drafting counter-offer...' }));
+        
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: thinkingMsgId,
+            sender: 'agent',
+            type: 'thinking',
+            content: 'Sales Agent is preparing an interactive offer...',
+            timestamp: new Date(),
+          }
+        ]);
+      }, 2000);
+
+      setTimeout(() => {
+        setAppState(prev => ({ ...prev, activeAgent: null }));
+        setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
+        
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: 'msg-response-' + Date.now(),
+            sender: 'agent',
+            type: 'emi_slider',
+            content: "Here is your customized tenure and EMI plan. Adjust the slider to see options.",
+            timestamp: new Date(),
+          }
+        ]);
+      }, 4000);
+
+    } else if (text.toLowerCase().includes('document')) {
+      setAppState(prev => ({ ...prev, activeAgent: '🔍 Verification Agent is checking requirements...' }));
+      
+      setTimeout(() => {
+        setAppState(prev => ({ ...prev, activeAgent: null, needsDocument: true }));
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: 'msg-response-' + Date.now(),
+            sender: 'agent',
+            type: 'text',
+            content: "Please upload your Bank Statement for verification.",
+            timestamp: new Date(),
+          }
+        ]);
+      }, 1500);
+
+    } else if (text.toLowerCase().includes('too high')) {
+      const thinkingMsgId = 'msg-thinking-' + Date.now();
+      setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent evaluating risk boundaries...' }));
+      
       setChatHistory((prev) => [
         ...prev,
         {
@@ -56,12 +119,10 @@ function App() {
         }
       ]);
 
-      // Simulate a 2-second delay
       setTimeout(() => {
-        // Remove thinking message
+        setAppState(prev => ({ ...prev, activeAgent: null }));
         setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
 
-        // Add agent response
         setChatHistory((prev) => [
           ...prev,
           {
@@ -73,16 +134,13 @@ function App() {
           }
         ]);
 
-        // Automatically update the ROI in the dashboard app state
         setAppState((prev) => ({
           ...prev,
           roi: 11.5,
-          emi: 13000 // mock updated EMI
+          emi: 13000
         }));
-
       }, 2000);
     } else {
-      // Default echo / generic response
       setTimeout(() => {
         setChatHistory((prev) => [
           ...prev,
@@ -101,7 +159,12 @@ function App() {
   return (
     <div className="w-full h-screen flex overflow-hidden font-sans bg-slate-50 text-slate-900 leading-relaxed">
       <DashboardPane appState={appState} />
-      <ChatPane chatHistory={chatHistory} onSendMessage={handleSendMessage} />
+      <ChatPane 
+        appState={appState} 
+        setAppState={setAppState} 
+        chatHistory={chatHistory} 
+        onSendMessage={handleSendMessage} 
+      />
     </div>
   );
 }

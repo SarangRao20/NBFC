@@ -4,13 +4,16 @@ export interface AppState {
   tenure: number;
   emi: number;
   underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved';
+  activeAgent: string | null;
+  needsDocument: boolean;
   documents: {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';
   };
 }
 
-export type MessageType = 'text' | 'thinking' | 'sanction_letter';
+export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider';
+
 
 export interface ChatMessage {
   id: string;
