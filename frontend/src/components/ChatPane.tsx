@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { ChatMessage, AppState } from '../types';
 import { Send, Paperclip, FileText, CheckCircle2, UploadCloud, BrainCircuit } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import AgentTypingIndicator from './AgentTypingIndicator';
 
 interface Props {
   appState: AppState;
@@ -83,31 +84,33 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
               )}
 
               {msg.type === 'thinking' && (
-                <div className="bg-slate-50 border border-slate-200/60 shadow-sm text-slate-500 rounded-[20px] rounded-bl-[4px] p-4 max-w-[75%] flex items-center space-x-3">
-                  <span className="flex space-x-1.5 items-center justify-center mr-1">
-                    <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0 }} />
-                    <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }} />
-                    <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }} />
-                  </span>
-                  <span className="text-sm font-semibold text-slate-600">{msg.content}</span>
-                </div>
+                <AgentTypingIndicator />
               )}
 
               {msg.type === 'sanction_letter' && (
-                <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[80%] w-[420px]">
-                  <div className="flex items-center text-emerald-700 mb-3 border-b border-emerald-50 pb-3">
-                    <FileText size={18} className="mr-2" />
-                    <span className="font-bold text-[15px]">Sanction Letter Issued</span>
+                <div className="bg-white/80 backdrop-blur-md border border-slate-200/60 shadow-xl shadow-slate-900/5 rounded-2xl rounded-bl-[4px] p-6 max-w-[85%] w-[460px]">
+                  <div className="flex items-center mb-4 pb-4 border-b border-slate-100">
+                    <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center text-red-500 mr-3">
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-[16px] text-slate-800">Sanction Letter</h3>
+                      <p className="text-xs font-semibold text-slate-400">PDF Document • 1.2 MB</p>
+                    </div>
                   </div>
-                  <p className="text-slate-600 text-[14px] font-medium leading-relaxed mb-5">
-                    {msg.content}
-                  </p>
+                  <div className="bg-slate-50 p-4 rounded-xl mb-5 border border-slate-100/50">
+                    <div className="text-sm text-slate-600 font-medium mb-1">Approved Amount</div>
+                    <div className="text-2xl font-black text-emerald-600 mb-2">₹{new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(appState.requestedAmount)}</div>
+                    <p className="text-slate-500 text-[13px] leading-relaxed">
+                      {msg.content}
+                    </p>
+                  </div>
                   <div className="flex space-x-3">
-                    <button className="flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
-                      <CheckCircle2 size={16} className="mr-1.5" /> Accept Terms
+                    <button className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95 shadow-sm">
+                      Download PDF
                     </button>
-                    <button className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95">
-                      Need Changes
+                    <button className="flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
+                      <CheckCircle2 size={16} className="mr-1.5" /> Accept & E-Sign
                     </button>
                   </div>
                 </div>

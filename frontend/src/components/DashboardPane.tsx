@@ -1,40 +1,33 @@
-
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppState } from '../types';
 import { User, CheckCircle2, Circle, FileText, BadgeCheck } from 'lucide-react';
 import clsx from 'clsx';
+import MetricCard from './MetricCard';
+import EmiDonutChart from './EmiDonutChart';
+import confetti from 'canvas-confetti';
+import { useEffect, useRef } from 'react';
 
 interface Props {
   appState: AppState;
 }
 
-const StatCard = ({ label, value, prefix = '', suffix = '' }: { label: string; value: string | number; prefix?: string; suffix?: string }) => {
-  return (
-    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center items-start overflow-hidden">
-      <span className="text-sm text-slate-500 font-medium mb-1">{label}</span>
-      <div className="text-2xl font-bold text-slate-800 flex items-baseline relative">
-        {prefix && <span className="text-lg mr-1 text-slate-600">{prefix}</span>}
-        <AnimatePresence mode="popLayout">
-          <motion.span
-            key={value}
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -20, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="inline-block"
-          >
-            {value}
-          </motion.span>
-        </AnimatePresence>
-        {suffix && <span className="text-lg ml-1 text-slate-600">{suffix}</span>}
-      </div>
-    </div>
-  );
-};
-
 export default function DashboardPane({ appState }: Props) {
-  // Add formatters
-  const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(val);
+  const badgeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (appState.underwritingStatus === 'Approved' && badgeRef.current) {
+      const rect = badgeRef.current.getBoundingClientRect();
+      const x = (rect.left + rect.width / 2) / window.innerWidth;
+      const y = (rect.top + rect.height / 2) / window.innerHeight;
+      
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { x, y },
+        colors: ['#10b981', '#34d399', '#059669', '#fbbf24']
+      });
+    }
+  }, [appState.underwritingStatus]);
 
   return (
     <div className="w-[30%] min-w-[320px] max-w-[400px] border-r border-slate-200 bg-slate-50 flex flex-col p-6 overflow-y-auto z-10">
@@ -55,34 +48,43 @@ export default function DashboardPane({ appState }: Props) {
       <div className="mb-8">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Financial Overview</h3>
         <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Requested" value={formatCurrency(appState.requestedAmount)} prefix="₹" />
-          <StatCard label="Int. Rate (ROI)" value={appState.roi} suffix="%" />
-          <StatCard label="Tenure" value={appState.tenure} suffix=" Mo" />
-          <StatCard label="Monthly EMI" value={formatCurrency(appState.emi)} prefix="₹" />
+          <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
+          <MetricCard label="Int. Rate (ROI)" value={appState.roi} decimals={1} suffix="%" />
+          <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
+          <MetricCard label="Monthly EMI" value={appState.emi} prefix="₹" />
         </div>
+        <EmiDonutChart principal={appState.requestedAmount} emi={appState.emi} tenure={appState.tenure} />
       </div>
 
       {/* Underwriting Status */}
       <div className="mb-8">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Underwriting Status</h3>
-        <motion.div
-          key={appState.underwritingStatus}
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className={clsx(
-            "px-4 py-3 rounded-xl border-2 flex items-center font-bold text-sm transition-colors shadow-sm",
-            {
-              'bg-amber-50 border-amber-200 text-amber-700': appState.underwritingStatus === 'Pending Evaluation',
-              'bg-emerald-50 border-emerald-200 text-emerald-700': appState.underwritingStatus === 'Approved',
-              'bg-red-50 border-red-200 text-red-700': appState.underwritingStatus === 'Soft-Rejected',
-            }
-          )}
-        >
-          {appState.underwritingStatus === 'Pending Evaluation' && <Circle size={18} className="mr-2 animate-pulse" />}
-          {appState.underwritingStatus === 'Approved' && <CheckCircle2 size={18} className="mr-2" />}
-          {(appState.underwritingStatus === 'Soft-Rejected') && <Circle size={18} className="mr-2" />}
-          {appState.underwritingStatus}
-        </motion.div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={appState.underwritingStatus}
+            initial={{ scale: 0.9, opacity: 0, x: -20 }}
+            animate={{ scale: 1, opacity: 1, x: 0 }}
+            exit={{ scale: 0.9, opacity: 0, x: 20 }}
+            transition={{ duration: 0.4, type: 'spring' }}
+          >
+            <div
+              ref={badgeRef}
+              className={clsx(
+                "px-4 py-3 rounded-xl border-2 flex items-center font-bold text-sm transition-colors shadow-sm",
+                {
+                  'bg-amber-50 border-amber-200 text-amber-700': appState.underwritingStatus === 'Pending Evaluation',
+                  'bg-emerald-50 border-emerald-400 text-emerald-700 shadow-emerald-900/10': appState.underwritingStatus === 'Approved',
+                  'bg-red-50 border-red-200 text-red-700': appState.underwritingStatus === 'Soft-Rejected',
+                }
+              )}
+            >
+              {appState.underwritingStatus === 'Pending Evaluation' && <Circle size={18} className="mr-2 animate-pulse" />}
+              {appState.underwritingStatus === 'Approved' && <CheckCircle2 size={18} className="mr-2" />}
+              {(appState.underwritingStatus === 'Soft-Rejected') && <Circle size={18} className="mr-2" />}
+              {appState.underwritingStatus === 'Approved' ? 'Approved - Low Risk' : appState.underwritingStatus}
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Document Vault */}

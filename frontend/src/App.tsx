@@ -104,6 +104,40 @@ function App() {
         ]);
       }, 1500);
 
+    } else if (text.toLowerCase().includes('approve')) {
+      const thinkingMsgId = 'msg-thinking-' + Date.now();
+      setAppState(prev => ({ ...prev, activeAgent: '🔍 Verification Agent confirming final checks...' }));
+      
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          id: thinkingMsgId,
+          sender: 'agent',
+          type: 'thinking',
+          content: 'Verification Agent checking documents...',
+          timestamp: new Date(),
+        }
+      ]);
+
+      setTimeout(() => {
+        setAppState(prev => ({ ...prev, activeAgent: '✍️ Master Agent issuing sanction...' }));
+      }, 1500);
+
+      setTimeout(() => {
+        setAppState(prev => ({ ...prev, activeAgent: null, underwritingStatus: 'Approved' }));
+        setChatHistory((prev) => prev.filter((m) => m.id !== thinkingMsgId));
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: 'msg-response-' + Date.now(),
+            sender: 'agent',
+            type: 'sanction_letter',
+            content: "Congratulations! Your loan has been fully approved. Please review the Sanction Document below.",
+            timestamp: new Date(),
+          }
+        ]);
+      }, 3000);
+      
     } else if (text.toLowerCase().includes('too high')) {
       const thinkingMsgId = 'msg-thinking-' + Date.now();
       setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent evaluating risk boundaries...' }));
