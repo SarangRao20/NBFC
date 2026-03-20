@@ -33,3 +33,14 @@ temp_*.jpg
 temp_*.png
 *.pdf
 node_modules/
+.agent/
+.gemini/
+.gsd/
+adapters/
+docs/
+scripts/
+model_capabilities.yaml
+GSD-STYLE.md
+PROJECT_RULES.md
+CHANGELOG.md
+LICENSEStep
