@@ -468,7 +468,8 @@ def render_chat():
                     st.session_state.sanction_pdf = san_result.get("sanction_pdf", "")
                     san_msg = san_result["messages"][0].content
                     st.session_state.chat_history.append({"role": "assistant", "content": san_msg})
-                elif st.session_state.decision == "reject":
+                
+                elif st.session_state.decision in ("reject", "hard_reject"):
                     from utils.pdf_generator import generate_rejection_letter
                     pdf_path = generate_rejection_letter(
                         customer, st.session_state.loan_terms, st.session_state.reasons, customer.get("id", "NEW")
@@ -477,50 +478,85 @@ def render_chat():
                     rej_msg = f"📜 **Rejection Letter Generated**\nFile: `{pdf_path}`\nYou can download it below."
                     st.session_state.chat_history.append({"role": "assistant", "content": rej_msg})
 
-                    # Cross-Selling logic
-                    limit = customer.get("pre_approved_limit", 0)
-                    if limit > 0 and st.session_state.loan_terms.get("principal", 0) > limit:
-                        cross_msg = (
-                            f"💡 **Alternative Offer:** While we couldn't approve ₹{st.session_state.loan_terms.get('principal'):,}, "
-                            f"you do have a pre-approved limit of **₹{limit:,}**.\n"
-                            f"Would you like to apply for a smaller loan within this limit?"
-                        )
-                        st.session_state.chat_history.append({"role": "assistant", "content": cross_msg})
+                elif st.session_state.decision == "soft_reject":
+                    st.session_state.alternative_offer = uw_result.get("alternative_offer", 0)
+                    st.session_state.pipeline_phase = "persuasion_loop"
+                    # Do not generate PDF yet! Divert to chat input.
 
-                # 6. Advisor Agent (always runs — tips for both outcomes)
-                adv_state = {
-                    "customer_data": customer,
-                    "loan_terms": st.session_state.loan_terms,
-                    "decision": st.session_state.decision,
-                    "dti_ratio": st.session_state.dti_ratio,
-                    "fraud_score": st.session_state.fraud_score
-                }
-                try:
-                    adv_result = advisor_agent_node(adv_state)
-                    adv_msg = adv_result["messages"][0].content
-                    st.session_state.chat_history.append({"role": "assistant", "content": adv_msg})
-                except Exception:
-                    pass
+                # 6. Advisor Agent (always runs except for soft_reject where we negotiate instead)
+                if st.session_state.decision != "soft_reject":
+                    adv_state = {
+                        "customer_data": customer,
+                        "loan_terms": st.session_state.loan_terms,
+                        "decision": st.session_state.decision,
+                        "dti_ratio": st.session_state.dti_ratio,
+                        "fraud_score": st.session_state.fraud_score
+                    }
+                    try:
+                        adv_result = advisor_agent_node(adv_state)
+                        adv_msg = adv_result["messages"][0].content
+                        st.session_state.chat_history.append({"role": "assistant", "content": adv_msg})
+                    except Exception:
+                        pass
 
-                # Save loan application to DB
-                save_loan_application(
-                    phone=st.session_state.phone or "",
-                    name=customer.get("name", "User"),
-                    terms=st.session_state.loan_terms,
-                    decision=st.session_state.decision or "unknown",
-                    dti=st.session_state.dti_ratio,
-                    score=customer.get("credit_score", 0),
-                    fraud=st.session_state.fraud_score,
-                    reasons=st.session_state.reasons,
-                    pdf=st.session_state.sanction_pdf
-                )
-
-                st.session_state.pipeline_phase = "complete"
+                    # Save final loan application to DB
+                    save_loan_application(
+                        phone=st.session_state.phone or "",
+                        name=customer.get("name", "User"),
+                        terms=st.session_state.loan_terms,
+                        decision=st.session_state.decision or "unknown",
+                        dti=st.session_state.dti_ratio,
+                        score=customer.get("credit_score", 0),
+                        fraud=st.session_state.fraud_score,
+                        reasons=st.session_state.reasons,
+                        pdf=st.session_state.sanction_pdf
+                    )
+                    st.session_state.pipeline_phase = "complete"
 
                 # Persist chat
                 if st.session_state.chat_session_id:
                     update_chat_session(st.session_state.chat_session_id, st.session_state.chat_history)
 
+            st.rerun()
+
+    # ── PERSUASION LOOP PHASE ────────────────────────────────────────────────
+    elif phase == "persuasion_loop":
+        if user_input := st.chat_input("Do you accept the alternative offer? (Yes/No)", key="persuasion_input"):
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            
+            if "yes" in user_input.lower() or "accept" in user_input.lower():
+                alt_offer = st.session_state.get("alternative_offer", 0)
+                st.session_state.loan_terms["principal"] = alt_offer
+                
+                response_msg = (
+                    f"🎉 **Offer Accepted!**\n"
+                    f"I have automatically altered your loan principal down to exactly **₹{alt_offer:,.0f}** to safely clear the strict 50% "
+                    f"Debt-To-Income limit.\n\n"
+                    f"Your application has now mathematically passed all security limits and is **INSTANTLY APPROVED**! "
+                    f"Generating your Official PDF Sanction Letter right now..."
+                )
+                st.session_state.chat_history.append({"role": "assistant", "content": response_msg})
+                
+                with st.spinner("💳 Recalculating Matrix..."):
+                    # Recalculate EMI instantly
+                    emi_result = emi_agent_node({"loan_terms": st.session_state.loan_terms, "customer_data": customer})
+                    st.session_state.loan_terms = emi_result["loan_terms"]
+                    
+                    # Generate Sanction PDF automatically
+                    san_state = { "customer_id": customer.get("id", "NEW"), "customer_data": customer, "loan_terms": st.session_state.loan_terms, "dti_ratio": st.session_state.dti_ratio }
+                    san_result = sanction_agent_node(san_state)
+                    st.session_state.sanction_pdf = san_result.get("sanction_pdf", "")
+                    
+                    st.session_state.decision = "approve"
+                    st.session_state.pipeline_phase = "complete"
+            else:
+                st.session_state.chat_history.append({"role": "assistant", "content": "I completely understand! We have safely paused your application. When you are ready for a smaller amount, or if your verified business income increases, please come back any time."})
+                st.session_state.decision = "hard_reject"
+                st.session_state.pipeline_phase = "complete"
+                
+            # Finish Saving the state
+            if st.session_state.chat_session_id:
+                update_chat_session(st.session_state.chat_session_id, st.session_state.chat_history)
             st.rerun()
 
     # ── COMPLETE PHASE ───────────────────────────────────────────────────────
