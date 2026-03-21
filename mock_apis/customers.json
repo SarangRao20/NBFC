@@ -56,5 +56,19 @@
         "existing_emi_total": 0,
         "current_loans": [],
         "risk_flags": []
+    },
+    {
+        "id": "CUST005",
+        "name": "Shital Sonawane",
+        "phone": "7418523690",
+        "email": "shitals@gmail.com",
+        "password": "shital123",
+        "city": "Unknown",
+        "salary": 0,
+        "credit_score": 700,
+        "pre_approved_limit": 100000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": []
     }
 ]

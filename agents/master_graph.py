@@ -23,6 +23,7 @@ from agents.fraud_agent import fraud_agent_node
 from agents.underwriting import underwriting_agent_node
 from agents.advisor_agent import advisor_agent_node
 from agents.sanction_agent import sanction_agent_node
+from agents.persuasion_agent import persuasion_agent_node
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -60,11 +61,15 @@ def supervisor_node(state: MasterState) -> dict:
     elif not decision:
         route = "underwriting_agent"
 
-    # Phase 7: Generate sanction or give advice
+    # Phase 7: Soft reject → Persuasion Loop (per workflow diagram)
+    elif decision == "soft_reject":
+        route = "persuasion_agent"
+
+    # Phase 8: Generate sanction (approved only)
     elif decision == "approve" and not state.get("sanction_pdf"):
         route = "sanction_agent"
 
-    # Phase 8: Final advice (both approved and rejected)
+    # Phase 9: Final advice (both approved and rejected)
     else:
         route = "advisor_agent"
 
@@ -90,7 +95,8 @@ def sales_wrapper_node(state: MasterState) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 AGENT_ROUTES = [
     "sales_agent", "emi_agent", "document_agent", "verification_agent",
-    "fraud_agent", "underwriting_agent", "advisor_agent", "sanction_agent", "__end__"
+    "fraud_agent", "underwriting_agent", "advisor_agent", "sanction_agent",
+    "persuasion_agent", "__end__"
 ]
 
 def supervisor_router(state: MasterState) -> str:
@@ -115,7 +121,7 @@ def supervisor_router(state: MasterState) -> str:
 #  COMPILE THE MASTER GRAPH
 # ═══════════════════════════════════════════════════════════════════════════════
 def compile_master_graph():
-    """Builds and compiles the full 9-agent StateGraph."""
+    """Builds and compiles the full 10-agent StateGraph (9 original + Persuasion Loop)."""
     workflow = StateGraph(MasterState)
 
     # Register all nodes
@@ -128,6 +134,7 @@ def compile_master_graph():
     workflow.add_node("underwriting_agent", underwriting_agent_node)
     workflow.add_node("advisor_agent", advisor_agent_node)
     workflow.add_node("sanction_agent", sanction_agent_node)
+    workflow.add_node("persuasion_agent", persuasion_agent_node)
 
     # Entry point
     workflow.add_edge(START, "supervisor")
@@ -141,6 +148,11 @@ def compile_master_graph():
     workflow.add_edge("underwriting_agent", "supervisor")
     workflow.add_edge("sanction_agent", "advisor_agent")
     workflow.add_edge("advisor_agent", END)
+
+    # Persuasion Loop: returns to Supervisor for re-routing
+    # If user accepts → decision reset to "" → Supervisor routes to underwriting_agent
+    # If user declines → decision set to "reject" → Supervisor routes to advisor_agent
+    workflow.add_edge("persuasion_agent", "supervisor")
 
     # Dynamic routing from Supervisor
     workflow.add_conditional_edges("supervisor", supervisor_router)

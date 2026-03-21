@@ -11,8 +11,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.messages import AIMessage
 
+def _calculate_max_principal(target_emi: float, interest_rate_pa: float, tenure_months: int) -> float:
+    """Reverse-calculates the max principal for a target EMI."""
+    if target_emi <= 0 or tenure_months <= 0 or interest_rate_pa <= 0:
+        return 0.0
+    r = (interest_rate_pa / 12) / 100
+    n = tenure_months
+    # P = EMI * [ ((1+r)^n - 1) / (r * (1+r)^n) ]
+    p = target_emi * (((1 + r) ** n) - 1) / (r * ((1 + r) ** n))
+    return round(p, 2)
+
 def underwriting_agent_node(state: dict) -> dict:
-    """Deterministic underwriting engine checking NTC and FOIR heuristics."""
+    """Deterministic underwriting engine evaluating all 9 NBFC heuristics."""
     print("⚖️ [UNDERWRITING AGENT] Evaluating advanced eligibility rules...")
 
     customer = state.get("customer_data", {})
@@ -26,8 +36,9 @@ def underwriting_agent_node(state: dict) -> dict:
     
     principal = terms.get("principal", 0)
     emi = terms.get("emi", 0)
+    rate = terms.get("rate", 12.0)
+    tenure = terms.get("tenure", 12)
     fraud_score = state.get("fraud_score", 0.0)
-    max_affordable_principal = terms.get("max_affordable_principal", 0)
 
     reasons = []
     decision = "approve"
@@ -109,23 +120,32 @@ def underwriting_agent_node(state: dict) -> dict:
     if decision == "approve":
         msg = (f"✅ **LOAN APPROVED**\n\n"
                f"**Decision Reasoning**: Your EMI of ₹{emi:,.2f} accounts for {dti*100:.1f}% of your monthly income, "
-               f"which is comfortably within our safety threshold. Your application has been fully sanctioned under a **{risk_level.title()} Risk** classification.")
+               f"which is comfortably within our safety threshold. Coupled with a strong credit history (Score: {score}), "
+               f"your application has been fully sanctioned under a **{risk_level.title()} Risk** classification.")
     
     elif decision == "pending_docs":
         msg = (f"⏳ **LOAN PENDING (Additional Documents Required)**\n\n"
-               f"**Decision Reasoning**: {' '.join(reasons)}")
-        
+               f"**Decision Reasoning**: Your requested loan of ₹{principal:,} exceeds your standard pre-approved limit "
+               f"of ₹{pre_approved:,}. To safely process this, we require additional income verification. "
+               f"Please upload your latest salary slip.")
+
     elif decision == "soft_reject":
         reason_text = "\n".join(f"• {r}" for r in reasons)
-        msg = (f"❌ **LOAN BLOCKED AT CURRENT AMOUNT**\n\n"
-               f"**Cause**:\n{reason_text}\n\n"
-               f"💡 **Smart Re-Optimization Offer**: While we cannot approve ₹{principal:,.0f}, we can instantly approve an optimized alternative "
-               f"loan amount of **₹{alternative_offer:,.0f}** for the exact same tenure based on your verified safety limits.")
-               
+        msg = (f"⚠️ **LOAN UNDER REVIEW — Negotiation Available**\n\n"
+               f"**Decision Reasoning**:\n{reason_text}\n\n"
+               f"💡 **Good News**: Your credit profile (Score: {score}) qualifies you for a revised offer.\n"
+               f"We can approve up to **₹{alternative_offer:,.0f}** for the same tenure.\n\n"
+               f"Our Sales Advisor will now help you explore modified terms.")
+
     else:
         reason_text = "\n".join(f"• {r}" for r in reasons)
         msg = (f"❌ **LOAN REJECTED**\n\n"
-               f"**Decision Reasoning**:\n{reason_text}")
+               f"**Decision Reasoning**:\n{reason_text}\n\n")
+        
+        if alternative_offer > 1000:
+            msg += (f"💡 **Smart Re-Optimization Offer**: While we cannot approve ₹{principal:,.0f}, based on your "
+                    f"fixed income obligations and our 50% DTI rules, we can instantly approve an optimized alternative "
+                    f"loan amount of **₹{alternative_offer:,.0f}** for the same tenure.")
 
     return {
         "decision": decision,
