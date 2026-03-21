@@ -19,7 +19,7 @@ export default function EmiDonutChart({ principal, emi, tenure }: Props) {
     <div className="w-full bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mt-4">
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Repayment Breakdown</h3>
       <div className="h-[180px] w-full relative">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
           <PieChart>
             <Pie
               data={data}

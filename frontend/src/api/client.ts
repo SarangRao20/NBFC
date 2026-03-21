@@ -12,6 +12,10 @@ export const apiClient = {
     if (!res.ok) throw new Error('Failed to get state');
     return res.json();
   },
+  
+  async getSession(sessionId: string) {
+    return this.getState(sessionId);
+  },
 
   async identifyCustomer(sessionId: string, phone: string, email?: string, password?: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/identify-customer`, {
@@ -111,6 +115,15 @@ export const apiClient = {
 
   async endSession(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/end`, { method: 'POST' });
+    return res.json();
+  },
+  
+  async chat(sessionId: string, message: string, history: any[] = []) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history }),
+    });
     return res.json();
   }
 };

@@ -38,3 +38,14 @@ async def capture_loan(session_id: str, req: CaptureLoanRequest):
     if result is None:
         raise SessionNotFoundError(session_id)
     return result
+@router.post("/{session_id}/chat", summary="Conversational interface with Sales/Registration Agent")
+async def chat(session_id: str, req: dict):
+    """General chat endpoint that routes to Sales or Registration agents.
+    Expects {"message": "user message", "history": []}
+    """
+    result = await sales_service.chat_with_agent(
+        session_id, req.get("message", ""), req.get("history", [])
+    )
+    if result is None:
+        raise SessionNotFoundError(session_id)
+    return result

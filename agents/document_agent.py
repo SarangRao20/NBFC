@@ -75,28 +75,55 @@ OUTPUT — Return ONLY this JSON (no markdown, no prose):
 }"""
 
 
-def document_agent_node(state: dict) -> dict:
-    """Processes an uploaded document image using Gemini Vision with detailed forensic prompt."""
-    print("📄 [DOCUMENT AGENT] Processing uploaded document...")
+def document_agent_node(state: dict):
+    """
+    Handles Document Uploads via Vision LLM.
+    """
+    print("📎 [DOCUMENT AGENT] Verifying documents...")
+    log = list(state.get("action_log") or [])
+    log.append("📎 Analysing uploaded document via Vision Agent")
 
     doc_path = state.get("documents", {}).get("salary_slip_path", "")
 
     if not doc_path or not os.path.exists(doc_path):
-        return {
-            "documents": {**state.get("documents", {}), "verified": False},
-            "messages": [AIMessage(content=(
+        # Check if we already asked for a document in a previous message
+        already_asked = any(
+            "Document Required" in (m.content if hasattr(m, "content") else "")
+            for m in state.get("messages", [])
+            if not isinstance(m, HumanMessage)
+        )
+        if already_asked:
+            msg = (
+                "📎 **File Upload Needed**\n\n"
+                "I see your message, but I still need you to **attach a document file** to continue. "
+                "Please use the 📎 attachment button below the chat to upload:\n"
+                "• **PAN Card** or **Aadhaar Card** — for identity\n"
+                "• **Salary Slip** — for income proof\n\n"
+                "_Supported formats: JPG, PNG, PDF (max 5MB)_"
+            )
+        else:
+            msg = (
                 "📄 **Document Required**\n\n"
                 "Please upload one of the following documents to continue:\n"
                 "• **PAN Card** or **Aadhaar Card** (for basic KYC)\n"
                 "• **Salary Slip** (if your loan exceeds your pre-approved limit)\n"
                 "• **Bank Statement** (last 3 months for extended review)\n\n"
                 "Accepted formats: JPG, PNG, PDF"
-            ))]
+            )
+        return {
+            "documents": {**state.get("documents", {}), "verified": False},
+            "messages": [AIMessage(content=msg)],
+            "action_log": log
         }
 
     # Save a permanent audit copy
-    audit_filename = f"audit_{os.path.basename(doc_path)}"
-    audit_path = os.path.join("data", "uploads", audit_filename)
+    log.append("💾 Document saved securely to user audit vault")
+    phone = state.get("customer_data", {}).get("phone", "anonymous")
+    audit_dir = os.path.join("data", "audit", phone)
+    os.makedirs(audit_dir, exist_ok=True)
+    import time
+    audit_filename = f"{int(time.time())}_{os.path.basename(doc_path)}"
+    audit_path = os.path.join(audit_dir, audit_filename)
     shutil.copy2(doc_path, audit_path)
     print(f"  📁 Audit copy saved: {audit_path}")
 
@@ -112,6 +139,7 @@ def document_agent_node(state: dict) -> dict:
     vision_llm = get_vision_llm()
 
     try:
+        log.append("🔍 Running OCR and structural analysis")
         message = HumanMessage(content=[
             {"type": "text", "text": DOCUMENT_OCR_PROMPT},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_data}"}}
@@ -162,10 +190,29 @@ def document_agent_node(state: dict) -> dict:
             f"{employer_line}"
         )
 
-        return {"documents": doc_data, "messages": [AIMessage(content=msg)]}
+        # Determine verification status and log it
+        docs = state.get("documents", {})
+        confidence_percent = doc_data['confidence'] * 100
+        if doc_data['confidence'] >= 0.6 and not doc_data['tampered']: # Assuming a threshold for 'approve'
+            log.append(f"✅ Document verified: {doc_data.get('document_type', 'Unknown')}")
+            docs["verified"] = True
+            docs["extracted_data"] = extracted # Store the raw extracted data
+            docs["score"] = confidence_percent
+        else:
+            reason = doc_data['tamper_reason'] if doc_data['tampered'] else "Low confidence or unclear image"
+            log.append(f"⚠️ Document rejected: {reason}")
+            docs["verified"] = False
+            msg = f"⚠️ We couldn't verify this document. Reason: {reason}.\nPlease upload a clearer copy."
+
+        return {
+            "documents": doc_data,
+            "messages": [AIMessage(content=msg)],
+            "action_log": log
+        }
 
     except Exception as e:
         print(f"  ❌ Document agent error: {e}")
+        log.append(f"❌ Vision analysis failed: {str(e)[:80]}") # Log the error
         return {
             "documents": {**state.get("documents", {}), "verified": False},
             "messages": [AIMessage(content=(

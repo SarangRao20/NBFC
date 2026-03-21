@@ -14,8 +14,9 @@ class CustomerData(TypedDict, total=False):
     phone: str
     city: str
     salary: float
-    score: int
-    limit: float
+    credit_score: int
+    pre_approved_limit: float
+    existing_emi_total: float
 
 class DocumentData(TypedDict, total=False):
     salary_slip_path: str
@@ -56,6 +57,11 @@ class MasterState(TypedDict):
     # Persuasion Loop State
     negotiation_round: int
     persuasion_options: List[Dict]
+    
+    # Registration & Intent
+    is_authenticated: bool
+    otp_sent: bool
+    intent: str  # 'loan', 'advice', 'kyc', 'none'
     
     # Routing Tracker: which agent holds the baton currently
     next_agent: str

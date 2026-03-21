@@ -13,16 +13,9 @@ class RequestDocumentsResponse(BaseModel):
 # ── Step 6: POST /session/{id}/extract-ocr ────────────────────────────────────
 # Note: This endpoint accepts file upload (multipart/form-data), no request body schema.
 class OCRExtractionResponse(BaseModel):
-    document_type: str
-    name_extracted: str
-    salary_extracted: float
-    gross_salary_extracted: float = 0.0
-    employer_name: str = ""
-    document_number: str = ""
+    extracted_data: dict
     confidence: float
-    tampered: bool
-    tamper_reason: str = ""
-    notes: str = ""
+    document_id: Optional[str] = None
     message: str
 
 

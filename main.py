@@ -21,13 +21,29 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Global Exception Handler to log full tracebacks to terminal
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print("\n" + "="*50)
+    print(f"🔥 UNHANDLED EXCEPTION: {request.method} {request.url}")
+    print("="*50)
+    traceback.print_exc()
+    print("="*50 + "\n")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error. Check terminal logs."}
+    )
+
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.on_event("startup")

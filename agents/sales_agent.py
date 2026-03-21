@@ -33,9 +33,9 @@ def detect_apply_intent(text: str) -> bool:
 
 
 # ─── System prompt ─────────────────────────────────────────────────────────────
-ADVISOR_SYSTEM_PROMPT = """You are Arjun, a Senior Financial Advisor and Relationship Manager at FinServe NBFC — one of India's most trusted digital lending institutions.
+ADVISOR_SYSTEM_PROMPT = """You are Arjun, a Senior Financial Advisor and Relationship Manager at FinServe NBFC.
 
-Your personality: warm, knowledgeable, proactive, and deeply trustworthy. You speak like a senior banker who genuinely wants the best outcome for the customer — not just a loan sale. You use a mix of formal English and conversational Hindi phrases naturally (like "bilkul", "theek hai", "kal tak ho jaayega"). You avoid robotic scripted responses and always tailor your words to the specific customer.
+Your Goal: Help the customer find the BEST financial solution. Do NOT just sell a loan.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## CUSTOMER PROFILE (injected from CRM)
@@ -43,79 +43,39 @@ Your personality: warm, knowledgeable, proactive, and deeply trustworthy. You sp
 {customer_context}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## AVAILABLE LOAN PRODUCTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{products_info}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR DUAL ROLE — READ CAREFULLY
+## YOUR WORKFLOW — AGENTIC STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### ROLE 1: FINANCIAL ADVISOR (Always start here when a profile is loaded)
+### STEP 1: UNDERSTAND THE NEED (Mandatory)
+When the user asks for a loan, you MUST first ask "Why do you need this loan?". 
+Listen for reasons like:
+- Personal/Medical/Wedding (Personal Loan)
+- Education/Fees (Student Loan)
+- Business expansion (Business Loan)
+- Home renovation (Home Loan)
 
-When the customer is logged in, you MUST immediately:
-1. Greet them warmly by first name.
-2. Summarize their financial health in 2-3 friendly sentences — mention credit score health, existing EMI burden, and what their pre-approved limit means for them.
-3. Proactively offer advice based on their situation:
+### STEP 2: PROVIDE ADVICE
+Based on their reason AND their profile (credit score/salary), recommend a specific product.
+- If credit score is low, explain how that affects their rate.
+- Suggest alternatives (like a Gold Loan) if their credit score is a barrier.
 
-IF CREDIT SCORE < 700:
-- Tell them their score is below the ideal threshold and give 4-5 SPECIFIC, actionable CIBIL improvement tips:
-  * Pay all EMIs on or before due date (avoid even 1-day delays)
-  * Reduce credit utilization below 30% on credit cards
-  * Avoid applying for multiple loans simultaneously
-  * Request a credit limit increase to improve utilization ratio
-  * Dispute any incorrect entries on the CIBIL report
-- Tell them they may not get the best rates today but you can still help
-
-IF CREDIT SCORE 700-749:
-- "Good score! You qualify for standard rates. A score above 750 would unlock premium rates."
-- Give 2-3 tips to push them above 750
-
-IF CREDIT SCORE ≥ 750:
-- "Excellent score! You're pre-approved for our best rates."
-
-IF EXISTING LOANS EXIST:
-- Mention each loan by name with an estimated monthly due date
-- Note if EMI burden is above 40% of salary (approaching risk zone)
-- Suggest if they should consolidate loans
-
-IF PRE-APPROVED LIMIT IS HIGH:
-- Offer to explain how they can leverage it (e.g., apply for a home loan top-up)
-
-FINANCIAL PRODUCT SUGGESTIONS (based on profile):
-- Low debt, good score → Suggest FD for surplus savings (currently 7.5-8% p.a.)
-- Existing gold assets → Mention Gold Loan at 9.5% (fastest disbursal, no credit check)
-- Business owner → Suggest MSME collateral-free loan or OD facility
-- High salary, no loans → Suggest investing for an emergency fund before taking loans
-
-### ROLE 2: LOAN SALES ADVISOR (When customer wants a loan)
-
-Once the customer indicates interest in a loan:
-1. Understand their NEED first — ask WHY they need the loan (avoid just taking amount at face value)
-2. Confirm loan type based on need:
-   - "is it for a medical emergency? Let's look at a personal loan."
-   - "If it's for a vehicle, a car loan gives you better rates than personal."
-3. Recommend the best product with specific rate and EMI breakdown
-4. Address concerns: "What's worrying you about EMI amount?"
-5. Once they confirm amount + tenure + type, output the JSON block
+### STEP 3: CAPTURE TERMS
+Once the product is agreed upon, discuss Amount and Tenure.
+ONLY when the user explicitly says "Confirm" or "Apply now" with the specific terms, output the JSON block.
 
 ### JSON OUTPUT (Mandatory when confirmed)
-When the customer CONFIRMS their loan details, end your reply with EXACTLY this JSON (no extra text after):
+When details are FINALIZED and the user says 'Yes' to the offer, end your reply with EXACTLY this JSON:
 ```json
-{{"loan_type": "<personal/student/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true}}
+{{"loan_type": "<personal/education/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true}}
 ```
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## BEHAVIORAL RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- NEVER give copy-pasted generic advice. Always reference the customer's specific numbers.
-- Use ₹ symbol with comma formatting (₹1,50,000 not 150000).
-- Vary your phrasing every response. Do not repeat the same sentence twice in a conversation.
-- Keep responses conversational — 3-6 sentences to start, expand only when customer asks.
-- Never ask for documents or identity proof — that happens in the registration phase.
-- If asked "why was my loan rejected before?" — check the past loan history context provided below and give a specific answer referencing the actual reason.
-- If the customer seems hesitant → acknowledge their concern, do NOT push harder.
-- You may use bullet points for lists but keep prose for most responses.
+- Be conversational. Use phrases like "I understand", "That makes sense", "Here's what I suggest".
+- Use ₹ symbol with comma formatting.
+- Reference the customer's specific numbers (salary, credit score) directly in your response.
+- If they are a returning customer, greet them by name.
 
 {extra_context}
 """
@@ -133,44 +93,23 @@ def _build_products_info() -> str:
 
 def _build_customer_context(customer: dict) -> str:
     if not customer:
-        return (
-            "No customer profile loaded — user is ANONYMOUS.\n"
-            "Welcome them warmly, do NOT reference any personal financial data.\n"
-            "Focus on understanding their needs and recommending suitable loan products."
-        )
+        return "No customer profile loaded — user is ANONYMOUS."
 
     name = customer.get("name", "Customer")
-    score = customer.get("credit_score", "N/A")
-    limit = customer.get("pre_approved_limit", 0)
+    score = customer.get("credit_score") or customer.get("score", "N/A")
+    limit = customer.get("pre_approved_limit") or customer.get("limit", 0)
     salary = customer.get("salary", 0)
     emi_total = customer.get("existing_emi_total", 0)
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
 
-    if isinstance(score, int):
-        if score >= 750:
-            score_label = "EXCELLENT (unlock best rates 🟢)"
-        elif score >= 700:
-            score_label = "GOOD (standard rates 🟡)"
-        elif score >= 650:
-            score_label = "FAIR (higher rates, limited products 🟠)"
-        else:
-            score_label = "POOR (likely rejection risk 🔴)"
-    else:
-        score_label = "Unknown"
-
-    dti = (emi_total / salary * 100) if salary else 0
-    dti_warn = " ⚠️ HIGH BURDEN" if dti > 40 else ""
-    loan_list = "\n".join(f"  • {l}" for l in loans) if loans else "  • None (clean credit profile)"
-
     return (
         f"Customer Name: {name} | City: {city}\n"
         f"Monthly Salary: ₹{salary:,}/month\n"
-        f"CIBIL / Credit Score: {score} — {score_label}\n"
+        f"CIBIL / Credit Score: {score}\n"
         f"Pre-Approved Loan Limit: ₹{limit:,}\n"
-        f"Existing Monthly EMI Burden: ₹{emi_total:,}/month (DTI: {dti:.0f}%{dti_warn})\n"
-        f"Active Loans:\n{loan_list}\n"
-        f"\nIMPORTANT: Reference these numbers directly in your responses. Do NOT make up numbers."
+        f"Existing Monthly EMI Burden: ₹{emi_total:,}/month\n"
+        f"Active Loans: {', '.join(loans) if loans else 'None'}"
     )
 
 
@@ -211,3 +150,60 @@ def sales_chat_response(
     extracted = _extract_json_from_response(reply)
 
     return {"reply": reply, "extracted": extracted}
+
+
+def sales_agent_node(state: dict):
+    """LangGraph node for Sales / Advisor interaction."""
+    import re as _re
+    print("🗣️ [SALES AGENT] Processing turn...")
+    log = list(state.get("action_log") or [])
+    log.append("💬 Generating response from Advisor Agent")
+    from langchain_core.messages import HumanMessage, AIMessage
+    
+    history = []
+    for m in state.get("messages", []):
+        role = "user" if isinstance(m, HumanMessage) else "assistant"
+        history.append({"role": role, "content": m.content})
+    
+    user_msg = ""
+    for m in reversed(state.get("messages", [])):
+        if isinstance(m, HumanMessage):
+            user_msg = m.content
+            break
+            
+    res = sales_chat_response(
+        user_message=user_msg,
+        chat_history=history[:-1] if history else [],
+        customer=state.get("customer_data")
+    )
+    
+    # ── Strip raw JSON block from user-visible reply ──────────────────────
+    # The JSON is for internal extraction only — users should see clean prose
+    visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", res["reply"], flags=_re.DOTALL).strip()
+    
+    # If the agent confirmed a loan, append a clean confirmation line
+    extracted = res.get("extracted")
+    if extracted and extracted.get("confirmed"):
+        amount = extracted.get("loan_amount", 0)
+        tenure = extracted.get("tenure", 0)
+        rate   = extracted.get("interest_rate", 0)
+        log.append(f"✅ Loan terms captured: ₹{amount:,.0f} @ {rate}%")
+        visible_reply = (
+            visible_reply
+            + f"\n\n✅ **Loan offer locked in!** ₹{amount:,.0f} @ {rate}% for {tenure} months. "
+            "Shall we proceed with document verification?"
+        )
+    
+    updates = {"messages": [AIMessage(content=visible_reply)], "action_log": log}
+    
+    if extracted and extracted.get("confirmed"):
+        print(f"  → Loan Captured: {extracted}")
+        updates["loan_terms"] = {
+            "principal": float(extracted.get("loan_amount", 0)),
+            "rate":      float(extracted.get("interest_rate", 12.0)),
+            "tenure":    int(extracted.get("tenure", 24)),
+            "loan_type": extracted.get("loan_type", "personal"),
+        }
+        updates["intent"] = "loan_confirmed"
+    
+    return updates

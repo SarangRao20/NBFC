@@ -29,16 +29,37 @@ def _calculate_max_principal(target_emi: float, rate_pa: float, tenure: int) -> 
 
 
 async def analyze_rejection(session_id: str) -> dict:
-    """Step 12: Analyze reason for rejection."""
+    """Step 12: Analyze reason for rejection using the Persuasion Agent."""
     state = await get_session(session_id)
     if not state:
         return None
 
+    from agents.persuasion_agent import persuasion_agent_node
+    
     customer = state.get("customer_data", {})
+    terms = state.get("loan_terms", {})
     reasons = state.get("reasons", [])
     dti = state.get("dti_ratio", 0)
     score = customer.get("credit_score", 0)
+    negotiation_round = state.get("negotiation_round", 0)
 
+    # Map API state to Agent state
+    agent_state = {
+        "customer_data": customer,
+        "loan_terms": terms,
+        "reasons": reasons,
+        "dti_ratio": dti,
+        "negotiation_round": negotiation_round
+    }
+    
+    agent_result = persuasion_agent_node(agent_state)
+    
+    # Update state from agent result
+    await update_session(session_id, {
+        "negotiation_round": agent_result.get("negotiation_round", negotiation_round + 1),
+        "persuasion_options": agent_result.get("persuasion_options", [])
+    })
+    
     await advance_phase(session_id, "persuasion_analysis")
 
     return {
@@ -46,10 +67,7 @@ async def analyze_rejection(session_id: str) -> dict:
         "credit_score_ok": score >= settings.MIN_CREDIT_SCORE,
         "dti_current": dti,
         "dti_threshold": settings.MAX_DTI_RATIO,
-        "message": (
-            f"Rejection analysis: DTI is {dti*100:.1f}% (threshold: {settings.MAX_DTI_RATIO*100:.0f}%). "
-            f"Credit score {score} qualifies for negotiation."
-        )
+        "message": agent_result["messages"][0].content if agent_result.get("messages") else "Negotiation initiated."
     }
 
 
@@ -131,73 +149,40 @@ async def suggest_fix(session_id: str) -> dict:
 
 
 async def process_response(session_id: str, action: str, custom_amount: float = None, custom_tenure: int = None) -> dict:
-    """Step 14: Process user's accept/decline response."""
+    """Step 14: Process user's accept/decline response using the Persuasion Agent."""
     state = await get_session(session_id)
     if not state:
         return None
 
-    options = state.get("persuasion_options", [])
-    terms = state.get("loan_terms", {})
-    rate = terms.get("rate", 12.0)
+    from agents.persuasion_agent import process_persuasion_response
+    
+    # Map API action to a simulated user message for the agent
+    user_msg = action
+    if action == "accept" and custom_amount:
+        user_msg = f"I want to accept ₹{custom_amount} for {custom_tenure} months"
+    
+    agent_result = process_persuasion_response(user_msg, state)
+    
+    updates = {}
+    if "loan_terms" in agent_result:
+        updates["loan_terms"] = agent_result["loan_terms"]
+    if "decision" in agent_result:
+        updates["decision"] = agent_result["decision"]
+    if "persuasion_status" in agent_result:
+        updates["persuasion_status"] = agent_result["persuasion_status"]
+    else:
+        updates["persuasion_status"] = agent_result.get("action", "")
 
-    if action.startswith("decline") or action == "no":
-        # User declines → route to Advisory
-        await update_session(session_id, {
-            "decision": "reject",
-            "persuasion_status": "declined",
-        })
-        await advance_phase(session_id, "persuasion_declined")
-        return {
-            "action": "declined",
-            "revised_loan_terms": None,
-            "next_step": "advisory",
-            "message": "Offer declined. Routing to Advisory Agent."
-        }
-
-    # Determine which option was chosen
-    selected = None
-
-    if action.startswith("accept_option_") and len(action) > len("accept_option_"):
-        idx = ord(action[-1].lower()) - ord('a')
-        if 0 <= idx < len(options):
-            selected = options[idx]
-
-    if action == "accept" or action == "yes":
-        if custom_amount and custom_tenure:
-            new_emi = _calculate_emi(custom_amount, rate, custom_tenure)
-            selected = {"amount": custom_amount, "tenure": custom_tenure, "emi": new_emi}
-        elif options:
-            selected = options[0]
-
-    if not selected:
-        return {
-            "action": "invalid",
-            "revised_loan_terms": None,
-            "next_step": "persuasion",
-            "message": "Invalid action. Use 'accept_option_a', 'accept', or 'decline'."
-        }
-
-    # Update loan terms with accepted option
-    new_emi = _calculate_emi(selected["amount"], rate, selected["tenure"])
-    revised_terms = {
-        **terms,
-        "principal": selected["amount"],
-        "tenure": selected["tenure"],
-        "emi": new_emi,
-    }
-
-    await update_session(session_id, {
-        "loan_terms": revised_terms,
-        "decision": "",  # Reset for re-evaluation
-        "persuasion_status": "accepted",
-    })
-    await advance_phase(session_id, "persuasion_accepted")
+    await update_session(session_id, updates)
+    
+    phase = "persuasion_accepted" if agent_result.get("action") == "accept" else "persuasion_declined"
+    await advance_phase(session_id, phase)
 
     return {
-        "action": "accepted",
-        "revised_loan_terms": revised_terms,
-        "next_step": "underwriting",
-        "message": f"Terms accepted: ₹{selected['amount']:,.0f} for {selected['tenure']} months. Re-submitting to Decision Engine."
+        "action": agent_result.get("action", "unclear"),
+        "revised_loan_terms": agent_result.get("loan_terms"),
+        "next_step": "underwriting" if agent_result.get("action") == "accept" else "advisory",
+        "message": agent_result["messages"][0].content if agent_result.get("messages") else "Response processed."
     }
 
 

@@ -162,3 +162,90 @@ async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount:
         "total_repayment": total_payment,
         "message": f"Loan captured: ₹{loan_amount:,.0f} at {rate}% for {tenure_months} months. EMI: ₹{emi:,.2f}/month."
     }
+async def chat_with_agent(session_id: str, user_message: str, history: list[dict] = None) -> dict:
+    """Conversational interface using the Master LangGraph."""
+    from agents.master_graph import compile_master_graph
+    from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+    
+    state = await get_session(session_id)
+    if not state:
+        return None
+
+    # Rebuild message list from history or stored state
+    current_messages = []
+    if history:
+        for m in history:
+            role = HumanMessage if m["role"] == "user" else AIMessage
+            current_messages.append(role(content=m["content"]))
+    else:
+        for m in state.get("messages", []):
+            if isinstance(m, dict):
+                role = HumanMessage if m["role"] == "user" else AIMessage
+                current_messages.append(role(content=m["content"]))
+            else:
+                current_messages.append(m)
+
+    # Add the new user message
+    current_messages.append(HumanMessage(content=user_message))
+    
+    # Track how many AI messages exist before the graph runs
+    pre_run_ai_count = sum(1 for m in current_messages if isinstance(m, AIMessage))
+
+    # Update local state for graph invocation
+    state["messages"] = current_messages
+    
+    # Run the Master Graph
+    print(f"🧠 [SALES SERVICE] Invoking MasterGraph for session {session_id}...")
+    graph = compile_master_graph()
+    
+    try:
+        final_state = graph.invoke(state, config={"recursion_limit": 25})
+        print("✅ [SALES SERVICE] Graph run complete.")
+
+        # Collect NEW AI messages (not re-emitting old history)
+        all_messages = final_state.get("messages", [])
+        new_ai = []
+        ai_seen = 0
+        for m in all_messages:
+            if isinstance(m, AIMessage):
+                ai_seen += 1
+                if ai_seen > pre_run_ai_count:
+                    # Try to parse if it's already a JSON dict string
+                    try:
+                        import json
+                        parsed = json.loads(m.content)
+                        new_ai.append(parsed)
+                    except:
+                        new_ai.append({"type": "text", "content": m.content})
+        
+        # Insert action log block before the final reply, if any steps were collected
+        logs = final_state.get("action_log", [])
+        if logs:
+            import json
+            step_msg = {
+                "type": "agent_steps", 
+                "content": json.dumps({"steps": logs})
+            }
+            new_ai.insert(0, step_msg)
+
+        # For the legacy string reply, concat just the text bits
+        texts = [m["content"] for m in new_ai if isinstance(m, dict) and m.get("type") == "text"]
+        reply = "\n\n".join(texts) if texts else "I'm here — what would you like to do next?"
+        
+        # Persist final state to DB
+        await update_session(session_id, final_state)
+        
+        return {
+            "reply": reply,
+            "all_replies": new_ai,
+            "next_agent": final_state.get("next_agent", "unknown"),
+            "intent": final_state.get("intent", "none"),
+            "is_authenticated": final_state.get("is_authenticated", False),
+            "loan_terms": final_state.get("loan_terms", {}),
+            "customer_data": final_state.get("customer_data", {}),
+        }
+        
+    except Exception as e:
+        print(f"❌ Master Graph Error: {e}")
+        import traceback; traceback.print_exc()
+        return {"reply": f"Technical issue in the brain: {str(e)}", "error": True}

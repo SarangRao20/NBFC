@@ -1,9 +1,12 @@
 export interface AppState {
+  customerName: string;
   requestedAmount: number;
   roi: number;
   tenure: number;
   emi: number;
-  underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved';
+  creditScore: number;
+  preApprovedLimit: number;
+  underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved' | 'Reject';
   activeAgent: string | null;
   needsDocument: boolean;
   documents: {
@@ -12,7 +15,7 @@ export interface AppState {
   };
 }
 
-export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider';
+export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps';
 
 
 export interface ChatMessage {

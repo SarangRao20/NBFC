@@ -1,8 +1,65 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChatMessage, AppState } from '../types';
-import { Send, Paperclip, FileText, CheckCircle2, UploadCloud, BrainCircuit } from 'lucide-react';
+import { Send, Paperclip, FileText, CheckCircle2, UploadCloud, BrainCircuit, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AgentTypingIndicator from './AgentTypingIndicator';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+// Component for the collapsible agent steps block
+const AgentStepsBlock = ({ content }: { content: string }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  const data = JSON.parse(content);
+  const steps: string[] = data.steps || [];
+
+  if (!steps.length) return null;
+
+  return (
+    <div className="bg-emerald-50/40 border border-emerald-100/60 rounded-xl overflow-hidden shadow-sm mb-3 w-[460px] max-w-[85%] text-left">
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-2.5 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors border-b border-emerald-100/50"
+      >
+        <div className="flex items-center text-emerald-800 font-bold text-[13px] tracking-wide">
+          <BrainCircuit size={15} className="mr-2 text-emerald-600" />
+          System Actions ({steps.length})
+        </div>
+        {isOpen ? <ChevronDown size={15} className="text-emerald-400" /> : <ChevronRight size={15} className="text-emerald-400" />}
+      </button>
+      
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="p-4 space-y-3 bg-white/40">
+              {steps.map((step, idx) => {
+                // Remove emoji prefix if present, we'll use a neat checkmark
+                const cleanStep = step.replace(/^[\u{1f300}-\u{1f5ff}\u{1f900}-\u{1f9ff}\u{1f600}-\u{1f64f}\u{1f680}-\u{1f6ff}\u{2600}-\u{26ff}\u{2700}-\u{27bf}\u{1f1e6}-\u{1f1ff}\u{1f191}-\u{1f251}\u{1f004}\u{1f0cf}\u{1f170}-\u{1f171}\u{1f17e}-\u{1f17f}\u{1f18e}\u{3030}\u{2b50}\u{2b55}\u{2934}-\u{2935}\u{2b05}-\u{2b07}\u{2b1b}-\u{2b1c}\u{3297}\u{3299}\u{303d}\u{00a9}\u{00ae}\u{2122}\u{23f3}\u{24c2}\u{23e9}-\u{23ef}\u{25b6}\u{23f8}-\u{23fa}]\s*/gu, '').trim();
+                
+                return (
+                  <motion.div 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    key={idx} 
+                    className="flex items-start"
+                  >
+                    <CheckCircle2 size={15} className="text-emerald-500 mt-0.5 mr-2.5 flex-shrink-0" />
+                    <span className="text-[13px] text-slate-700 font-medium leading-relaxed">{cleanStep}</span>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 interface Props {
   appState: AppState;
@@ -77,10 +134,25 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                   className={`p-4 max-w-[75%] text-[15px] leading-relaxed shadow-sm font-medium ${
                     msg.sender === 'user'
                       ? 'bg-slate-900 text-white rounded-[20px] rounded-br-[4px]'
-                      : 'bg-slate-100 text-slate-800 rounded-[20px] rounded-bl-[4px] border border-slate-200/60'
+                      : 'bg-white text-slate-800 rounded-[20px] rounded-bl-[4px] border border-slate-200/60'
                   }`}
                 >
-                  {msg.content}
+                  {msg.sender === 'user' ? (
+                    msg.content
+                  ) : (
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc ml-5 mb-2" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal ml-5 mb-2" {...props} />,
+                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-slate-900" {...props} />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  )}
                 </div>
               )}
 
@@ -155,6 +227,9 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                     </div>
                   </div>
                 </div>
+              )}
+              {msg.type === 'agent_steps' && (
+                <AgentStepsBlock content={msg.content} />
               )}
             </motion.div>
           ))}

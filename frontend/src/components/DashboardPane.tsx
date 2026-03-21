@@ -37,22 +37,38 @@ export default function DashboardPane({ appState }: Props) {
           <User size={24} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Sumit</h2>
-          <div className="flex items-center text-[11px] font-bold tracking-wide text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full mt-1 border border-emerald-200 w-fit uppercase">
-            <BadgeCheck size={14} className="mr-1" /> Existing Customer
-          </div>
+          <h2 className="text-lg font-bold text-slate-800">{appState.customerName || 'Guest User'}</h2>
+          {appState.customerName && (
+            <div className="flex items-center text-[11px] font-bold tracking-wide text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full mt-1 border border-emerald-200 w-fit uppercase">
+              <BadgeCheck size={14} className="mr-1" /> Existing Customer
+            </div>
+          )}
         </div>
       </div>
 
       {/* Financial State */}
       <div className="mb-8">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Financial Overview</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
           <MetricCard label="Int. Rate (ROI)" value={appState.roi} decimals={1} suffix="%" />
           <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
           <MetricCard label="Monthly EMI" value={appState.emi} prefix="₹" />
         </div>
+        
+        {appState.creditScore > 0 && (
+          <div className="grid grid-cols-2 gap-3 p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+            <div className="text-center border-r border-slate-100">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Credit Score</div>
+              <div className="text-lg font-bold text-emerald-600">{appState.creditScore}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Pre-approved</div>
+              <div className="text-lg font-bold text-slate-700">₹{(appState.preApprovedLimit / 100000).toFixed(1)}L</div>
+            </div>
+          </div>
+        )}
+
         <EmiDonutChart principal={appState.requestedAmount} emi={appState.emi} tenure={appState.tenure} />
       </div>
 

@@ -44,28 +44,24 @@ def send_otp(phone: str) -> dict:
 
     # Send Real SMS via Twilio if configured
     if use_twilio and twilio_client:
+        print(f"📡 [DEBUG] Attempting real SMS via Twilio to {phone}...")
         try:
-            # Assuming Indian phone numbers format (+91...)
             formatted_phone = f"+91{phone}" if len(phone) == 10 else phone
-            
             message = twilio_client.messages.create(
                 body=f"Your NBFC Loan Registration OTP is: {otp}. Valid for {OTP_EXPIRY_MINUTES} mins.",
                 from_=tw_phone,
                 to=formatted_phone
             )
-            print(f"  [Twilio] Sent real SMS OTP to {formatted_phone} (SID: {message.sid})")
+            print(f"  ✅ [Twilio] Sent real SMS OTP to {formatted_phone} (SID: {message.sid})")
         except Exception as e:
             error_msg = str(e)
-            print(f"  ⚠️ Twilio Error: {error_msg}")
-            
-            # Delete the local OTP cache so they can actually retry properly
+            print(f"  ⚠️ [Twilio Error] {error_msg}")
             if phone in _otp_store:
                 del _otp_store[phone]
             _send_count[phone] -= 1
-            
-            return {"sent": False, "message": f"Twilio blocked the SMS: {error_msg}"}
+            return {"sent": False, "message": f"Twilio SMS Error: {error_msg}"}
     else:
-        # Mock behavior
+        print(f"📡 [DEBUG] No Twilio credentials found or client failed. Using MOCK mode.")
         print(f"\n{'='*40}")
         print(f"  📱 (Mock) OTP sent to {phone}: {otp}")
         print(f"  (Valid for {OTP_EXPIRY_MINUTES} minutes)")
