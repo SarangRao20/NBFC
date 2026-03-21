@@ -38,20 +38,15 @@ def underwriting_agent_node(state: dict) -> dict:
     total_emi = existing_emi + emi
     dti = round(total_emi / salary, 3) if salary > 0 else 1.0
 
-    # Rule 5: Risk Classification
-    if score > 0 and (score < 720 or dti > 0.40 or principal > pre_approved):
-        risk_level = "high"
-    elif 720 <= score <= 750 or 0.30 <= dti <= 0.40:
-        risk_level = "medium"
-    else:
-        risk_level = "low"
-
-    # Evaluate Logical Gates
+    # ── DECISION TREE LOGIC ENGINE (Mapped to Diagram) ── #
+    
+    # Pre-check: Fraud Escapement Gate
     if fraud_score >= 0.7:
         reasons.append(f"Fraud score ({fraud_score}) ≥ 0.7 — Escalated to manual audit.")
         decision = "hard_reject"
+        risk_level = "high"
 
-    # NTC (New To Credit) Thin-file Detection
+    # Pre-check: NTC (New To Credit) Thin-file Detection
     elif score == 0 or score == -1:
         if not docs.get("bank_statement_verified"):
             reasons.append("New-To-Credit Detected. Please upload 6 months' Bank Statement for limit assessment.")
@@ -61,24 +56,54 @@ def underwriting_agent_node(state: dict) -> dict:
             decision = "soft_reject"
             alternative_offer = 50000.0
             
-    # Standard CIBIL Borrower
+    # Core Strategy: Standard CIBIL Borrower Execution Tree
     else:
+        # Branch 1: Credit Score >= 700?
         if score < 700:
-            reasons.append(f"Credit score ({score}) is below the minimum threshold of 700.")
+            reasons.append(f"Credit Score ({score}) is below the minimum threshold of 700.")
             decision = "hard_reject"
-        elif principal > 2 * pre_approved:
-            reasons.append(f"Requested loan exceeds maximum permissible exposure (2× limit).")
-            decision = "hard_reject"
-        elif principal > pre_approved and not docs.get("verified"):
-            reasons.append("Loan exceeds pre-approved limit; additional income verification (Salary Slip) required.")
-            decision = "pending_docs"
-        elif dti > 0.50:
-            reasons.append(f"EMI exceeds affordability threshold (Total EMI > 50% of income).")
-            if max_affordable_principal > 0:
-                decision = "soft_reject"
-                alternative_offer = min(max_affordable_principal, 2 * pre_approved)
+            risk_level = "high"
+            
+        # Branch 2: Credit Score IS >= 700 -> Check Loan Limit
+        else:
+            # Categorize the Limit
+            if principal <= pre_approved:
+                limit_category = "Low"
+            elif principal > (2 * pre_approved):
+                limit_category = "High"
             else:
+                limit_category = "Medium"
+
+            # Route by Limit Category
+            if limit_category == "Low":
+                # Tag: Low Risk -> Approved (Bypasses DTI caps!)
+                risk_level = "low"
+                decision = "approve"
+                
+            elif limit_category == "High":
+                # Hard Reject: Exposure Limit
+                reasons.append(f"Requested loan strongly exceeds maximum permissible exposure (2× pre-approved limit).")
                 decision = "hard_reject"
+                risk_level = "high"
+                
+            elif limit_category == "Medium":
+                # Calculate DTI
+                # If they require a Medium limit, we MUST verify their salary slip first.
+                if not docs.get("verified"):
+                    reasons.append("To approve a medium-exposure loan exceeding your basic pre-approved limits, please upload your Salary Slip.")
+                    decision = "pending_docs"
+                else:
+                    if dti > 0.50:
+                        # High DTI -> Soft Reject
+                        reasons.append(f"EMI pushes DTI to {dti*100:.1f}%, exceeding 50% safety limit.")
+                        decision = "soft_reject"
+                        risk_level = "medium"
+                        if max_affordable_principal > 0:
+                            alternative_offer = min(max_affordable_principal, 2 * pre_approved)
+                    else:
+                        # Acceptable DTI -> Approved
+                        decision = "approve"
+                        risk_level = "medium"
 
     # Rule 9: Explainability Layer Output Generator
     if decision == "approve":
