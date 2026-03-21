@@ -5,10 +5,10 @@ import type { AppState, ChatMessage } from './types';
 import { apiClient } from './api/client';
 
 const INITIAL_APP_STATE: AppState = {
-  requestedAmount: 500000,
-  roi: 12.5,
-  tenure: 48,
-  emi: 13200,
+  requestedAmount: 0,
+  roi: 0,
+  tenure: 0,
+  emi: 0,
   underwritingStatus: 'Pending Evaluation',
   activeAgent: null,
   needsDocument: false,
@@ -23,47 +23,26 @@ const INITIAL_CHAT_HISTORY: ChatMessage[] = [
     id: 'msg-1',
     sender: 'agent',
     type: 'text',
-    content: 'Hi Sumit! I see you are an existing customer. I am initializing your application file on our new API backend...',
+    content: 'Welcome to FinServe! I am initializing your application... Please enter your 10-digit phone number to begin.',
     timestamp: new Date(),
   }
 ];
+
+type ChatPhase = 'init' | 'phone' | 'loan_details' | 'document' | 'processing' | 'evaluate' | 'negotiate' | 'accepted';
 
 function App() {
   const [appState, setAppState] = useState<AppState>(INITIAL_APP_STATE);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(INITIAL_CHAT_HISTORY);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [chatPhase, setChatPhase] = useState<ChatPhase>('init');
 
-  // Initialize Backend Session and warm up the pipeline (Steps 1 to 10)
+  // Initialize Backend Session
   useEffect(() => {
     async function initBackend() {
       try {
         const { session_id } = await apiClient.startSession();
         setSessionId(session_id);
-
-        // Pre-warm the APIs through Step 10 so we can demo underwriting
-        await apiClient.identifyCustomer(session_id, '9876543210');
-        await apiClient.captureLoan(session_id, 'personal', 500000, 48);
-        await apiClient.requestDocuments(session_id);
-        
-        // Mock a file upload for OCR
-        const mockFile = new File([new Blob(['mock pdf data'])], 'bank_statement.pdf', { type: 'application/pdf' });
-        await apiClient.extractOcr(session_id, mockFile);
-        
-        await apiClient.checkTampering(session_id);
-        await apiClient.verifyIncome(session_id);
-        await apiClient.kycVerify(session_id);
-        await apiClient.fraudCheck(session_id);
-
-        setChatHistory(prev => [
-          ...prev,
-          {
-            id: 'msg-ready',
-            sender: 'system',
-            type: 'text',
-            content: 'Backend is fully synced (Phase 1-10 complete). Type "evaluate" to run Underwriting, or "negotiate" to trigger the Persuasion loop.',
-            timestamp: new Date(),
-          }
-        ]);
+        setChatPhase('phone');
       } catch (error) {
         console.error('Failed to initialize backend:', error);
       }
@@ -71,103 +50,174 @@ function App() {
     initBackend();
   }, []);
 
+  const pushAgentMessage = (text: string, type: 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' = 'text', id = `msg-${Date.now()}`) => {
+    setChatHistory(prev => [...prev, {
+      id,
+      sender: 'agent',
+      type,
+      content: text,
+      timestamp: new Date(),
+    }]);
+    return id;
+  };
+
+  const runNegotiation = async () => {
+    if (!sessionId) return;
+    const thinkingId = pushAgentMessage('Persuasion loop activated...', 'thinking');
+    setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent building counter-offer...' }));
+    
+    try {
+      await apiClient.analyzeRejection(sessionId);
+      const suggestion = await apiClient.suggestFix(sessionId);
+
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      setAppState(prev => ({ ...prev, activeAgent: null }));
+
+      if (suggestion.options && suggestion.options.length > 0) {
+        setChatPhase('negotiate');
+        pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.", 'emi_slider');
+      } else {
+        pushAgentMessage("Unfortunately, we cannot offer a restructured loan at this time.");
+      }
+    } catch (e) {
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage("Error generating counter offer.");
+      setAppState(prev => ({ ...prev, activeAgent: null }));
+    }
+  };
+
+  const runUnderwriting = async () => {
+    if (!sessionId) return;
+    const thinkingId = pushAgentMessage('Consulting decision engine...', 'thinking');
+    setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is evaluating...' }));
+    
+    try {
+      const uwResult = await apiClient.underwrite(sessionId);
+      
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      setAppState(prev => ({ 
+        ...prev, 
+        activeAgent: null,
+        underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
+      }));
+
+      if (uwResult.decision === 'approve') {
+        await apiClient.sanction(sessionId);
+        setChatPhase('accepted');
+        pushAgentMessage("Congratulations! The Underwriting Agent approved your loan. Review your Sanction Letter below.", 'sanction_letter');
+      } else {
+        pushAgentMessage(`Your loan was soft-rejected. Reason: ${uwResult.reasons?.join(', ')}. Generating counter-offer...`);
+        await runNegotiation();
+      }
+    } catch (e) {
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage("Error during underwriting.");
+      setAppState(prev => ({ ...prev, activeAgent: null }));
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!sessionId) return;
+    
+    setChatHistory(prev => [...prev, {
+      id: `msg-upload-${Date.now()}`,
+      sender: 'user',
+      type: 'text',
+      content: `Uploaded ${file.name}`,
+      timestamp: new Date(),
+    }]);
+
+    setAppState(prev => ({
+      ...prev,
+      needsDocument: false,
+      documents: { ...prev.documents, bankStatement: 'verified' },
+      activeAgent: '📄 Processing Document...'
+    }));
+
+    const thinkingId = pushAgentMessage('Running Verification (OCR, Tampering, KYC, Fraud)...', 'thinking');
+    
+    try {
+      setChatPhase('processing');
+      await apiClient.extractOcr(sessionId, file);
+      await apiClient.checkTampering(sessionId);
+      await apiClient.verifyIncome(sessionId);
+      await apiClient.kycVerify(sessionId);
+      await apiClient.fraudCheck(sessionId);
+      
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      setAppState(prev => ({ ...prev, activeAgent: null }));
+      
+      pushAgentMessage('Documents verified successfully. Moving to Underwriting...');
+      
+      // Automatically trigger underwriting
+      await runUnderwriting();
+
+    } catch (err) {
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage('Error processing document. Please check backend logs.');
+      setAppState(prev => ({ ...prev, activeAgent: null }));
+    }
+  };
+
   const handleSendMessage = async (text: string) => {
     if (!sessionId) return;
 
-    // 1. Add user message
-    const userMsg: ChatMessage = {
+    setChatHistory(prev => [...prev, {
       id: Date.now().toString(),
       sender: 'user',
       type: 'text',
       content: text,
       timestamp: new Date(),
-    };
-    setChatHistory((prev) => [...prev, userMsg]);
+    }]);
 
-    const lowerText = text.toLowerCase();
+    const lowerText = text.toLowerCase().trim();
 
     try {
-      if (lowerText.includes('evaluate') || lowerText.includes('underwrite') || lowerText.includes('approve')) {
-        const thinkingMsgId = 'msg-thinking-' + Date.now();
-        setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is evaluating...' }));
+      if (chatPhase === 'phone') {
+        setAppState(prev => ({ ...prev, activeAgent: 'Looking up customer...' }));
+        const res = await apiClient.identifyCustomer(sessionId, lowerText);
+        setAppState(prev => ({ ...prev, activeAgent: null }));
         
-        setChatHistory(prev => [...prev, {
-          id: thinkingMsgId,
-          sender: 'agent',
-          type: 'thinking',
-          content: 'Consulting decision engine...',
-          timestamp: new Date(),
-        }]);
+        let reply = `Customer Identified: ${res.is_existing_customer ? 'Returning Customer' : 'New Customer'}. `;
+        if (res.customer_data) {
+           reply += `Welcome back, ${res.customer_data.name}. `;
+        }
+        reply += `Please provide your desired Loan Amount and Tenure in months (e.g. 500000 48).`;
+        
+        pushAgentMessage(reply);
+        setChatPhase('loan_details');
 
-        // Trigger Step 11: Underwrite
-        const uwResult = await apiClient.underwrite(sessionId);
+      } else if (chatPhase === 'loan_details') {
+        const parts = lowerText.split(' ');
+        if (parts.length < 2) {
+          pushAgentMessage("Please provide both amount and tenure, separated by a space (e.g. 500000 48).");
+          return;
+        }
         
-        setChatHistory(prev => prev.filter(m => m.id !== thinkingMsgId));
+        const amount = parseInt(parts[0]);
+        const tenure = parseInt(parts[1]);
+        
+        if (isNaN(amount) || isNaN(tenure)) {
+           pushAgentMessage("Invalid numbers. Please try again.");
+           return;
+        }
+
+        setAppState(prev => ({ ...prev, activeAgent: 'Capturing loan details...' }));
+        await apiClient.captureLoan(sessionId, 'personal', amount, tenure);
+        await apiClient.requestDocuments(sessionId);
+        
         setAppState(prev => ({ 
           ...prev, 
           activeAgent: null,
-          underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
+          requestedAmount: amount, 
+          tenure, 
+          needsDocument: true 
         }));
-
-        if (uwResult.decision === 'approve') {
-          // Proceed to Sanction
-          await apiClient.sanction(sessionId);
-          setChatHistory(prev => [...prev, {
-            id: 'msg-sanction-' + Date.now(),
-            sender: 'agent',
-            type: 'sanction_letter',
-            content: "Congratulations! The Underwriting Agent approved your loan. Review your Sanction Letter below.",
-            timestamp: new Date(),
-          }]);
-        } else {
-          setChatHistory(prev => [...prev, {
-            id: 'msg-reject-' + Date.now(),
-            sender: 'agent',
-            type: 'text',
-            content: `Your loan was soft-rejected. Reason: ${uwResult.reasons?.join(', ')}. Type "negotiate" to explore options.`,
-            timestamp: new Date(),
-          }]);
-        }
-
-      } else if (lowerText.includes('negotiate')) {
-        const thinkingMsgId = 'msg-thinking-' + Date.now();
-        setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent building counter-offer...' }));
         
-        setChatHistory(prev => [...prev, {
-          id: thinkingMsgId,
-          sender: 'agent',
-          type: 'thinking',
-          content: 'Persuasion loop activated...',
-          timestamp: new Date(),
-        }]);
+        setChatPhase('document');
+        pushAgentMessage("Terms captured. Please upload your Bank Statement PDF using the dropzone below.");
 
-        // Step 12 & 13
-        await apiClient.analyzeRejection(sessionId);
-        const suggestion = await apiClient.suggestFix(sessionId);
-
-        setChatHistory(prev => prev.filter(m => m.id !== thinkingMsgId));
-        setAppState(prev => ({ ...prev, activeAgent: null }));
-
-        if (suggestion.options && suggestion.options.length > 0) {
-          setChatHistory(prev => [...prev, {
-            id: 'msg-slider-' + Date.now(),
-            sender: 'agent',
-            type: 'emi_slider',
-            content: "We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.",
-            timestamp: new Date(),
-          }]);
-        } else {
-           setChatHistory(prev => [...prev, {
-            id: 'msg-no-option',
-            sender: 'agent',
-            type: 'text',
-            content: "Unfortunately, we cannot offer a restructured loan at this time.",
-            timestamp: new Date(),
-          }]);
-        }
-
-      } else if (lowerText.includes('accept')) {
-        // Step 14 & 15
+      } else if (chatPhase === 'negotiate' && lowerText.includes('accept')) {
         setAppState(prev => ({ ...prev, activeAgent: '✍️ Finalizing terms...' }));
         await apiClient.respondToOffer(sessionId, 'accept_option_a');
         const state = await apiClient.getState(sessionId);
@@ -183,37 +233,19 @@ function App() {
         }));
 
         await apiClient.sanction(sessionId);
+        setChatPhase('accepted');
+        pushAgentMessage("Terms accepted! Your loan is formally approved. Here is your final Sanction document.", 'sanction_letter');
 
-        setChatHistory(prev => [...prev, {
-          id: 'msg-accepted-' + Date.now(),
-          sender: 'agent',
-          type: 'sanction_letter',
-          content: "Terms accepted! Your loan is formally approved. Here is your final Sanction document.",
-          timestamp: new Date(),
-        }]);
-
+      } else if (chatPhase === 'accepted') {
+        pushAgentMessage("Your loan is already approved. Thank you!");
       } else {
-        // Fallback or general chatter -> step 17 advisory trigger maybe?
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: 'msg-response-' + Date.now(),
-            sender: 'agent',
-            type: 'text',
-            content: "I've registered your response in the API. Try typing 'evaluate', 'negotiate', or 'accept' to observe the backend workflow in action.",
-            timestamp: new Date(),
-          }
-        ]);
+        // Fallback or unrecognized
+        pushAgentMessage("I didn't catch that. Please follow the instructions to proceed.");
       }
     } catch (err) {
       console.error("API flow error:", err);
-      setChatHistory(prev => [...prev, {
-        id: 'msg-error',
-        sender: 'system',
-        type: 'text',
-        content: "System Error: Failed to communicate with backend API. Ensure FastAPI is running on port 8000.",
-        timestamp: new Date(),
-      }]);
+      pushAgentMessage("System Error: Failed to communicate with backend API.");
+      setAppState(prev => ({ ...prev, activeAgent: null }));
     }
   };
 
@@ -225,6 +257,7 @@ function App() {
         setAppState={setAppState} 
         chatHistory={chatHistory} 
         onSendMessage={handleSendMessage} 
+        onFileUpload={handleFileUpload}
       />
     </div>
   );

@@ -4,7 +4,7 @@ from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from db.schemas import User
-from db.database import users_collection, client
+from db.database import users_collection, client, init_collections
 from api.config import get_settings
 from api.routers import (
     session, sales, documents, kyc, fraud,
@@ -35,6 +35,8 @@ async def startup_db():
     try:
         await client.admin.command("ping")
         print("✅ MongoDB Atlas connected")
+        await init_collections()
+        print("✅ All collections initialized")
     except Exception as e:
         print(f"❌ MongoDB connection failed: {e}")
         raise

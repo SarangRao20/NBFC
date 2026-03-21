@@ -9,9 +9,10 @@ interface Props {
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   chatHistory: ChatMessage[];
   onSendMessage: (msg: string) => void;
+  onFileUpload: (file: File) => void;
 }
 
-export default function ChatPane({ appState, setAppState, chatHistory, onSendMessage }: Props) {
+export default function ChatPane({ appState, setAppState, chatHistory, onSendMessage, onFileUpload }: Props) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -177,20 +178,19 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
-                  setAppState(prev => ({
-                    ...prev,
-                    needsDocument: false,
-                    documents: { ...prev.documents, bankStatement: 'verified' }
-                  }));
-                  onSendMessage("Uploaded BankStatement.pdf");
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    onFileUpload(e.dataTransfer.files[0]);
+                  }
                 }}
                 onClick={() => {
-                  setAppState(prev => ({
-                    ...prev,
-                    needsDocument: false,
-                    documents: { ...prev.documents, bankStatement: 'verified' }
-                  }));
-                  onSendMessage("Uploaded BankStatement.pdf");
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'application/pdf,image/jpeg,image/png';
+                  input.onchange = (e: any) => {
+                    const file = e.target.files[0];
+                    if (file) onFileUpload(file);
+                  };
+                  input.click();
                 }}
               >
                 <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
