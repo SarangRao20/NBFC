@@ -182,99 +182,104 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                     <button className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95 shadow-sm">
                       Download PDF
                     </button>
-                    <button className="flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
-                      <CheckCircle2 size={16} className="mr-1.5" /> Accept & E-Sign
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {msg.type === 'emi_slider' && (
-                <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[85%] w-[460px]">
-                  <p className="text-slate-800 text-[15px] font-medium leading-relaxed mb-6">
-                    {msg.content}
-                  </p>
-                  <div className="bg-slate-50 p-5 border border-slate-100 rounded-xl mb-2">
-                    <div className="flex justify-between items-end mb-4">
-                      <div>
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Tenure</div>
-                        <div className="text-2xl font-black text-slate-800">{appState.tenure} <span className="text-sm font-semibold text-slate-400">Months</span></div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Monthly EMI</div>
-                        <div className="text-2xl font-black text-emerald-600">₹{new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(appState.emi)}</div>
-                      </div>
-                    </div>
-                    
-                    <input 
-                      type="range" 
-                      min="12" 
-                      max="60" 
-                      step="1"
-                      value={appState.tenure}
-                      onChange={(e) => {
-                        const t = parseInt(e.target.value);
-                        const r = appState.roi / 12 / 100;
-                        const p = appState.requestedAmount;
-                        const calcEmi = Math.round(p * r * Math.pow(1 + r, t) / (Math.pow(1 + r, t) - 1));
-                        setAppState(prev => ({ ...prev, tenure: t, emi: calcEmi }));
-                      }}
-                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-600 transition-all"
-                    />
-                    <div className="flex justify-between text-xs font-semibold text-slate-400 mt-2">
-                      <span>12m</span>
-                      <span>60m</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {msg.type === 'agent_steps' && (
-                <AgentStepsBlock content={msg.content} />
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Area */}
-      <div className="p-4 px-8 border-t border-slate-100 bg-white">
-        <AnimatePresence mode="wait">
-          {appState.needsDocument ? (
-            <motion.div
-              key="dropzone"
-              initial={{ opacity: 0, height: 0, scale: 0.95 }}
-              animate={{ opacity: 1, height: 'auto', scale: 1 }}
-              exit={{ opacity: 0, height: 0, scale: 0.95 }}
-              className="w-full mb-4"
-            >
-              <div 
-                className="w-full border-dashed border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-emerald-400 rounded-2xl flex flex-col items-center justify-center p-8 transition-all cursor-pointer group"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                    onFileUpload(e.dataTransfer.files[0]);
-                  }
-                }}
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = 'application/pdf,image/jpeg,image/png';
-                  input.onchange = (e: any) => {
-                    const file = e.target.files[0];
-                    if (file) onFileUpload(file);
-                  };
-                  input.click();
-                }}
-              >
-                <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
-                  <UploadCloud size={24} />
-                </div>
-                <p className="text-sm font-bold text-slate-600 mb-1">Drop your Bank Statement here</p>
-                <p className="text-xs font-semibold text-slate-400">PDF, JPG or PNG up to 10MB</p>
+                    <button 
+                      onClick={() => onSendMessage("I accept the sanction letter and e-sign it.")}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
+                  <CheckCircle2 size={16} className="mr-1.5" /> Accept & E-Sign
+                </button>
               </div>
-            </motion.div>
+            </div>
+          )}
+
+          {msg.type === 'emi_slider' && (
+            <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[85%] w-[460px]">
+              <p className="text-slate-800 text-[15px] font-medium leading-relaxed mb-6">
+                {msg.content}
+              </p>
+              <div className="bg-slate-50 p-5 border border-slate-100 rounded-xl mb-2">
+                <div className="flex justify-between items-end mb-4">
+                  <div>
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Tenure</div>
+                    <div className="text-2xl font-black text-slate-800">{appState.tenure} <span className="text-sm font-semibold text-slate-400">Months</span></div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Monthly EMI</div>
+                    <div className="text-2xl font-black text-emerald-600">₹{new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(appState.emi)}</div>
+                  </div>
+                </div>
+                
+                <input 
+                  type="range" 
+                  min="12" 
+                  max="60" 
+                  step="1"
+                  value={appState.tenure}
+                  onChange={(e) => {
+                    const t = parseInt(e.target.value);
+                    const r = appState.roi / 12 / 100;
+                    const p = appState.requestedAmount;
+                    const calcEmi = Math.round(p * r * Math.pow(1 + r, t) / (Math.pow(1 + r, t) - 1));
+                    setAppState(prev => ({ ...prev, tenure: t, emi: calcEmi }));
+                  }}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-600 transition-all"
+                />
+                <div className="flex justify-between text-xs font-semibold text-slate-400 mt-2">
+                  <span>12m</span>
+                  <span>60m</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {msg.type === 'agent_steps' && (
+            <AgentStepsBlock content={msg.content} />
+          )}
+        </motion.div>
+      ))}
+    </AnimatePresence>
+    <div ref={messagesEndRef} />
+  </div>
+
+  {/* Input Area */}
+  <div className="p-4 px-8 border-t border-slate-100 bg-white">
+    <AnimatePresence mode="wait">
+      {appState.needsDocument ? (
+        <motion.div
+          key="dropzone"
+          initial={{ opacity: 0, height: 0, scale: 0.95 }}
+          animate={{ opacity: 1, height: 'auto', scale: 1 }}
+          exit={{ opacity: 0, height: 0, scale: 0.95 }}
+          className="w-full mb-4 flex gap-4 overflow-x-auto"
+        >
+          {appState.requiredDocuments?.map((docType, idx) => (
+            <div 
+              key={idx}
+              className="flex-1 min-w-[200px] border-dashed border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-emerald-400 rounded-2xl flex flex-col items-center justify-center p-8 transition-all cursor-pointer group"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  onFileUpload(e.dataTransfer.files[0]);
+                }
+              }}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'application/pdf,image/jpeg,image/png';
+                input.onchange = (e: any) => {
+                  const file = e.target.files[0];
+                  if (file) onFileUpload(file);
+                };
+                input.click();
+              }}
+            >
+              <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
+                <UploadCloud size={24} />
+              </div>
+              <p className="text-sm font-bold text-slate-600 outline-none text-center mb-1">{docType}</p>
+              <p className="text-xs font-semibold text-slate-400 text-center">PDF, JPG or PNG up to 10MB</p>
+            </div>
+          ))}
+        </motion.div>
           ) : (
             <motion.form 
               key="chat-input"

@@ -44,34 +44,62 @@ class MockCollection:
         return list(self.data.values())
     
     async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]):
-        if "_id" in query:
-            doc_id = query["_id"]
-            if doc_id in self.data:
-                if "$set" in update:
-                    self.data[doc_id].update(update["$set"])
-                    print(f"✏️ Updated {self.collection_name}: {doc_id}")
-                return type("Result", (), {"matched_count": 1, "modified_count": 1})()
-        print(f"❌ Update failed in {self.collection_name}: Document not found")
+        # Find the first document that matches the query
+        doc_to_update = None
+        for doc_id, doc in self.data.items():
+            if all(doc.get(k) == v for k, v in query.items()):
+                doc_to_update = doc
+                break
+        
+        if doc_to_update:
+            doc_id = doc_to_update["_id"]
+            if "$set" in update:
+                self.data[doc_id].update(update["$set"])
+                print(f"✏️ Updated {self.collection_name}: {doc_id}")
+            else:
+                # Basic update without $set (Atlas style)
+                self.data[doc_id].update(update)
+                print(f"✏️ Updated {self.collection_name} (direct): {doc_id}")
+            return type("Result", (), {"matched_count": 1, "modified_count": 1})()
+            
+        print(f"❌ Update failed in {self.collection_name}: No document matching {query}")
         return type("Result", (), {"matched_count": 0, "modified_count": 0})()
     
     async def replace_one(self, query: Dict[str, Any], replacement: Dict[str, Any]):
-        if "_id" in query:
-            doc_id = query["_id"]
-            if doc_id in self.data:
-                self.data[doc_id] = replacement
-                print(f"🔄 Replaced {self.collection_name}: {doc_id}")
-                return type("Result", (), {"matched_count": 1, "modified_count": 1})()
-        print(f"❌ Replace failed in {self.collection_name}: Document not found")
+        # Find the first document that matches the query
+        doc_to_replace = None
+        for doc_id, doc in self.data.items():
+            if all(doc.get(k) == v for k, v in query.items()):
+                doc_to_replace = doc
+                break
+        
+        if doc_to_replace:
+            doc_id = doc_to_replace["_id"]
+            # Ensure replacement has the same _id if it doesn't have one
+            if "_id" not in replacement:
+                replacement["_id"] = doc_id
+            self.data[doc_id] = replacement
+            print(f"🔄 Replaced {self.collection_name}: {doc_id}")
+            return type("Result", (), {"matched_count": 1, "modified_count": 1})()
+            
+        print(f"❌ Replace failed in {self.collection_name}: No document matching {query}")
         return type("Result", (), {"matched_count": 0, "modified_count": 0})()
     
     async def delete_one(self, query: Dict[str, Any]):
-        if "_id" in query:
-            doc_id = query["_id"]
-            if doc_id in self.data:
-                del self.data[doc_id]
-                print(f"🗑️ Deleted from {self.collection_name}: {doc_id}")
-                return type("Result", (), {"deleted_count": 1})()
-        print(f"❌ Delete failed in {self.collection_name}: Document not found")
+        # Find the first document that matches the query
+        doc_to_delete = None
+        for doc_id, doc in self.data.items():
+            if all(doc.get(k) == v for k, v in query.items()):
+                doc_to_delete = doc
+                break
+        
+        if doc_to_delete:
+            doc_id = doc_to_delete["_id"]
+            del self.data[doc_id]
+            print(f"🗑️ Deleted from {self.collection_name}: {doc_id}")
+            return type("Result", (), {"deleted_count": 1})()
+            
+        print(f"❌ Delete failed in {self.collection_name}: No document matching {query}")
         return type("Result", (), {"deleted_count": 0})()
 
 # Mock client

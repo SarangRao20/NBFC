@@ -119,7 +119,7 @@ export default function DashboardPane({ appState }: Props) {
           </div>
           <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
             <div className="flex items-center text-sm font-semibold text-slate-700">
-              <FileText size={16} className="mr-2.5 text-slate-400" /> Bank Statement
+              <FileText size={16} className="mr-2.5 text-slate-400" /> Financial Document
             </div>
             {appState.documents.bankStatement === 'verified' ? (
               <CheckCircle2 size={20} className="text-emerald-500" />

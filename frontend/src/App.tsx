@@ -15,6 +15,7 @@ const INITIAL_APP_STATE: AppState = {
   underwritingStatus: 'Pending Evaluation',
   activeAgent: null,
   needsDocument: false,
+  requiredDocuments: [],
   documents: {
     pan: 'pending',
     bankStatement: 'pending',
@@ -185,7 +186,7 @@ function App() {
     try {
       // General agent-driven chat
       setAppState(prev => ({ ...prev, activeAgent: 'Thinking...' }));
-      const res = await apiClient.chat(sessionId, text, []); 
+      const res = await apiClient.chat(sessionId, text, chatHistory); 
       setAppState(prev => ({ ...prev, activeAgent: null }));
 
       if (res.all_replies && res.all_replies.length > 0) {
@@ -218,7 +219,12 @@ function App() {
         setChatPhase('negotiate');
       } else if (['loan', 'loan_confirmed'].includes(res.intent) && fullState.loan_terms?.principal) {
         setChatPhase('document');
-        setAppState(prev => ({ ...prev, needsDocument: true }));
+        let docs = ["Identity (PAN or Aadhaar)"];
+        let limit = fullState.customer_data?.pre_approved_limit || 150000;
+        if (fullState.loan_terms.principal > limit) {
+          docs.push("Income Proof (Salary Slip)");
+        }
+        setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
       } else if (res.is_authenticated) {
         setChatPhase('loan_details'); 
       }

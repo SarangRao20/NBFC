@@ -76,7 +76,7 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
         customer = _lookup_customer_by_email(email, password)
 
     if customer:
-        update_session(session_id, {
+        await update_session(session_id, {
             "customer_id": customer.get("id", clean_phone),
             "is_existing_customer": True,
             "customer_data": {
@@ -90,6 +90,8 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "existing_emi_total": customer.get("existing_emi_total", 0),
                 "current_loans": customer.get("current_loans", []),
                 "risk_flags": customer.get("risk_flags", []),
+                "past_records": customer.get("past_records", ""),
+                "drop_off_history": customer.get("drop_off_history", ""),
             }
         })
         await advance_phase(session_id, "customer_identified")
@@ -175,13 +177,17 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     current_messages = []
     if history:
         for m in history:
-            role = HumanMessage if m["role"] == "user" else AIMessage
-            current_messages.append(role(content=m["content"]))
+            role_type = m.get("sender", m.get("role"))
+            role = HumanMessage if role_type == "user" else AIMessage
+            content = m.get("content", m.get("text", ""))
+            current_messages.append(role(content=content))
     else:
         for m in state.get("messages", []):
             if isinstance(m, dict):
-                role = HumanMessage if m["role"] == "user" else AIMessage
-                current_messages.append(role(content=m["content"]))
+                role_type = m.get("sender", m.get("role"))
+                role = HumanMessage if role_type == "user" else AIMessage
+                content = m.get("kwargs", {}).get("content", m.get("content", m.get("text", "")))
+                current_messages.append(role(content=content))
             else:
                 current_messages.append(m)
 

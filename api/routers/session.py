@@ -38,3 +38,7 @@ async def end_session(session_id: str):
     if not state:
         raise SessionNotFoundError(session_id)
     return await session_service.end_active_session(session_id)
+@router.get("/by-phone/{phone}", summary="Search Sessions by Phone Number")
+async def get_sessions_by_phone(phone: str):
+    """Returns all previous sessions found for this phone number."""
+    return await session_service.search_sessions_by_phone(phone)

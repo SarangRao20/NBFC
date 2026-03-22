@@ -32,6 +32,8 @@ def _default_state() -> dict:
             "existing_emi_total": 0,
             "current_loans": [],
             "risk_flags": [],
+            "past_records": "",
+            "drop_off_history": "",
         },
         "is_existing_customer": False,
 

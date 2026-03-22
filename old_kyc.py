@@ -34,22 +34,6 @@ def verification_agent_node(state: dict) -> dict:
     if docs.get("tampered"):
         issues.append("Document flagged as potentially tampered by OCR analysis.")
 
-    # 3-Layer Document Type Verification
-    terms = state.get("loan_terms", {})
-    principal = terms.get("principal", 0)
-    pre_approved = customer.get("pre_approved_limit", 0)
-    if not pre_approved or pre_approved <= 0:
-        pre_approved = 150000
-
-    doc_type = docs.get("document_type", "").lower()
-
-    if principal > pre_approved:
-        if "salary slip" not in doc_type:
-            issues.append(f"High-value loan requested (₹{principal:,} > Limit ₹{pre_approved:,}). A Salary Slip is mandatory, but received '{docs.get('document_type')}'.")
-    else:
-        if "pan" not in doc_type and "aadhaar" not in doc_type:
-            issues.append(f"Identity verification required for regular loans. Please upload PAN Card or Aadhaar Card. Received '{docs.get('document_type')}'.")
-
     if issues:
         issue_text = "\n".join(f"  • {i}" for i in issues)
         msg = f"⚠️ **KYC Verification Issues Found:**\n{issue_text}\n\nPlease re-upload correct documents."

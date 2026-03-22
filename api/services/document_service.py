@@ -69,7 +69,6 @@ async def request_documents(session_id: str) -> dict:
 
     if principal > pre_approved:
         required.append("Salary Slip (latest month — income verification required)")
-        required.append("Bank Statement (last 3 months — optional)")
 
     await advance_phase(session_id, "documents_requested")
 

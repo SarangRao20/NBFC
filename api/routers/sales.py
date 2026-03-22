@@ -43,6 +43,19 @@ async def chat(session_id: str, req: dict):
     """General chat endpoint that routes to Sales or Registration agents.
     Expects {"message": "user message", "history": []}
     """
+    history = req.get("history", [])
+    if history:
+        from db.database import chat_sessions_collection
+        try:
+            # Use update_one with session_id directly. The mock database now supports it.
+            await chat_sessions_collection.update_one(
+                {"session_id": session_id},
+                {"$set": {"messages": history}},
+            )
+            print(f"✅ Chat history persisted for session: {session_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to persist chat history: {e}")
+
     result = await sales_service.chat_with_agent(
         session_id, req.get("message", ""), req.get("history", [])
     )

@@ -9,6 +9,7 @@ export interface AppState {
   underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved' | 'Reject';
   activeAgent: string | null;
   needsDocument: boolean;
+  requiredDocuments: string[];
   documents: {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';

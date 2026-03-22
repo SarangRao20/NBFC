@@ -75,6 +75,12 @@ def registration_chat_node(state: dict):
 
     messages = [SystemMessage(content=sys_prompt)] + state["messages"]
     response = llm.invoke(messages)
+    
+    # Ensure Dev OTP is never lost due to message rendering overrides
+    dev_otp = state.get("customer_data", {}).get("dev_otp")
+    if dev_otp:
+        response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
+        
     return {"messages": [response]}
 
 
@@ -135,6 +141,7 @@ def registration_extraction_node(state: dict):
         if res["sent"]:
             otp_val = res.get('otp', 'N/A')
             log.append(f"✅ OTP sent successfully")
+            customer_data["dev_otp"] = otp_val # Keep it here to inject into chat later
             msg = f"📱 OTP sent to {clean_phone}. (Dev OTP: `{otp_val}`)" 
             updates["messages"] = [AIMessage(content=msg)]
         else:
@@ -147,6 +154,8 @@ def registration_extraction_node(state: dict):
         res = verify_otp(customer_data["phone"], user_otp)
         if res["verified"]:
             updates["is_authenticated"] = True
+            if "dev_otp" in customer_data:
+                del customer_data["dev_otp"]
             log.append("✅ OTP verified successfully")
             log.append("🗃️ Looking up customer in CRM database")
             db = pull_customer_from_db(customer_data["phone"])

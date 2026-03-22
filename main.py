@@ -1,8 +1,10 @@
 """FinServe NBFC — Unified Main Entry Point."""
 
+import traceback
 from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from db.schemas import User
 from db.database import users_collection, client, init_collections
 from api.config import get_settings

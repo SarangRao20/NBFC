@@ -102,6 +102,11 @@ def _build_customer_context(customer: dict) -> str:
     emi_total = customer.get("existing_emi_total", 0)
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
+    
+    # Enhanced Memory
+    past_records = customer.get("past_records", "No previous recorded interactions.")
+    drop_offs = customer.get("drop_off_history", "None recorded.")
+    intent = customer.get("intent", "Checking options")
 
     return (
         f"Customer Name: {name} | City: {city}\n"
@@ -109,7 +114,10 @@ def _build_customer_context(customer: dict) -> str:
         f"CIBIL / Credit Score: {score}\n"
         f"Pre-Approved Loan Limit: ₹{limit:,}\n"
         f"Existing Monthly EMI Burden: ₹{emi_total:,}/month\n"
-        f"Active Loans: {', '.join(loans) if loans else 'None'}"
+        f"Active Loans: {', '.join(loans) if loans else 'None'}\n"
+        f"Past Interactions/Sanctions: {past_records}\n"
+        f"Previous Drop-off Points: {drop_offs}\n"
+        f"Current Session Intent: {intent}"
     )
 
 
@@ -171,10 +179,13 @@ def sales_agent_node(state: dict):
             user_msg = m.content
             break
             
+    customer_context = state.get("customer_data", {}).copy()
+    customer_context["intent"] = state.get("intent", "Checking options")
+
     res = sales_chat_response(
         user_message=user_msg,
         chat_history=history[:-1] if history else [],
-        customer=state.get("customer_data")
+        customer=customer_context
     )
     
     # ── Strip raw JSON block from user-visible reply ──────────────────────

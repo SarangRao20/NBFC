@@ -39,6 +39,11 @@ Fraud Risk Score: {fraud_score:.2f} / 1.0
 Rejection Reasons: {reasons}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DOCUMENTS & RECORDS ON FILE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{documents_summary}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## YOUR ADVISORY OUTPUT RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -52,8 +57,9 @@ CASE: APPROVED
   * If this is a business loan → Mention MSME tax benefits under 80C
 - End with a cross-sell that MAKES SENSE for their profile (don't force it):
   * High income + no loans → Term Insurance worth 10x annual income
-  * Has gold assets → Gold loan refinance at 9.5%
   * Consistent EMI payer → Offer to raise pre-approved limit after 6 months
+  * If Loan Type is Gold Loan → Acknowledge the gold collateral specifically, assure them of its safety in our vaults, and mention our Gold Release process timeline.
+  * Has prior Gold Loan → Point out that their old gold was evaluated at high purity and offer top-up on existing gold.
 
 CASE: REJECTED — CREDIT SCORE TOO LOW
 - Don't start with "unfortunately" — be diplomatic
@@ -126,6 +132,30 @@ def advisor_agent_node(state: dict) -> dict:
         suggested_amount = 0
         suggested_emi = 0
 
+    # Prepare documents summary for the LLM
+    docs = state.get("documents", {})
+    verified_doc = docs.get("document_type", "None")
+    doc_num = docs.get("document_number", "")
+    extracted_data = docs.get("extracted_data", {})
+    
+    docs_text = f"- **Currently Uploaded & Verified Document**: {verified_doc} (Score: {docs.get('score', 0):.0f}%)\n"
+    if docs.get("salary_extracted"):
+        docs_text += f"- **Verified OCR Monthly Income**: ₹{docs.get('salary_extracted'):,}\n"
+    if docs.get("employer_name"):
+        docs_text += f"- **Verified Employer**: {docs.get('employer_name')}\n"
+    
+    # Mention "past_records" and "drop_off_history" explicitly so user knows memory exists
+    past_records = customer.get("past_records", "")
+    drop_off = customer.get("drop_off_history", "")
+    
+    if past_records:
+         docs_text += f"\n- **Past CRM Records / Interactions**: {past_records}\n"
+    if drop_off:
+         docs_text += f"- **Known Drop-off History**: {drop_off}\n"
+    
+    if not past_records and not drop_off:
+         docs_text += "\n- **Past CRM Records**: New customer profile with no documented prior loan history."
+
     sys_prompt = ADVISOR_PROMPT_TEMPLATE.format(
         name=customer.get("name", "Customer"),
         city=customer.get("city", "N/A"),
@@ -145,7 +175,9 @@ def advisor_agent_node(state: dict) -> dict:
         total_emi=total_emi,
         suggested_amount=suggested_amount,
         suggested_emi=suggested_emi,
+        documents_summary=docs_text,
     )
 
-    response = llm.invoke([SystemMessage(content=sys_prompt)])
+    messages = [SystemMessage(content=sys_prompt)] + state.get("messages", [])
+    response = llm.invoke(messages)
     return {"messages": [response]}
