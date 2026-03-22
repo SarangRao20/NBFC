@@ -38,3 +38,40 @@ async def capture_loan(session_id: str, req: CaptureLoanRequest):
     if result is None:
         raise SessionNotFoundError(session_id)
     return result
+@router.post("/{session_id}/chat", summary="Conversational interface with Sales/Registration Agent")
+async def chat(session_id: str, req: dict):
+    """General chat endpoint that routes to Sales or Registration agents.
+    Expects {"message": "user message", "history": []}
+    """
+    history = req.get("history", [])
+    if history:
+        from db.database import chat_sessions_collection
+        try:
+            # Use update_one with session_id directly. The mock database now supports it.
+            await chat_sessions_collection.update_one(
+                {"session_id": session_id},
+                {"$set": {"messages": history}},
+            )
+            print(f"✅ Chat history persisted for session: {session_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to persist chat history: {e}")
+
+    result = await sales_service.chat_with_agent(
+        session_id, req.get("message", ""), req.get("history", [])
+    )
+    if result is None:
+        raise SessionNotFoundError(session_id)
+    return result
+
+@router.get("/{session_id}/history", summary="Retrieve Chat History for a Session")
+async def get_chat_history(session_id: str):
+    """Returns the persisted chat history for a given session."""
+    import logging
+    from db.database import chat_sessions_collection
+    try:
+        history_doc = await chat_sessions_collection.find_one({"session_id": session_id})
+        if history_doc:
+            return {"history": history_doc.get("messages", [])}
+    except Exception as e:
+        logging.error(f"Error fetching chat history: {e}")
+    return {"history": []}

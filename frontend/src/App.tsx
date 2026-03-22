@@ -1,61 +1,133 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
-import type { AppState, ChatMessage } from './types';
+import type { AppState, ChatMessage, MessageType } from './types';
 import { apiClient } from './api/client';
+import { wsClient } from './api/websocket';
 
 const INITIAL_APP_STATE: AppState = {
+  customerName: '',
   requestedAmount: 0,
   roi: 0,
   tenure: 0,
   emi: 0,
+  creditScore: 0,
+  preApprovedLimit: 0,
   underwritingStatus: 'Pending Evaluation',
   activeAgent: null,
   needsDocument: false,
+  requiredDocuments: [],
   documents: {
     pan: 'pending',
     bankStatement: 'pending',
   },
 };
 
-const INITIAL_CHAT_HISTORY: ChatMessage[] = [
-  {
-    id: 'msg-1',
-    sender: 'agent',
-    type: 'text',
-    content: 'Welcome to FinServe! I am initializing your application... Please enter your 10-digit phone number to begin.',
-    timestamp: new Date(),
-  }
-];
+const INITIAL_CHAT_HISTORY: ChatMessage[] = [];
 
-type ChatPhase = 'init' | 'phone' | 'loan_details' | 'document' | 'processing' | 'evaluate' | 'negotiate' | 'accepted';
+type ChatPhase = 'init' | 'phone' | 'name' | 'loan_details' | 'document' | 'processing' | 'evaluate' | 'negotiate' | 'accepted';
 
 function App() {
   const [appState, setAppState] = useState<AppState>(INITIAL_APP_STATE);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(INITIAL_CHAT_HISTORY);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [chatPhase, setChatPhase] = useState<ChatPhase>('init');
+  const greetingStarted = useRef(false);
 
   // Initialize Backend Session
   useEffect(() => {
+    if (greetingStarted.current) return;
+    greetingStarted.current = true;
+
     async function initBackend() {
       try {
         const { session_id } = await apiClient.startSession();
         setSessionId(session_id);
         setChatPhase('phone');
+
+        // Automatically trigger initial greeting from Arjun
+        const res = await apiClient.chat(session_id, "hello");
+        if (res.all_replies && res.all_replies.length > 0) {
+          res.all_replies.forEach((m: any) => {
+            if (typeof m === 'string') pushAgentMessage(m);
+            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, m.options);
+          });
+        } else if (res.reply) {
+          pushAgentMessage(res.reply, 'text', undefined, res.options);
+        }
+
+        // Sync initial state (e.g. if existing user was auto-identified)
+        const fullState = await apiClient.getSession(session_id);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            customerName: fullState.customer_data?.name || prev.customerName,
+            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+            tenure: fullState.loan_terms?.tenure || prev.tenure,
+            roi: fullState.loan_terms?.rate || prev.roi,
+            emi: fullState.loan_terms?.emi || prev.emi,
+            creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+            preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+          }));
+        }
+
       } catch (error) {
         console.error('Failed to initialize backend:', error);
       }
     }
     initBackend();
-  }, []);
 
-  const pushAgentMessage = (text: string, type: 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' = 'text', id = `msg-${Date.now()}`) => {
+    return () => wsClient.disconnect();
+  }, [sessionId]);
+
+  // WebSocket Listener
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    wsClient.connect(sessionId);
+    const unsubscribe = wsClient.subscribe((data) => {
+      console.log('📥 [WS EVENT]', data);
+      
+      if (data.type === 'AGENT_STEP') {
+        const steps = data.steps || [];
+        const lastStep = steps[steps.length - 1];
+        if (lastStep) {
+          setAppState(prev => ({ ...prev, activeAgent: `🔍 ${lastStep.agent_name || 'Agent'} is working...` }));
+        }
+      }
+      
+      if (data.type === 'PHASE_UPDATE') {
+        console.log(`🚀 [PHASE UPDATE] -> ${data.phase}`);
+        // Automatically sync state when phase changes
+        apiClient.getSession(sessionId).then(fullState => {
+          if (fullState) {
+            setAppState(prev => ({
+              ...prev,
+              customerName: fullState.customer_data?.name || prev.customerName,
+              requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+              tenure: fullState.loan_terms?.tenure || prev.tenure,
+              roi: fullState.loan_terms?.rate || prev.roi,
+              emi: fullState.loan_terms?.emi || prev.emi,
+              creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+              preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+              underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+            }));
+          }
+        });
+      }
+    });
+
+    return () => { unsubscribe(); };
+  }, [sessionId]);
+
+  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}`, options?: string[]) => {
     setChatHistory(prev => [...prev, {
       id,
       sender: 'agent',
       type,
       content: text,
+      options,
       timestamp: new Date(),
     }]);
     return id;
@@ -159,6 +231,59 @@ function App() {
     }
   };
 
+  const loadSession = async (sid: string) => {
+    try {
+      setSessionId(sid);
+      const state = await apiClient.getSession(sid);
+      const history = await apiClient.getHistory(sid);
+
+      if (state) {
+        setAppState(prev => ({
+          ...prev,
+          customerName: state.customer_data?.name || '',
+          requestedAmount: state.loan_terms?.principal || 0,
+          tenure: state.loan_terms?.tenure || 0,
+          roi: state.loan_terms?.rate || 0,
+          emi: state.loan_terms?.emi || 0,
+          creditScore: state.customer_data?.credit_score || 0,
+          preApprovedLimit: state.customer_data?.pre_approved_limit || 0,
+          underwritingStatus: state.decision ? (state.decision.charAt(0).toUpperCase() + state.decision.slice(1).replace('_', ' ')) as any : 'Pending Evaluation',
+          activeAgent: null,
+          needsDocument: state.current_phase === 'document',
+          requiredDocuments: state.current_phase === 'document' ? ["Identity (PAN or Aadhaar)"] : [],
+          documents: {
+            pan: state.documents?.verified ? 'verified' : 'pending',
+            bankStatement: state.documents?.verified ? 'verified' : 'pending',
+          },
+          pastLoans: state.customer_data?.past_loans,
+          pastRecords: state.customer_data?.past_records,
+        }));
+      }
+
+      if (history.history && history.history.length > 0) {
+        const chatMsgs: ChatMessage[] = history.history.map((m: any, i: number) => ({
+          id: `msg-hist-${i}-${sid}`,
+          sender: (m.sender || m.role === 'user') ? (m.sender || 'user') : 'agent',
+          type: m.type || 'text',
+          content: m.content || m.text || (typeof m === 'string' ? m : ''),
+          timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+        }));
+        setChatHistory(chatMsgs);
+      } else {
+        setChatHistory([]);
+      }
+      
+      // Update chat phase based on session state
+      if (state.decision === 'approve') setChatPhase('accepted');
+      else if (state.decision === 'soft_reject') setChatPhase('negotiate');
+      else setChatPhase('loan_details');
+
+    } catch (err) {
+      console.error("Failed to load session:", err);
+      pushAgentMessage("Error: Failed to load selected session.");
+    }
+  };
+
   const handleSendMessage = async (text: string) => {
     if (!sessionId) return;
 
@@ -173,85 +298,90 @@ function App() {
     const lowerText = text.toLowerCase().trim();
 
     try {
-      if (chatPhase === 'phone') {
-        setAppState(prev => ({ ...prev, activeAgent: 'Looking up customer...' }));
-        const res = await apiClient.identifyCustomer(sessionId, lowerText);
+      // General agent-driven chat
+      setAppState(prev => ({ ...prev, activeAgent: 'Thinking...' }));
+      
+      let res: any = null;
+      try {
+        res = await apiClient.chat(sessionId, text, chatHistory); 
         setAppState(prev => ({ ...prev, activeAgent: null }));
-        
-        let reply = `Customer Identified: ${res.is_existing_customer ? 'Returning Customer' : 'New Customer'}. `;
-        if (res.customer_data) {
-           reply += `Welcome back, ${res.customer_data.name}. `;
+
+        // Handle multiple replies if available
+        if (res.all_replies && res.all_replies.length > 0) {
+          res.all_replies.forEach((m: any, idx: number) => {
+              const isLast = idx === res.all_replies.length - 1;
+              const msgOptions = isLast ? (m.options || res.options) : m.options;
+              
+              if (typeof m === 'string') pushAgentMessage(m, 'text', undefined, msgOptions);
+              else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, msgOptions);
+          });
+        } else if (res.reply) {
+          pushAgentMessage(res.reply, 'text', undefined, res.options);
         }
-        reply += `Please provide your desired Loan Amount and Tenure in months (e.g. 500000 48).`;
-        
-        pushAgentMessage(reply);
-        setChatPhase('loan_details');
+      } catch (err) {
+        console.error("Chat API failed:", err);
+        pushAgentMessage("System Error: Chat communication failed.");
+        setAppState(prev => ({ ...prev, activeAgent: null }));
+        return; // Stop if chat fails
+      }
 
-      } else if (chatPhase === 'loan_details') {
-        const parts = lowerText.split(' ');
-        if (parts.length < 2) {
-          pushAgentMessage("Please provide both amount and tenure, separated by a space (e.g. 500000 48).");
-          return;
+      // Sync state from backend
+      let fullState: any = null;
+      try {
+        fullState = await apiClient.getSession(sessionId);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            customerName: fullState.customer_data?.name || prev.customerName,
+            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+            tenure: fullState.loan_terms?.tenure || prev.tenure,
+            roi: fullState.loan_terms?.rate || prev.roi,
+            emi: fullState.loan_terms?.emi || prev.emi,
+            creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+            preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+            pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
+            pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
+          }));
         }
-        
-        const amount = parseInt(parts[0]);
-        const tenure = parseInt(parts[1]);
-        
-        if (isNaN(amount) || isNaN(tenure)) {
-           pushAgentMessage("Invalid numbers. Please try again.");
-           return;
+      } catch (err) {
+        console.error("State sync failed:", err);
+      }
+
+      // Update Phase based on intent/decision/next_agent
+      try {
+        if (fullState?.decision === 'soft_reject') {
+          setChatPhase('negotiate');
+        } else if (res && ['loan', 'loan_confirmed'].includes(res.intent) && fullState?.loan_terms?.principal) {
+          setChatPhase('document');
+          let docs = ["Identity (PAN or Aadhaar)"];
+          let limit = fullState.customer_data?.pre_approved_limit || 150000;
+          if (fullState.loan_terms.principal > limit) {
+            docs.push("Income Proof (Salary Slip)");
+          }
+          setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
+        } else if (res && res.is_authenticated) {
+          setChatPhase('loan_details'); 
+          // Fetch past sessions when user is identified
+          if (fullState?.customer_data?.phone) {
+            const sessions = await apiClient.getSessionsByPhone(fullState.customer_data.phone);
+            setAppState(prev => ({ ...prev, pastSessions: sessions }));
+          }
         }
-
-        setAppState(prev => ({ ...prev, activeAgent: 'Capturing loan details...' }));
-        await apiClient.captureLoan(sessionId, 'personal', amount, tenure);
-        await apiClient.requestDocuments(sessionId);
-        
-        setAppState(prev => ({ 
-          ...prev, 
-          activeAgent: null,
-          requestedAmount: amount, 
-          tenure, 
-          needsDocument: true 
-        }));
-        
-        setChatPhase('document');
-        pushAgentMessage("Terms captured. Please upload your Bank Statement PDF using the dropzone below.");
-
-      } else if (chatPhase === 'negotiate' && lowerText.includes('accept')) {
-        setAppState(prev => ({ ...prev, activeAgent: '✍️ Finalizing terms...' }));
-        await apiClient.respondToOffer(sessionId, 'accept_option_a');
-        const state = await apiClient.getState(sessionId);
-
-        setAppState(prev => ({
-          ...prev,
-          activeAgent: null,
-          roi: state.loan_terms?.rate || prev.roi,
-          emi: state.loan_terms?.emi || prev.emi,
-          requestedAmount: state.loan_terms?.principal || prev.requestedAmount,
-          tenure: state.loan_terms?.tenure || prev.tenure,
-          underwritingStatus: 'Approved'
-        }));
-
-        await apiClient.sanction(sessionId);
-        setChatPhase('accepted');
-        pushAgentMessage("Terms accepted! Your loan is formally approved. Here is your final Sanction document.", 'sanction_letter');
-
-      } else if (chatPhase === 'accepted') {
-        pushAgentMessage("Your loan is already approved. Thank you!");
-      } else {
-        // Fallback or unrecognized
-        pushAgentMessage("I didn't catch that. Please follow the instructions to proceed.");
+      } catch (err) {
+        console.error("Post-chat logic failed:", err);
       }
     } catch (err) {
-      console.error("API flow error:", err);
+      console.error("Top-level API error:", err);
       pushAgentMessage("System Error: Failed to communicate with backend API.");
       setAppState(prev => ({ ...prev, activeAgent: null }));
     }
+
   };
 
   return (
     <div className="w-full h-screen flex overflow-hidden font-sans bg-slate-50 text-slate-900 leading-relaxed">
-      <DashboardPane appState={appState} />
+      <DashboardPane appState={appState} onLoadSession={loadSession} />
       <ChatPane 
         appState={appState} 
         setAppState={setAppState} 

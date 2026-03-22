@@ -39,6 +39,8 @@ async def underwrite(session_id: str) -> dict:
     salary = customer.get("salary", 0)
     score = customer.get("credit_score", 0)
     pre_approved = customer.get("pre_approved_limit", 0)
+    if not pre_approved or pre_approved <= 0:
+        pre_approved = 150000  # Fallback safety net
     existing_emi = customer.get("existing_emi_total", 0)
 
     principal = terms.get("principal", 0)
@@ -101,21 +103,38 @@ async def underwrite(session_id: str) -> dict:
             if alt_p > 1000:
                 decision = "soft_reject"
 
-    # Build message
+    # Build Highly Personalized Message
+    customer_name = customer.get("name", "Valued Customer").title()
     if decision == "approve":
         message = (
-            f"LOAN APPROVED. EMI ₹{emi:,.2f} = {dti*100:.1f}% of income. "
-            f"Credit score {score}. Risk: {risk_level}."
+            f"✅ **LOAN APPROVED FOR {customer_name.upper()}**\n\n"
+            f"Congratulations {customer_name}! Your application for ₹{principal:,} is fully approved. "
+            f"Because your {score} credit score is strong and your calculated Debt-to-Income ratio ({dti*100:.1f}%) "
+            f"is perfectly manageable within your ₹{salary:,} monthly income, we're happy to grant this standard sanction. "
+            f"Your EMI of ₹{emi:,.2f} is locked in!"
         )
     elif decision == "pending_docs":
-        message = f"LOAN PENDING. Additional documentation required for ₹{principal:,}."
+        message = (
+            f"⚠️ **ADDITIONAL REVIEW REQUIRED FOR {customer_name.upper()}**\n\n"
+            f"Hi {customer_name}, the requested amount (₹{principal:,}) exceeds your instant pre-approved limit. "
+            f"To proceed, we require a Salary Slip to verify your income and recalculate your approval mathematically."
+        )
     elif decision == "soft_reject":
         message = (
-            f"LOAN UNDER REVIEW. DTI exceeds threshold but credit qualifies for negotiation. "
-            f"Alternative offer: ₹{alternative_offer:,.0f}. Proceed to Persuasion Loop."
+            f"⚠️ **LOAN UNDER REVIEW FOR {customer_name.upper()}**\n\n"
+            f"Hi {customer_name}, your credit profile (Score: {score}) is solid, but the requested ₹{principal:,} "
+            f"forces your Debt-to-Income mapping to {dti*100:.1f}%, which exceeds our safety threshold (50%). "
+            f"To protect your financial health, we can comfortably approve a revised amount of ₹{alternative_offer:,.0f}."
+            f"Arjun will discuss restructure options with you now."
         )
     else:
-        message = f"LOAN REJECTED. {'; '.join(reasons)}"
+        reason_list = "\n".join(f"• {r}" for r in reasons)
+        message = (
+            f"❌ **LOAN REJECTED FOR {customer_name.upper()}**\n\n"
+            f"We're sorry {customer_name}, but your application for ₹{principal:,} could not be approved at this time.\n"
+            f"{reason_list}\n\n"
+            f"For further help regarding your financial health, our Advisor is available to chat."
+        )
 
     await update_session(session_id, {
         "decision": decision,

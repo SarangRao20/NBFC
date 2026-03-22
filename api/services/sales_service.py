@@ -2,7 +2,9 @@
 
 import json
 import os
+import asyncio
 from api.core.state_manager import get_session, update_session, advance_phase
+from api.core.websockets import manager
 from mock_apis.loan_products import LOAN_PRODUCTS
 
 
@@ -14,6 +16,16 @@ def _normalize_phone(phone: str) -> str:
     elif phone.startswith("91") and len(phone) == 12:
         phone = phone[2:]
     return phone[-10:]
+
+
+def _clean_dict(d):
+    """Recursively removes _id and other non-JSON-serializable types."""
+    if isinstance(d, list):
+        return [_clean_dict(v) for v in d]
+    if isinstance(d, dict):
+        return {k: _clean_dict(v) for k, v in d.items() if k != "_id"}
+    return d
+
 
 
 def _lookup_customer_by_phone(phone: str) -> dict | None:
@@ -76,7 +88,28 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
         customer = _lookup_customer_by_email(email, password)
 
     if customer:
-        update_session(session_id, {
+        from api.services.session_service import search_sessions_by_phone
+        past_sessions = await search_sessions_by_phone(clean_phone)
+        
+        # Extract past loan info
+        past_loans = []
+        for ps in past_sessions:
+            if ps.get("session_id") == session_id: continue # Skip current
+            
+            p_data = ps.get("state", {}).get("loan_terms", {})
+            p_sanction = ps.get("state", {}).get("sanction_pdf")
+            p_decision = ps.get("state", {}).get("decision")
+            
+            if p_data or p_sanction:
+                past_loans.append({
+                    "amount": p_data.get("principal"),
+                    "type": p_data.get("loan_type"),
+                    "decision": p_decision,
+                    "sanction_letter": p_sanction,
+                    "date": ps.get("updated_at")
+                })
+
+        await update_session(session_id, {
             "customer_id": customer.get("id", clean_phone),
             "is_existing_customer": True,
             "customer_data": {
@@ -90,10 +123,19 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "existing_emi_total": customer.get("existing_emi_total", 0),
                 "current_loans": customer.get("current_loans", []),
                 "risk_flags": customer.get("risk_flags", []),
+                "past_records": customer.get("past_records", ""),
+                "drop_off_history": customer.get("drop_off_history", ""),
+                "past_loans": past_loans,
             }
         })
         await advance_phase(session_id, "customer_identified")
-        return {
+        # Broadcast phase update via WebSocket
+        asyncio.create_task(manager.broadcast_to_session(session_id, {
+            "type": "PHASE_UPDATE",
+            "phase": "loan_details"
+        }))
+
+        return _clean_dict({
             "is_existing_customer": True,
             "customer_data": {
                 "name": customer.get("name", ""),
@@ -104,9 +146,11 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "pre_approved_limit": customer.get("pre_approved_limit", 0),
                 "existing_emi_total": customer.get("existing_emi_total", 0),
                 "current_loans": customer.get("current_loans", []),
+                "past_loans": past_loans,
+                "past_records": customer.get("past_records", ""),
             },
             "message": f"Welcome back, {customer.get('name', 'Customer')}!"
-        }
+        })
     else:
         # New customer — create minimal profile
         await update_session(session_id, {
@@ -119,18 +163,24 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "city": "",
                 "salary": 0,
                 "credit_score": 700,
-                "pre_approved_limit": 100000,
+                "pre_approved_limit": 25000,
                 "existing_emi_total": 0,
                 "current_loans": [],
                 "risk_flags": [],
             }
         })
         await advance_phase(session_id, "customer_identified")
-        return {
+        # Broadcast phase update via WebSocket for new customer
+        asyncio.create_task(manager.broadcast_to_session(session_id, {
+            "type": "PHASE_UPDATE",
+            "phase": "loan_details"
+        }))
+
+        return _clean_dict({
             "is_existing_customer": False,
             "customer_data": None,
             "message": "New customer. Profile created with default values. Proceed to capture loan requirement."
-        }
+        })
 
 
 async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount: float, tenure_months: int) -> dict:
@@ -155,10 +205,145 @@ async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount:
     await update_session(session_id, {"loan_terms": loan_terms})
     await advance_phase(session_id, "loan_captured")
 
-    return {
+    # Broadcast phase update via WebSocket
+    asyncio.create_task(manager.broadcast_to_session(session_id, {
+        "type": "PHASE_UPDATE",
+        "phase": "document"
+    }))
+
+    return _clean_dict({
         "loan_terms": loan_terms,
         "emi": emi,
         "total_interest": total_interest,
         "total_repayment": total_payment,
         "message": f"Loan captured: ₹{loan_amount:,.0f} at {rate}% for {tenure_months} months. EMI: ₹{emi:,.2f}/month."
-    }
+    })
+async def chat_with_agent(session_id: str, user_message: str, history: list[dict] = None) -> dict:
+    """Conversational interface using the Master LangGraph."""
+    from agents.master_graph import compile_master_graph
+    from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+    
+    state = await get_session(session_id)
+    if not state:
+        return None
+
+    # Rebuild message list from history or stored state
+    current_messages = []
+    if history:
+        for m in history:
+            role_type = m.get("sender", m.get("role"))
+            role = HumanMessage if role_type == "user" else AIMessage
+            content = m.get("content", m.get("text", ""))
+            current_messages.append(role(content=content))
+    else:
+        for m in state.get("messages", []):
+            if isinstance(m, dict):
+                role_type = m.get("sender", m.get("role"))
+                role = HumanMessage if role_type == "user" else AIMessage
+                content = m.get("kwargs", {}).get("content", m.get("content", m.get("text", "")))
+                current_messages.append(role(content=content))
+            else:
+                current_messages.append(m)
+
+    # Add the new user message
+    current_messages.append(HumanMessage(content=user_message))
+    
+    # Track how many AI messages exist before the graph runs
+    pre_run_ai_count = sum(1 for m in current_messages if isinstance(m, AIMessage))
+
+    # Update local state for graph invocation
+    state["messages"] = current_messages
+    
+    # Run the Master Graph
+    print(f"🧠 [SALES SERVICE] Invoking MasterGraph for session {session_id}...")
+    graph = compile_master_graph()
+    
+    try:
+        final_state = await graph.ainvoke(state, config={"recursion_limit": 25})
+        print("✅ [SALES SERVICE] Graph run complete.")
+
+        # Collect NEW AI messages (not re-emitting old history)
+        all_messages = final_state.get("messages", [])
+        new_ai = []
+        ai_seen = 0
+        for m in all_messages:
+            if isinstance(m, AIMessage):
+                ai_seen += 1
+                if ai_seen > pre_run_ai_count:
+                    # Try to parse if it's already a JSON dict string
+                    try:
+                        import json
+                        parsed = json.loads(m.content)
+                        new_ai.append(parsed)
+                    except:
+                        new_ai.append({"type": "text", "content": m.content})
+        
+        # Insert action log block before the final reply, if any steps were collected
+        logs = final_state.get("action_log", [])
+        if logs:
+            import json
+            # Update: Push individual agent steps to WS for live "Thinking"
+            asyncio.create_task(manager.broadcast_to_session(session_id, {
+                "type": "AGENT_STEP",
+                "steps": _clean_dict(logs)
+            }))
+
+            step_msg = {
+                "type": "agent_steps", 
+                "content": json.dumps({"steps": _clean_dict(logs)})
+            }
+            new_ai.insert(0, step_msg)
+
+        # Attach options to the last AI message for frontend rendering
+        if final_state.get("options") and new_ai:
+            if isinstance(new_ai[-1], dict):
+                new_ai[-1]["options"] = final_state.get("options")
+
+        # For the legacy string reply, concat just the text bits
+        texts = [m["content"] for m in new_ai if isinstance(m, dict) and m.get("type") == "text"]
+        reply = "\n\n".join(texts) if texts else "I'm here — what would you like to do next?"
+        
+        # Ensure session metadata is preserved in the final state
+        final_state["session_id"] = session_id
+        final_state["status"] = state.get("status", "active")
+
+        # Persist final state to DB (Bypassing Redis for state sync per user request)
+        await update_session(session_id, final_state)
+        # await cache.set_session(session_id, final_state) # User asked NOT to use Redis for sidebar
+
+
+        
+        # If loan is signed, log it for future historical lookups
+        if final_state.get("is_signed"):
+            try:
+                from db.mock_database import loan_applications_collection
+                from datetime import datetime
+                loan_doc = {
+                    "session_id": session_id,
+                    "phone": final_state.get("customer_data", {}).get("phone"),
+                    "name": final_state.get("customer_data", {}).get("name"),
+                    "loan_type": final_state.get("loan_terms", {}).get("loan_type", "Personal"),
+                    "amount": final_state.get("loan_terms", {}).get("principal", 0),
+                    "status": "Signed & Disbursed",
+                    "created_at": datetime.now().isoformat()
+                }
+                await loan_applications_collection.insert_one(loan_doc)
+                print(f"✅ [SALES SERVICE] Loan logged for {loan_doc['name']}")
+            except Exception as le:
+                print(f"⚠️ [SALES SERVICE] Failed to log loan: {le}")
+        return _clean_dict({
+            "reply": reply,
+            "all_replies": new_ai,
+            "next_agent": final_state.get("next_agent", "unknown"),
+            "intent": final_state.get("intent", "none"),
+            "is_authenticated": final_state.get("is_authenticated", False),
+            "loan_terms": final_state.get("loan_terms", {}),
+            "customer_data": final_state.get("customer_data", {}),
+            "options": final_state.get("options"),
+        })
+
+        
+    except Exception as e:
+        print(f"❌ Master Graph Error: {e}")
+        import traceback; traceback.print_exc()
+        return {"reply": f"Technical issue in the brain: {str(e)}", "error": True}

@@ -13,7 +13,9 @@
         "current_loans": [
             "HDFC Personal Loan"
         ],
-        "risk_flags": []
+        "risk_flags": [],
+        "past_records": "Applied for Auto Loan 2 years ago (Sanctioned). Requested Gold Loan info 6 months ago but didn't proceed.",
+        "drop_off_history": "Often drops off at the document upload stage when asked for Bank Statements. Prefers quick identity-only loans."
     },
     {
         "id": "CUST002",
@@ -23,25 +25,13 @@
         "password": "1510",
         "city": "Unknown",
         "salary": 0,
-        "credit_score": 700,
+        "credit_score": -1,
         "pre_approved_limit": 100000,
         "existing_emi_total": 0,
         "current_loans": [],
-        "risk_flags": []
-    },
-    {
-        "id": "CUST003",
-        "name": "Sanvi Nyati",
-        "phone": "7248915106",
-        "email": "sanvinyati6@gmail.com",
-        "password": "1510",
-        "city": "Unknown",
-        "salary": 0,
-        "credit_score": 700,
-        "pre_approved_limit": 100000,
-        "existing_emi_total": 0,
-        "current_loans": [],
-        "risk_flags": []
+        "risk_flags": [],
+        "past_records": "Never taken a loan before. Account active for 3 years.",
+        "drop_off_history": "Dropped off at the EMI calculation stage last week. Likely price-sensitive to high interest rates."
     },
     {
         "id": "CUST003",

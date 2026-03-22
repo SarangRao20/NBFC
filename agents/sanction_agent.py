@@ -10,34 +10,64 @@ from langchain_core.messages import AIMessage
 os.makedirs("data/sanctions", exist_ok=True)
 
 
-def sanction_agent_node(state: dict) -> dict:
-    """Generates a PDF sanction or rejection letter using ReportLab."""
-    print("📜 [SANCTION AGENT] Generating PDF...")
+async def sanction_agent_node(state: dict):
+    """
+    Generates a formal Sanction Letter PDF string based on confirmed loan details.
+    """
+    print("📜 [SANCTION AGENT] Generating final sanction letter...")
+    log = list(state.get("action_log") or [])
+    log.append("📜 Generating Official Sanction Letter")
 
-    customer = state.get("customer_data", {})
+    import datetime
+    current_date = datetime.datetime.now().strftime("%B %d, %Y")
+    
     terms = state.get("loan_terms", {})
-    cust_name = customer.get("name", "Customer")
-    cust_phone = customer.get("phone", "N/A")
-    cust_id = state.get("customer_id", "UNKNOWN")
+    customer = state.get("customer_data", {})
 
     principal = terms.get("principal", 0)
     rate = terms.get("rate", 0)
     tenure = terms.get("tenure", 0)
     emi = terms.get("emi", 0)
+    cust_name = customer.get("name", "Applicant")
+    cust_phone = customer.get("phone", "N/A")
+    cust_id = state.get("customer_id", "UNKNOWN")
+
     dti = state.get("dti_ratio", 0)
-    score = customer.get("score", 0)
+    score = customer.get("credit_score", 0)
 
     # Determine letter type (approved or rejected)
-    status = state.get("status", "approved").strip().lower()
-    is_approved = status != "rejected"
+    status = state.get("decision", "approve").strip().lower()
+    is_approved = status != "reject" and status != "hard_reject"
     status_text = "Approved" if is_approved else "Rejected"
 
     rejection_reason = state.get("rejection_reason", "Not specified")
 
     letter_label = "Sanction" if is_approved else "Rejection"
-    filename = f"{cust_id}_{letter_label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+
+    letter = f"""**{letter_label.upper()} LETTER**
+Date: {current_date}
+
+Dear {cust_name},
+
+We are pleased to inform you that your application for a {terms.get("loan_type", "Personal")} Loan has been {status_text.lower()}.
+
+**Approved Terms:**
+- **Loan Amount (Principal):** ₹{principal:,.0f}
+- **Interest Rate:** {rate}% per annum
+- **Tenure:** {tenure} months
+- **Calculated EMI:** ₹{emi:,.0f}
+- **Processing Fee:** ₹{(principal * 0.01):,.0f} (1%)
+
+This offer is valid for 15 days from the date of issuance. Please review and accept these terms to authorize disbursement to your verified bank account.
+
+Authorized Signatory,
+FinServe Underwriting Desk
+    """
+    
+    filename = f"{cust_phone}_{letter_label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     filepath = os.path.join("data", "sanctions", filename)
 
+    log.append(f"✅ {letter_label} ready for e-signature")
     try:
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
         from reportlab.lib import colors
@@ -178,4 +208,10 @@ def sanction_agent_node(state: dict) -> dict:
             )
 
     msg = f"📜 **{letter_label} Letter Generated!**\nFile: `{filepath}`\nYou can download it from the chat."
-    return {"sanction_pdf": filepath, "messages": [AIMessage(content=msg)]}
+    import json
+    msg_json = json.dumps({"type": "sanction_letter", "content": msg})
+    return {
+        "sanction_pdf": filepath, 
+        "messages": [AIMessage(content=msg_json)],
+        "action_log": log
+    }

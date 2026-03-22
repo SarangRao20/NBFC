@@ -32,6 +32,8 @@ def _default_state() -> dict:
             "existing_emi_total": 0,
             "current_loans": [],
             "risk_flags": [],
+            "past_records": "",
+            "drop_off_history": "",
         },
         "is_existing_customer": False,
 
@@ -74,6 +76,10 @@ def _default_state() -> dict:
         "risk_level": "",
         "alternative_offer": 0.0,
         "reasons": [],
+        "is_authenticated": False,
+        "otp_sent": False,
+        "intent": "none",
+        "next_agent": "registration_agent",
 
         # Persuasion Loop (Phase 7)
         "negotiation_round": 0,
@@ -113,6 +119,38 @@ async def get_session(session_id: str) -> Optional[dict]:
     return await sessions_collection.find_one({"_id": session_id})
 
 
+def _sanitize_state(state: dict) -> dict:
+    """Recursively converts LangChain message objects to BSON-serializable dicts."""
+    from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+    
+    new_state = {}
+    for k, v in state.items():
+        if k == "messages" and isinstance(v, list):
+            new_msgs = []
+            for m in v:
+                if isinstance(m, (HumanMessage, AIMessage, BaseMessage)):
+                    role = "user" if isinstance(m, HumanMessage) else "assistant"
+                    new_msgs.append({"role": role, "content": m.content})
+                elif isinstance(m, dict):
+                    new_msgs.append(m)
+                else:
+                    new_msgs.append({"role": "system", "content": str(m)})
+            new_state[k] = new_msgs
+        elif isinstance(v, dict):
+            new_state[k] = _sanitize_state(v)
+        elif isinstance(v, list):
+            new_list = []
+            for item in v:
+                if isinstance(item, dict):
+                    new_list.append(_sanitize_state(item))
+                else:
+                    new_list.append(item)
+            new_state[k] = new_list
+        else:
+            new_state[k] = v
+    return new_state
+
+
 async def update_session(session_id: str, updates: dict) -> dict:
     """Merge updates into session state and persist to MongoDB. Returns updated state."""
     state = await get_session(session_id)
@@ -125,8 +163,10 @@ async def update_session(session_id: str, updates: dict) -> dict:
         else:
             state[key] = value
 
-    await sessions_collection.replace_one({"_id": session_id}, state)
-    return state
+    # Sanitize before persisting to MongoDB Atlas
+    sanitized = _sanitize_state(state)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    return sanitized
 
 
 async def advance_phase(session_id: str, phase: str) -> dict:
@@ -141,8 +181,9 @@ async def advance_phase(session_id: str, phase: str) -> dict:
         "timestamp": datetime.utcnow().isoformat(),
     })
     
-    await sessions_collection.replace_one({"_id": session_id}, state)
-    return state
+    sanitized = _sanitize_state(state)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    return sanitized
 
 
 async def end_session(session_id: str) -> dict:
@@ -158,8 +199,9 @@ async def end_session(session_id: str) -> dict:
         "timestamp": datetime.utcnow().isoformat(),
     })
     
-    await sessions_collection.replace_one({"_id": session_id}, state)
-    return state
+    sanitized = _sanitize_state(state)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    return sanitized
 
 
 async def delete_session(session_id: str) -> bool:

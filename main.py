@@ -1,8 +1,13 @@
 """FinServe NBFC — Unified Main Entry Point."""
 
+import traceback
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError, ResponseValidationError
+from api.core.websockets import manager
+from contextlib import asynccontextmanager
 from db.schemas import User
 from db.database import users_collection, client, init_collections
 from api.config import get_settings
@@ -10,6 +15,7 @@ from api.routers import (
     session, sales, documents, kyc, fraud,
     underwriting, persuasion, sanction, advisory
 )
+from api.routers.auth import router as auth_router
 
 settings = get_settings()
 
@@ -21,22 +27,91 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Global Exception Handler to log full tracebacks to terminal
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print("\n" + "="*50)
+    print(f"🔥 UNHANDLED EXCEPTION: {request.method} {request.url}")
+    print("="*50)
+    traceback.print_exc()
+    print("="*50 + "\n")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error. Check terminal logs."}
+    )
+
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://0.0.0.0:5173",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
-@app.on_event("startup")
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print(f"❌ [VALIDATION ERROR] {request.method} {request.url}")
+    print(f"❌ Body: {exc.body}")
+    print(f"❌ Errors: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request: Request, exc: ResponseValidationError):
+    print(f"❌ [RESPONSE VALIDATION ERROR] {request.method} {request.url}")
+    print(f"❌ Error details: {exc.errors()}")
+    # Log the first few fields that failed
+    for error in exc.errors():
+        print(f"   - Field: {'.'.join(str(i) for i in error['loc'])} | Issue: {error['msg']}")
+        
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Response validation error: {str(exc)}"},
+        headers={"Access-Control-Allow-Origin": "*"} # Ensure browser sees the 500
+    )
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await startup_db()
+    yield
+    # Shutdown
+    await client.close()
+
+# Lifespan event handler
+app.router.lifespan_context = lifespan
+
 async def startup_db():
     try:
         await client.admin.command("ping")
         print("✅ MongoDB Atlas connected")
         await init_collections()
         print("✅ All collections initialized")
+        
+        # Initialize Redis and Email services
+        from api.core.redis_cache import get_cache
+        from api.core.email_service import get_email_service
+        
+        cache = await get_cache()
+        if cache.connected:
+            print("✅ Redis cache connected")
+        else:
+            print("⚠️ Redis cache not available - using database fallback")
+        
+        email_service = await get_email_service()
+        print("✅ Email service initialized")
+        
     except Exception as e:
         print(f"❌ MongoDB connection failed: {e}")
         raise
@@ -95,6 +170,7 @@ app.include_router(underwriting.router)  # Step 11
 app.include_router(persuasion.router)    # Steps 12, 13, 14, 15
 app.include_router(sanction.router)      # Step 16
 app.include_router(advisory.router)      # Step 17
+app.include_router(auth_router)          # Authentication & Profile Management
 
 @app.get("/", tags=["Root"])
 def root():
@@ -105,6 +181,21 @@ def root():
         "status": "running",
         "docs": "/docs",
     }
+
+# WebSocket Endpoint for Real-time Updates
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    await manager.connect(websocket, session_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Handle incoming WS messages if needed (currently focus on Push from server)
+            print(f"📥 [WS] Message from {session_id}: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, session_id)
+    except Exception as e:
+        print(f"⚠️ [WS] Error in {session_id}: {e}")
+        manager.disconnect(websocket, session_id)
 
 if __name__ == "__main__":
     import uvicorn

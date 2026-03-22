@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage
 
 
-def emi_agent_node(state: dict) -> dict:
+async def emi_agent_node(state: dict) -> dict:
     """Pure deterministic math — no LLM tokens wasted."""
     print("🔢 [EMI AGENT] Calculating...")
 
@@ -34,4 +34,10 @@ def emi_agent_node(state: dict) -> dict:
         f"- Tenure: {tenure} months @ {rate_pa}% p.a."
     )
 
-    return {"loan_terms": updated_terms, "messages": [AIMessage(content=msg)]}
+    import json
+    msg_json = json.dumps({"type": "emi_slider", "content": msg})
+    return {
+        "loan_terms": updated_terms, 
+        "messages": [AIMessage(content=msg_json)],
+        "current_phase": "kyc_verification"
+    }

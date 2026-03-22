@@ -111,7 +111,7 @@ def _calculate_options(salary, existing_emi, rate, original_principal, original_
     return options, round(max_principal_same_tenure if options else 0)
 
 
-def persuasion_agent_node(state: dict) -> dict:
+async def persuasion_agent_node(state: dict) -> dict:
     """Persuasion Loop: negotiate revised loan terms after soft rejection."""
     print("🤝 [PERSUASION AGENT] Entering negotiation mode...")
 
@@ -205,17 +205,24 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
     import json, re
 
     response_lower = user_response.strip().lower()
+    
+    print(f"🤝 [PERSUASION RESPONSE] User said: '{user_response}'")
 
-    # Check for decline keywords
+    # Check for decline keywords - expanded and more strict
     DECLINE_KEYWORDS = {
         "no", "nope", "nah", "decline", "not interested", "cancel",
-        "forget it", "leave it", "nahi", "mat karo", "no thanks"
+        "forget it", "leave it", "nahi", "mat karo", "no thanks",
+        "don't want", "don't like", "not good", "reject", "refuse",
+        "disagree", "won't", "will not", "can't", "cannot"
     }
 
+    # First check for explicit decline - this should take priority
     if response_lower in DECLINE_KEYWORDS or any(kw in response_lower for kw in DECLINE_KEYWORDS):
+        print(f"  ❌ User explicitly declined the offer")
         return {
             "action": "decline",
             "decision": "reject",
+            "persuasion_status": "declined",
             "messages": [AIMessage(content=(
                 "Understood! No worries at all. Our Advisory team will now provide "
                 "personalized financial guidance to help you in the future. 🙏"
@@ -230,6 +237,7 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
     for i, opt in enumerate(options):
         option_letter = chr(65 + i).lower()
         if f"option {option_letter}" in response_lower or f"option{option_letter}" in response_lower:
+            print(f"  ✅ User accepted Option {option_letter.upper()}")
             new_emi = calculate_emi(opt["amount"], terms.get("rate", 12), opt["tenure"])
             return {
                 "action": "accept",
@@ -241,6 +249,7 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
                 },
                 # Reset decision so underwriting re-evaluates
                 "decision": "",
+                "persuasion_status": "accepted",
                 "messages": [AIMessage(content=(
                     f"✅ Great choice! Revised terms accepted:\n"
                     f"- Amount: ₹{opt['amount']:,.0f}\n"
@@ -250,40 +259,83 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
                 ))]
             }
 
-    # Generic acceptance (take first viable option)
+    # Check for amount-based acceptance
+    amount_match = re.search(r'₹?\s?(\d+(?:,\d+)*(?:\.\d+)?)', response_lower)
+    if amount_match and options:
+        requested_amount = int(amount_match.group(1).replace(',', ''))
+        print(f"  🔍 User mentioned amount: ₹{requested_amount}")
+        
+        # Find closest matching option
+        for opt in options:
+            if abs(opt["amount"] - requested_amount) < 5000:  # Within 5k tolerance
+                new_emi = calculate_emi(opt["amount"], terms.get("rate", 12), opt["tenure"])
+                return {
+                    "action": "accept",
+                    "loan_terms": {
+                        **terms,
+                        "principal": opt["amount"],
+                        "tenure": opt["tenure"],
+                        "emi": new_emi
+                    },
+                    "decision": "",
+                    "persuasion_status": "accepted",
+                    "messages": [AIMessage(content=(
+                        f"✅ Great choice! Revised terms accepted:\n"
+                        f"- Amount: ₹{opt['amount']:,.0f}\n"
+                        f"- Tenure: {opt['tenure']} months\n"
+                        f"- New EMI: ₹{new_emi:,.2f}/month\n\n"
+                        f"Re-submitting for final approval..."
+                    ))]
+                }
+
+    # Generic acceptance (take first viable option) - but be more strict
     ACCEPT_KEYWORDS = {
         "yes", "ok", "okay", "sure", "proceed", "accept", "haan",
         "go ahead", "let's do it", "sounds good", "yep", "yeah"
     }
-    if response_lower in ACCEPT_KEYWORDS or any(kw in response_lower for kw in ACCEPT_KEYWORDS):
-        if options:
-            opt = options[0]  # Default to first (most conservative) option
-            new_emi = calculate_emi(opt["amount"], terms.get("rate", 12), opt["tenure"])
-            return {
-                "action": "accept",
-                "loan_terms": {
-                    **terms,
-                    "principal": opt["amount"],
-                    "tenure": opt["tenure"],
-                    "emi": new_emi
-                },
-                "decision": "",
-                "messages": [AIMessage(content=(
-                    f"✅ Revised terms accepted:\n"
-                    f"- Amount: ₹{opt['amount']:,.0f}\n"
-                    f"- Tenure: {opt['tenure']} months\n"
-                    f"- New EMI: ₹{new_emi:,.2f}/month\n\n"
-                    f"Re-submitting for final approval..."
-                ))]
-            }
+    
+    # Only accept if there's a clear acceptance keyword AND no decline keywords
+    is_clear_acceptance = (
+        (response_lower in ACCEPT_KEYWORDS or any(kw in response_lower for kw in ACCEPT_KEYWORDS)) and
+        not any(kw in response_lower for kw in DECLINE_KEYWORDS)
+    )
+    
+    if is_clear_acceptance and options:
+        opt = options[0]  # Default to first (most conservative) option
+        new_emi = calculate_emi(opt["amount"], terms.get("rate", 12), opt["tenure"])
+        print(f"  ✅ User gave clear acceptance, selected first option")
+        return {
+            "action": "accept",
+            "loan_terms": {
+                **terms,
+                "principal": opt["amount"],
+                "tenure": opt["tenure"],
+                "emi": new_emi
+            },
+            "decision": "",
+            "persuasion_status": "accepted",
+            "messages": [AIMessage(content=(
+                f"✅ Revised terms accepted:\n"
+                f"- Amount: ₹{opt['amount']:,.0f}\n"
+                f"- Tenure: {opt['tenure']} months\n"
+                f"- New EMI: ₹{new_emi:,.2f}/month\n\n"
+                f"Re-submitting for final approval..."
+            ))]
+        }
 
-    # Unclear response → ask again
+    # If we get here, the response is unclear - ask for clarification
+    print(f"  ❓ Response unclear, asking for clarification")
     return {
         "action": "unclear",
+        "persuasion_status": "unclear",
         "messages": [AIMessage(content=(
             "I want to make sure I get this right! Could you please specify:\n"
             "- **'Option A'** / **'Option B'** etc. to select a specific plan\n"
             "- **'Yes'** to accept our recommended option\n"
-            "- **'No'** if you'd prefer not to proceed"
+            "- **'No'** if you'd prefer not to proceed\n\n"
+            "Your options are:\n" + "\n".join(
+                f"• Option {chr(65+i)}: {opt['label']} → EMI: ₹{opt['emi']:,.2f}/month"
+                for i, opt in enumerate(options[:3])  # Show max 3 options
+            ) if options else "No options available."
         ))]
     }

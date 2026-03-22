@@ -34,7 +34,7 @@ def _token_name_match(name1: str, name2: str) -> bool:
     return shorter.issubset(longer)
 
 
-def fraud_agent_node(state: dict) -> dict:
+async def fraud_agent_node(state: dict) -> dict:
     """Rule-based fraud detection with 6 independently scored signals."""
     print("🚨 [FRAUD AGENT] Analyzing fraud signals...")
 
@@ -157,5 +157,6 @@ def fraud_agent_node(state: dict) -> dict:
     return {
         "fraud_score": score,
         "fraud_signals": signals_triggered,
-        "messages": [AIMessage(content=msg)]
+        "messages": [AIMessage(content=msg)],
+        "current_phase": "underwriting"
     }

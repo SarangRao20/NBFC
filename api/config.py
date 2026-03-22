@@ -15,6 +15,25 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "data/uploads"
     SANCTION_DIR: str = "data/sanctions"
 
+    # Redis Configuration
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str = ""
+    REDIS_CACHE_TTL: int = 3600  # 1 hour
+
+    # Email Configuration
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = "noreply@finserve-nbfc.com"
+    EMAIL_FROM_NAME: str = "FinServe NBFC"
+
+    # Development Settings
+    DISABLE_OTP: bool = False  # Toggle for development/testing
+    DEV_OTP: str = "123456"  # Default OTP for development
+
     # Underwriting thresholds
     MIN_CREDIT_SCORE: int = 700
     MAX_DTI_RATIO: float = 0.50
@@ -22,6 +41,12 @@ class Settings(BaseSettings):
 
     # Persuasion loop
     MAX_NEGOTIATION_ROUNDS: int = 3
+
+    # Profile completeness
+    REQUIRED_PROFILE_FIELDS: list = [
+        "name", "phone", "email", "city", "salary", 
+        "credit_score", "existing_emi_total"
+    ]
 
     class Config:
         env_file = ".env"

@@ -4,12 +4,17 @@ import os
 from datetime import datetime
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
+from api.core.redis_cache import get_cache
+from api.core.email_service import get_email_service
 
 settings = get_settings()
 
 
 async def generate_sanction(session_id: str) -> dict:
     """Step 16: Compile Final Terms → Generate Loan PDF → Send to User."""
+    cache = await get_cache()
+    email_service = await get_email_service()
+
     state = await get_session(session_id)
     if not state:
         return None
@@ -17,6 +22,7 @@ async def generate_sanction(session_id: str) -> dict:
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
     decision = state.get("decision", "")
+    reasons = state.get("reasons", [])
 
     cust_name = customer.get("name", "Customer")
     cust_id = state.get("customer_id", "UNKNOWN")
@@ -27,8 +33,19 @@ async def generate_sanction(session_id: str) -> dict:
     dti = state.get("dti_ratio", 0)
     score = customer.get("credit_score", 0)
 
-    is_approved = decision == "approve"
-    letter_type = "Sanction" if is_approved else "Rejection"
+    # Handle different decision types
+    if decision == "approve":
+        is_approved = True
+        letter_type = "Sanction"
+    elif decision in ["reject", "soft_reject"]:
+        is_approved = False
+        letter_type = "Rejection"
+    else:
+        # If no decision, default to rejection for safety
+        is_approved = False
+        letter_type = "Rejection"
+        decision = "reject"
+        reasons.append("No clear decision recorded in underwriting")
     filename = f"{cust_id}_{letter_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     filepath = os.path.join(settings.SANCTION_DIR, filename)
 
@@ -67,7 +84,7 @@ async def generate_sanction(session_id: str) -> dict:
             ["Status", "Approved" if is_approved else "Rejected"],
         ]
         if not is_approved:
-            app_data.append(["Rejection Reasons", "; ".join(state.get("reasons", []))])
+            app_data.append(["Rejection Reasons", "; ".join(reasons)])
 
         table = Table(app_data, colWidths=[150, 300])
         table.setStyle(TableStyle([
@@ -133,9 +150,135 @@ async def generate_sanction(session_id: str) -> dict:
     await update_session(session_id, {"sanction_pdf": filepath})
     await advance_phase(session_id, "sanction_generated")
 
+    # Send email notification
+    try:
+        email_sent = await email_service.send_loan_application_notification(
+            customer, terms, decision, session_id
+        )
+        print(f"📧 Email notification sent: {email_sent}")
+    except Exception as e:
+        print(f"⚠️ Email notification failed: {e}")
+
+    # Cache the result
+    await cache.set_session(session_id, {
+        **state,
+        "sanction_pdf": filepath,
+        "letter_type": letter_type,
+        "email_sent": email_sent
+    })
+
+    # ── PERSIST TO LOAN APPLICATIONS COLLECTION ──────────────────────────────
+    from db.database import loan_applications_collection
+    loan_record = {
+        "session_id": session_id,
+        "customer_id": cust_id,
+        "name": cust_name,
+        "phone": customer.get("phone", ""),
+        "email": customer.get("email", ""),
+        "amount": principal,
+        "loan_type": terms.get("loan_type", "Personal"),
+        "interest_rate": rate,
+        "tenure": tenure,
+        "emi": emi,
+        "status": "Approved" if is_approved else "Rejected",
+        "decision": decision,  # Store the actual decision (approve/reject/soft_reject)
+        "reasons": reasons,
+        "dti_ratio": dti,
+        "credit_score": score,
+        "created_at": datetime.utcnow().isoformat(),
+        "pdf_path": filepath,
+        "email_sent": email_sent
+    }
+    await loan_applications_collection.insert_one(loan_record)
+    status_emoji = "✅" if is_approved else "❌"
+    print(f"📊 Loan application persisted: {cust_name} ({loan_record['status']}) - {decision}")
+
     return {
         "sanction_pdf_path": filepath,
         "letter_type": letter_type,
         "loan_terms": terms,
-        "message": f"{letter_type} letter generated: {filepath}"
+        "message": f"{letter_type} letter generated: {filepath}",
+        "email_sent": email_sent
+    }
+
+
+async def process_esign_acceptance(session_id: str) -> dict:
+    """Process e-sign acceptance and route to advisory agent."""
+    state = await get_session(session_id)
+    if not state:
+        return None
+
+    customer = state.get("customer_data", {})
+    terms = state.get("loan_terms", {})
+    decision = state.get("decision", "")
+    
+    cust_name = customer.get("name", "Customer")
+    principal = terms.get("principal", 0)
+    
+    # Generate thank you message
+    if decision == "approve":
+        thank_you_msg = (
+            f"🎉 **Congratulations {cust_name}!**\n\n"
+            f"Your loan of ₹{principal:,.0f} has been successfully approved and e-signed!\n\n"
+            f"📄 **Next Steps:**\n"
+            f"• Your sanction letter will be sent to your registered email\n"
+            f"• Our advisory team will now contact you for documentation guidance\n"
+            f"• Loan disbursement will begin after document verification\n\n"
+            f"Thank you for choosing FinServe NBFC! 🙏"
+        )
+    else:
+        thank_you_msg = (
+            f"📝 **Thank you {cust_name}**\n\n"
+            f"We've received your e-sign on the loan decision letter.\n\n"
+            f"🤝 **Next Steps:**\n"
+            f"• Our advisory team will provide personalized guidance\n"
+            f"• We'll help you improve your eligibility for future applications\n"
+            f"• Free financial planning consultation will be arranged\n\n"
+            f"Thank you for considering FinServe NBFC! 🙏"
+        )
+    
+    # Route to advisory agent
+    from agents.advisory_agent import advisory_agent_node
+    advisory_state = {
+        "customer_data": customer,
+        "loan_terms": terms,
+        "decision": decision,
+        "session_id": session_id,
+        "post_sanction": True
+    }
+    
+    advisory_result = advisory_agent_node(advisory_state)
+    advisory_message = advisory_result.get("messages", [{}])[0].get("content", "")
+    
+    # Update session state
+    await update_session(session_id, {
+        "esign_completed": True,
+        "advisory_message": advisory_message,
+        "current_phase": "advisory"
+    })
+    
+    return {
+        "success": True,
+        "message": thank_you_msg,
+        "next_step": "advisory",
+        "advisory_message": advisory_message
+    }
+
+
+async def get_letter_file(session_id: str) -> dict:
+    """Get the file path and details for download."""
+    state = await get_session(session_id)
+    if not state:
+        return None
+
+    sanction_pdf = state.get("sanction_pdf", "")
+    if not sanction_pdf or not os.path.exists(sanction_pdf):
+        return None
+    
+    filename = os.path.basename(sanction_pdf)
+    
+    return {
+        "file_path": sanction_pdf,
+        "filename": filename,
+        "message": f"Letter ready for download: {filename}"
     }
