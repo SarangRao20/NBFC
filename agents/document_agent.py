@@ -66,7 +66,9 @@ OUTPUT — Return ONLY this JSON (no markdown, no prose):
     "salary_extracted": 0,
     "gross_salary_extracted": 0,
     "employer_name": "Company name if salary slip or Form 16",
-    "document_number": "PAN / Aadhaar / Passport number — mask last 4 digits of Aadhaar with XXXX",
+    "document_number": "Full ID number (mask last 4 of Aadhaar for privacy)",
+    "address_extracted": "Full residential address if visible",
+    "dob_extracted": "Date of Birth if visible (YYYY-MM-DD)",
     "issue_date": "Issue or validity date if visible — format DD-MM-YYYY",
     "confidence": 0.95,
     "tampered": false,
@@ -91,7 +93,8 @@ def document_agent_node(state: dict) -> dict:
                 "• **Salary Slip** (if your loan exceeds your pre-approved limit)\n"
                 "• **Bank Statement** (last 3 months for extended review)\n\n"
                 "Accepted formats: JPG, PNG, PDF"
-            ))]
+            ))],
+            "current_phase": "kyc_verification"
         }
 
     # Save a permanent audit copy
@@ -118,31 +121,46 @@ def document_agent_node(state: dict) -> dict:
         ])
         response = vision_llm.invoke([message])
 
-        text = response.content.strip()
-        # Strip markdown code fences if model wraps in ```json
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL).strip()
-
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        # Robust JSON extraction using regex
+        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
         if json_match:
-            extracted = json.loads(json_match.group(0))
+            try:
+                extracted = json.loads(json_match.group(0))
+            except Exception as je:
+                print(f"  ❌ JSON parse error: {je}")
+                raise ValueError("Could not parse extracted document data.")
         else:
-            extracted = {
-                "document_type": "Unknown", "name_extracted": "Unable to extract",
-                "salary_extracted": 0, "confidence": 0.3, "tampered": False, "notes": "JSON parse failed"
-            }
+            raise ValueError("No valid data block found in document analysis.")
+
+        # --- Strict Verification Logic ---
+        confidence = float(extracted.get("confidence", 0))
+        tampered = bool(extracted.get("tampered", False))
+        
+        # We only mark as 'verified' if confidence is high and no tampering
+        is_verified = confidence > 0.75 and not tampered
+        
+        if not is_verified:
+            reason = extracted.get("tamper_reason") or "OCR confidence too low or document unclear."
+            msg = f"❌ **Document Rejected:** {reason}\nPlease upload a clearer, original document."
+            print(f"  ⚠️ Document rejected: {reason}")
+        else:
+            msg = f"✅ **{extracted.get('document_type', 'Document')} processed.** (Confidence: {confidence:.0%})"
+            print(f"  ✅ Document verified: {extracted.get('document_type')}")
 
         doc_data = {
             **state.get("documents", {}),
-            "verified": True,
+            "verified": is_verified,
+            "document_type": extracted.get("document_type", "Unknown"),
             "name_extracted": extracted.get("name_extracted", "Unknown"),
             "salary_extracted": float(extracted.get("salary_extracted") or 0),
             "gross_salary_extracted": float(extracted.get("gross_salary_extracted") or 0),
             "employer_name": extracted.get("employer_name", ""),
-            "confidence": float(extracted.get("confidence", 0.5)),
-            "tampered": bool(extracted.get("tampered", False)),
-            "tamper_reason": extracted.get("tamper_reason", ""),
-            "document_type": extracted.get("document_type", "Unknown"),
             "document_number": extracted.get("document_number", ""),
+            "address_extracted": extracted.get("address_extracted", ""),
+            "dob_extracted": extracted.get("dob_extracted", ""),
+            "confidence": confidence,
+            "tampered": tampered,
+            "tamper_reason": extracted.get("tamper_reason", ""),
             "audit_path": audit_path,
             "notes": extracted.get("notes", "")
         }
@@ -162,7 +180,11 @@ def document_agent_node(state: dict) -> dict:
             f"{employer_line}"
         )
 
-        return {"documents": doc_data, "messages": [AIMessage(content=msg)]}
+        return {
+            "documents": doc_data, 
+            "messages": [AIMessage(content=msg)],
+            "current_phase": "kyc_verification" if not doc_data.get("verified") else "underwriting"
+        }
 
     except Exception as e:
         print(f"  ❌ Document agent error: {e}")
@@ -170,11 +192,12 @@ def document_agent_node(state: dict) -> dict:
             "documents": {**state.get("documents", {}), "verified": False},
             "messages": [AIMessage(content=(
                 f"❌ **Document Processing Failed**\n\n"
-                f"We couldn't process your document. Please ensure:\n"
-                f"• The image is well-lit and in focus\n"
-                f"• The document fills most of the frame\n"
-                f"• File size is under 5MB\n\n"
+                "We couldn't process your document. Please ensure:\n"
+                "• The image is well-lit and in focus\n"
+                "• The document fills most of the frame\n"
+                "• File size is under 5MB\n\n"
                 f"Technical detail: {str(e)[:80]}\n\n"
-                f"Please try again with a clearer photo."
-            ))]
+                "Please try again with a clearer photo."
+            ))],
+            "current_phase": "kyc_verification"
         }

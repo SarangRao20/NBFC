@@ -43,13 +43,44 @@ def normalize_phone(phone: str) -> str:
 
 def pull_customer_from_db(phone: str) -> dict | None:
     phone = normalize_phone(phone)
+    customer = None
+    
+    # 1. Check core CRM (customers.json)
     try:
         with open("mock_apis/customers.json", "r") as f:
             for c in json.load(f):
-                if c["phone"] == phone:
-                    return c
+                if normalize_phone(c["phone"]) == phone:
+                    customer = c
+                    break
     except Exception:
         pass
+    
+    # 2. Check historical loan applications for this phone number
+    past_loans = []
+    try:
+        # Check mock_db.json if it exists (it contains loan_applications)
+        if os.path.exists("mock_db.json"):
+            with open("mock_db.json", "r") as f:
+                db_data = json.load(f)
+                loans = db_data.get("loan_applications", {})
+                for l_id, loan in loans.items():
+                    # Match by phone (some loans might have phone, others might not)
+                    if normalize_phone(loan.get("phone", "")) == phone:
+                        past_loans.append({
+                            "amount": loan.get("amount", 0),
+                            "type": loan.get("loan_type", "Personal"),
+                            "date": loan.get("created_at", "N/A"),
+                            "status": loan.get("status", "Approved")
+                        })
+    except Exception:
+        pass
+        
+    if customer:
+        customer["past_loans"] = past_loans
+        # Also try to find a "last record" note from previous sessions if possible
+        customer["past_records"] = f"Returning customer with {len(past_loans)} previous applications."
+        return customer
+        
     return None
 
 
@@ -58,6 +89,7 @@ def registration_chat_node(state: dict):
     print("--- REGISTRATION AGENT: CHATTING ---")
     from config import get_extraction_llm
     llm = get_extraction_llm()
+    phase = "registration"
 
     phone = state.get("customer_data", {}).get("phone")
     otp_verified = state.get("is_authenticated", False)
@@ -81,10 +113,10 @@ def registration_chat_node(state: dict):
     if dev_otp:
         response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
         
-    return {"messages": [response]}
+    return {"messages": [response], "current_phase": phase}
 
 
-def registration_extraction_node(state: dict):
+async def registration_extraction_node(state: dict):
     """Robust extractor using regex + simple LLM fallback (no fragile tool-calls)."""
     print("--- REGISTRATION AGENT: EXTRACTION ---")
     log = list(state.get("action_log") or [])
@@ -92,7 +124,7 @@ def registration_extraction_node(state: dict):
     
     if state.get("is_authenticated") and state.get("customer_data", {}).get("name"):
         log.append("⏭️ Already authenticated — skipping extraction")
-        return {"action_log": log}
+        return {"action_log": log, "current_phase": "intent_discovery"}
 
     user_msg = ""
     for m in reversed(state.get("messages", [])):
@@ -115,7 +147,7 @@ def registration_extraction_node(state: dict):
             try:
                 llm = get_extraction_llm()
                 prompt = f"Extract the FULL NAME from this message if present, otherwise return 'NONE':\n\nMESSAGE: {user_msg}\n\nNAME:"
-                res = llm.invoke([HumanMessage(content=prompt)])
+                res = await llm.ainvoke([HumanMessage(content=prompt)])
                 ans = res.content.strip().replace("'", "").replace("\"", "")
                 if ans != "NONE" and len(ans) > 2:
                     extracted_name = ans
@@ -161,11 +193,23 @@ def registration_extraction_node(state: dict):
             db = pull_customer_from_db(customer_data["phone"])
             if db:
                 customer_data.update({
-                    "name": db["name"], "phone": db["phone"], "salary": db["salary"], "credit_score": db["credit_score"]
+                    "name": db["name"], 
+                    "phone": db["phone"], 
+                    "email": db.get("email", ""),
+                    "city": db.get("city", "Unknown"),
+                    "salary": db.get("salary", 0), 
+                    "credit_score": db.get("credit_score", 0),
+                    "pre_approved_limit": db.get("pre_approved_limit", 0),
+                    "existing_emi_total": db.get("existing_emi_total", 0),
+                    "current_loans": db.get("current_loans", []),
+                    "past_loans": db.get("past_loans", []),
+                    "past_records": db.get("past_records", ""),
+                    "risk_flags": db.get("risk_flags", []),
+                    "drop_off_history": db.get("drop_off_history", "")
                 })
                 log.append(f"👤 Existing customer found: {db['name']}")
-                log.append(f"📊 Credit score loaded: {db['credit_score']}")
-                msg = f"✅ Welcome back, **{db['name']}**! I've loaded your profile (Credit Score: {db['credit_score']}). How can I help?"
+                log.append(f"📊 Credit score: {db.get('credit_score')}, Past Loans: {len(db.get('past_loans', []))}")
+                msg = f"✅ Welcome back, **{db['name']}**! I've loaded your profile and your history of {len(db.get('past_loans', []))} previous loans. How can I help you today?"
                 updates["messages"] = [AIMessage(content=msg)]
             else:
                 log.append("🆕 New customer — creating fresh profile")
@@ -179,6 +223,28 @@ def registration_extraction_node(state: dict):
         log.append(f"📝 Name extracted: {extracted_name}")
         log.append("✅ New customer profile created")
         customer_data["name"] = extracted_name
+        
+        # ── PERSIST NEW USER TO DATABASE ─────────────────────────────────────
+        try:
+            from db.database import users_collection
+            from datetime import datetime
+            user_record = {
+                "name": extracted_name,
+                "phone": customer_data["phone"],
+                "created_at": datetime.utcnow().isoformat(),
+                "city": "Unknown",
+                "salary": 0,
+                "credit_score": 700, # Default for new users
+                "pre_approved_limit": 25000,
+                "existing_emi_total": 0,
+                "current_loans": [],
+                "past_records": "New customer registered."
+            }
+            await users_collection.insert_one(user_record)
+            print(f"👤 New user persisted: {extracted_name}")
+        except Exception as e:
+            print(f"  ⚠️ Failed to persist new user: {e}")
+
         msg = f"✅ Perfect, **{extracted_name}**! Your profile is ready. Do you need a loan, financial advice, or KYC help?"
         updates["messages"] = [AIMessage(content=msg)]
 

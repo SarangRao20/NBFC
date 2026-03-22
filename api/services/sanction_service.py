@@ -133,6 +133,26 @@ async def generate_sanction(session_id: str) -> dict:
     await update_session(session_id, {"sanction_pdf": filepath})
     await advance_phase(session_id, "sanction_generated")
 
+    # ── PERSIST TO LOAN APPLICATIONS COLLECTION ──────────────────────────────
+    from db.database import loan_applications_collection
+    loan_record = {
+        "session_id": session_id,
+        "customer_id": cust_id,
+        "name": cust_name,
+        "phone": customer.get("phone", ""),
+        "amount": principal,
+        "loan_type": terms.get("loan_type", "Personal"),
+        "interest_rate": rate,
+        "tenure": tenure,
+        "emi": emi,
+        "status": "Approved" if is_approved else "Rejected",
+        "reasons": state.get("reasons", []),
+        "created_at": datetime.utcnow().isoformat(),
+        "pdf_path": filepath
+    }
+    await loan_applications_collection.insert_one(loan_record)
+    print(f"📊 Loan application persisted: {cust_name} ({loan_record['status']})")
+
     return {
         "sanction_pdf_path": filepath,
         "letter_type": letter_type,

@@ -62,3 +62,16 @@ async def chat(session_id: str, req: dict):
     if result is None:
         raise SessionNotFoundError(session_id)
     return result
+
+@router.get("/{session_id}/history", summary="Retrieve Chat History for a Session")
+async def get_chat_history(session_id: str):
+    """Returns the persisted chat history for a given session."""
+    import logging
+    from db.database import chat_sessions_collection
+    try:
+        history_doc = await chat_sessions_collection.find_one({"session_id": session_id})
+        if history_doc:
+            return {"history": history_doc.get("messages", [])}
+    except Exception as e:
+        logging.error(f"Error fetching chat history: {e}")
+    return {"history": []}

@@ -4,24 +4,51 @@ from typing import Dict, Any, List
 import uuid
 from datetime import datetime
 
+import json
+import os
+
 # Global in-memory mock database - persists across requests
-mock_db = {
-    "users": {},
-    "sessions": {},
-    "loan_applications": {},
-    "chat_sessions": {},
-    "uploaded_documents": {}
-}
+MOCK_DB_FILE = "mock_db.json"
+
+def load_mock_db():
+    if os.path.exists(MOCK_DB_FILE):
+        try:
+            with open(MOCK_DB_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "users": {},
+        "sessions": {},
+        "loan_applications": {},
+        "chat_sessions": {},
+        "uploaded_documents": {}
+    }
+
+def save_mock_db(data):
+    try:
+        with open(MOCK_DB_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"❌ Failed to save mock DB: {e}")
+
+mock_db = load_mock_db()
 
 class MockCollection:
     def __init__(self, collection_name: str):
         self.collection_name = collection_name
+        if collection_name not in mock_db:
+            mock_db[collection_name] = {}
         self.data = mock_db[collection_name]
+    
+    def _persist(self):
+        save_mock_db(mock_db)
     
     async def insert_one(self, document: Dict[str, Any]):
         doc_id = document.get("_id", str(uuid.uuid4()))
         document["_id"] = doc_id
         self.data[doc_id] = document
+        self._persist()
         print(f"📝 Inserted into {self.collection_name}: {doc_id}")
         return type("Result", (), {"inserted_id": doc_id})()
     
@@ -60,6 +87,7 @@ class MockCollection:
                 # Basic update without $set (Atlas style)
                 self.data[doc_id].update(update)
                 print(f"✏️ Updated {self.collection_name} (direct): {doc_id}")
+            self._persist()
             return type("Result", (), {"matched_count": 1, "modified_count": 1})()
             
         print(f"❌ Update failed in {self.collection_name}: No document matching {query}")
@@ -79,6 +107,7 @@ class MockCollection:
             if "_id" not in replacement:
                 replacement["_id"] = doc_id
             self.data[doc_id] = replacement
+            self._persist()
             print(f"🔄 Replaced {self.collection_name}: {doc_id}")
             return type("Result", (), {"matched_count": 1, "modified_count": 1})()
             
@@ -96,6 +125,7 @@ class MockCollection:
         if doc_to_delete:
             doc_id = doc_to_delete["_id"]
             del self.data[doc_id]
+            self._persist()
             print(f"🗑️ Deleted from {self.collection_name}: {doc_id}")
             return type("Result", (), {"deleted_count": 1})()
             

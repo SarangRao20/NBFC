@@ -84,7 +84,8 @@ async def search_sessions_by_phone(phone: str) -> list:
                 "created_at": s.get("created_at"),
                 "status": s.get("status"),
                 "current_phase": s.get("current_phase"),
-                "last_message": s.get("messages", [-1])[-1] if s.get("messages") else None
+                "last_message": s.get("messages", [-1])[-1] if s.get("messages") else None,
+                "state": s # Pass the full document as 'state' for compatibility with sales_service
             })
     
     # Sort by created_at descending

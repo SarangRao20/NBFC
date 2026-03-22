@@ -71,6 +71,7 @@ interface Props {
 
 export default function ChatPane({ appState, setAppState, chatHistory, onSendMessage, onFileUpload }: Props) {
   const [input, setInput] = useState('');
+  const [isSigning, setIsSigning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto scroll
@@ -183,10 +184,24 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                       Download PDF
                     </button>
                     <button 
-                      onClick={() => onSendMessage("I accept the sanction letter and e-sign it.")}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
-                  <CheckCircle2 size={16} className="mr-1.5" /> Accept & E-Sign
-                </button>
+                      disabled={isSigning}
+                      onClick={() => {
+                        setIsSigning(true);
+                        setTimeout(() => {
+                          onSendMessage("I accept the sanction letter and e-sign it.");
+                          setIsSigning(false);
+                        }, 1500);
+                      }}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
+                      {isSigning ? (
+                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                          <BrainCircuit size={16} className="mr-1.5" />
+                        </motion.div>
+                      ) : (
+                        <CheckCircle2 size={16} className="mr-1.5" />
+                      )}
+                      {isSigning ? 'Signing...' : 'Accept & E-Sign'}
+                    </button>
               </div>
             </div>
           )}
@@ -248,37 +263,46 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
           initial={{ opacity: 0, height: 0, scale: 0.95 }}
           animate={{ opacity: 1, height: 'auto', scale: 1 }}
           exit={{ opacity: 0, height: 0, scale: 0.95 }}
-          className="w-full mb-4 flex gap-4 overflow-x-auto"
         >
-          {appState.requiredDocuments?.map((docType, idx) => (
-            <div 
-              key={idx}
-              className="flex-1 min-w-[200px] border-dashed border-2 border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-emerald-400 rounded-2xl flex flex-col items-center justify-center p-8 transition-all cursor-pointer group"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  onFileUpload(e.dataTransfer.files[0]);
-                }
-              }}
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'application/pdf,image/jpeg,image/png';
-                input.onchange = (e: any) => {
-                  const file = e.target.files[0];
-                  if (file) onFileUpload(file);
-                };
-                input.click();
-              }}
-            >
-              <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
-                <UploadCloud size={24} />
-              </div>
-              <p className="text-sm font-bold text-slate-600 outline-none text-center mb-1">{docType}</p>
-              <p className="text-xs font-semibold text-slate-400 text-center">PDF, JPG or PNG up to 10MB</p>
-            </div>
-          ))}
+          <div className={`w-full mb-4 grid gap-4 ${appState.requiredDocuments?.length && appState.requiredDocuments.length > 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}>
+            {appState.requiredDocuments?.map((docType, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+                className="border-dashed border-2 border-slate-300 bg-slate-50/50 hover:bg-white hover:border-emerald-400 hover:shadow-md rounded-2xl flex flex-col items-center justify-center p-6 transition-all cursor-pointer group relative overflow-hidden"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    onFileUpload(e.dataTransfer.files[0]);
+                  }
+                }}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'application/pdf,image/jpeg,image/png';
+                  input.onchange = (e: any) => {
+                    const file = e.target.files[0];
+                    if (file) onFileUpload(file);
+                  };
+                  input.click();
+                }}
+              >
+                <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-emerald-500 text-white p-1 rounded-full">
+                    <CheckCircle2 size={12} />
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
+                  <UploadCloud size={20} />
+                </div>
+                <p className="text-[13px] font-bold text-slate-700 text-center mb-0.5">{docType}</p>
+                <p className="text-[11px] font-semibold text-slate-400 text-center uppercase tracking-wider">Tap to upload</p>
+              </motion.div>
+            ))}
+          </div>
         </motion.div>
           ) : (
             <motion.form 

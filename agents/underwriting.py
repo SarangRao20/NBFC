@@ -66,6 +66,9 @@ def underwriting_agent_node(state: dict) -> dict:
         if score < 700:
             reasons.append(f"Credit score ({score}) is below the minimum threshold of 700.")
             decision = "hard_reject"
+        elif pre_approved <= 0:
+            reasons.append("No active pre-approved limit found. Manual document verification (Bank Statement) required.")
+            decision = "pending_docs"
         elif principal > 2 * pre_approved:
             reasons.append(f"Requested loan exceeds maximum permissible exposure (2× limit).")
             decision = "hard_reject"
@@ -123,11 +126,20 @@ def underwriting_agent_node(state: dict) -> dict:
         msg = (f"❌ **LOAN REJECTED**\n\n"
                f"**Decision Reasoning**:\n{reason_text}")
 
+    # Map decision to next phase
+    phase_map = {
+        "approve": "loan_approval",
+        "soft_reject": "loan_negotiation",
+        "pending_docs": "kyc_verification"
+    }
+    next_phase = phase_map.get(decision, "completed")
+
     return {
         "decision": decision,
         "dti_ratio": dti,
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
-        "messages": [AIMessage(content=msg)]
+        "messages": [AIMessage(content=msg)],
+        "current_phase": next_phase
     }

@@ -41,6 +41,8 @@ class MasterState(TypedDict):
     fraud_score: int
     decision: str             # "approve" | "soft_reject" | "hard_reject"
     sanction_pdf: Optional[str]
+    is_signed: bool           # True once user accepts & e-signs the sanction letter
+    current_phase: str        # tracks the active phase in the workflow
     action_log: list          # Human-readable step log for the UI ["✅ OTP Verified", ...]
 
 
@@ -59,6 +61,7 @@ def supervisor_router(state: MasterState) -> str:
     terms        = state.get("loan_terms", {}) or {}
     docs         = state.get("documents", {}) or {}
     decision     = state.get("decision", "")
+    is_signed    = state.get("is_signed", False)
 
     # ── Phase 0: Registration ──────────────────────────────────────────────
     if not is_auth or not customer.get("name"):
@@ -76,14 +79,22 @@ def supervisor_router(state: MasterState) -> str:
     if intent == "kyc":
         return "document_agent"
 
+    # ── Phase 1.5: Sign intent ───────────────────────────────────────────
+    if intent == "sign":
+        return "advisor_agent"  # Will process signature and say thanks
+
     # ── Phase 2: Advice intent ────────────────────────────────────────────
     if intent == "advice":
         return "advisor_agent"
 
     # ── Phase 3: Loan intent ──────────────────────────────────────────────
     if intent in ("loan", "loan_confirmed"):
-        # 3a. Need to discover loan reason & amount → Sales Agent (chat)
-        if not terms.get("principal"):
+        # 3.0. Final: Signed & Sealed (Priority)
+        if is_signed:
+            return "advisor_agent"       # -> END
+
+        # 3a. Need to discover loan reason & amount OR wait for confirmation
+        if not terms.get("principal") or intent == "loan":
             return "sales_agent"       # -> END
 
         # 3b. Need EMI computed (automatic)
@@ -114,7 +125,9 @@ def supervisor_router(state: MasterState) -> str:
         if decision == "approve" and not state.get("sanction_pdf"):
             return "sanction_agent"      # -> advisor_agent -> END
 
-        # 3i. Default: advisor wraps up
+        # 3i. Final: Signed & Sealed (handled above)
+
+        # 3j. Default: advisor wraps up
         return "advisor_agent"
 
     # Catch-all
@@ -159,12 +172,12 @@ def compile_master_graph():
     workflow.add_edge("sales_agent",        END)
     workflow.add_edge("persuasion_agent",   END)
 
-    # ── AUTOMATIC processor nodes — END after running (no loop!) ─────────────
-    workflow.add_edge("emi_agent",          END)
-    workflow.add_edge("document_agent",     END)
-    workflow.add_edge("verification_agent", END)
-    workflow.add_edge("fraud_agent",        END)
-    workflow.add_edge("underwriting_agent", END)
+    # ── AUTOMATIC processor nodes — Chain back to supervisor to continue ─────
+    workflow.add_edge("emi_agent",          "supervisor")
+    workflow.add_edge("document_agent",     END) # Still needs to wait for upload
+    workflow.add_edge("verification_agent", "supervisor")
+    workflow.add_edge("fraud_agent",        "supervisor")
+    workflow.add_edge("underwriting_agent", "supervisor")
     workflow.add_edge("advisor_agent",      END)
 
     # ── Sanction chains into advisor for final message ───────────────────────

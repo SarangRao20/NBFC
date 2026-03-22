@@ -25,13 +25,13 @@ export default function MetricCard({ label, value, prefix = '', suffix = '', dec
 
   return (
     <motion.div 
-      className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-center items-start overflow-hidden transition-all duration-300 ${
+      className={`bg-white p-2 rounded-lg border shadow-sm flex flex-col justify-center items-start overflow-hidden transition-all duration-300 ${
         isAnimating ? 'border-emerald-400 ring-2 ring-emerald-400/50' : 'border-slate-100'
       }`}
     >
-      <span className="text-sm text-slate-500 font-medium mb-1">{label}</span>
-      <div className="text-2xl font-bold text-slate-800 flex items-baseline relative">
-        {prefix && <span className="text-lg mr-1 text-slate-600">{prefix}</span>}
+      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight mb-0">{label}</span>
+      <div className="text-sm font-black text-slate-800 flex items-baseline relative">
+        {prefix && <span className="text-xs mr-0.5 text-slate-500">{prefix}</span>}
         <CountUp 
           end={value}
           duration={1}
@@ -39,7 +39,7 @@ export default function MetricCard({ label, value, prefix = '', suffix = '', dec
           decimals={decimals}
           separator=","
         />
-        {suffix && <span className="text-lg ml-1 text-slate-600">{suffix}</span>}
+        {suffix && <span className="text-[10px] ml-0.5 text-slate-500 font-bold">{suffix}</span>}
       </div>
     </motion.div>
   );

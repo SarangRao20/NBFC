@@ -14,6 +14,23 @@ export interface AppState {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';
   };
+  pastLoans?: Array<{
+    amount: number;
+    type: string;
+    decision: string;
+    sanction_letter?: string;
+    date: string;
+  }>;
+  pastRecords?: string;
+  pastSessions?: SessionSummary[];
+}
+
+export interface SessionSummary {
+  session_id: string;
+  created_at: string;
+  current_phase: string;
+  loan_amount?: number;
+  decision?: string;
 }
 
 export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps';

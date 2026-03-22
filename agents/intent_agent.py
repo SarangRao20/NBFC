@@ -19,15 +19,14 @@ Briefly look at the user message and categorize their INTENT.
 1. 'loan': Wants a loan, asking for rates, or pre-approved limit for a loan.
 2. 'advice': Needs tips on credit score, CIBIL, investments, or how to improve their profile.
 3. 'kyc': Uploading docs, PAN, Aadhaar, salary slips, or updating paperwork.
-4. 'none': Just a hello, greeting, or unclear question.
+4. 'sign': Explicitly accepting the sanction letter, e-signing, or confirming the loan offer.
+5. 'none': Just a hello, greeting, or unclear question.
 
 OUTPUT FORMAT:
 Return EXACTLY a JSON block:
 ```json
-{{"intent": "one of the above", "reason": "short explanation"}}
+{{ "intent": "one of the above", "reason": "short explanation" }}
 ```
-
-User Message: {user_message}
 """
 
 def intent_node(state: dict):
@@ -52,7 +51,8 @@ def intent_node(state: dict):
         try:
             # Avoid structured output; use manual parsing for robustness
             res = llm.invoke([
-                SystemMessage(content=INTENT_SYSTEM_PROMPT.format(user_message=user_msg))
+                SystemMessage(content=INTENT_SYSTEM_PROMPT),
+                HumanMessage(content=f"User Message: {user_msg}")
             ])
             content = res.content
             
@@ -69,6 +69,7 @@ def intent_node(state: dict):
                 if "loan" in lower: intent = "loan"
                 elif "advice" in lower: intent = "advice"
                 elif "kyc" in lower: intent = "kyc"
+                elif "sign" in lower or "accept" in lower: intent = "sign"
                 log.append(f"✅ Intent (keyword fallback): '{intent}'")
                 print(f"  → Classified as: {intent} (Fallback)")
                 
@@ -77,8 +78,9 @@ def intent_node(state: dict):
             log.append(f"⚠️ Intent classification error: {str(e)[:60]}")
             intent = 'unclear'
 
-    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc']:
+    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign']:
         msg = "I'm here to help! I can assist you with a **new loan**, give you **expert financial advice**, or help you with your **KYC documents**. Which one would you like to explore first?"
-        return {"intent": "unclear", "messages": [AIMessage(content=msg)], "action_log": log}
+        return {"intent": "unclear", "messages": [AIMessage(content=msg)], "action_log": log, "current_phase": "intent_discovery"}
 
-    return {"intent": intent, "action_log": log}
+    phase_map = {"loan": "loan_application", "advice": "advice", "kyc": "kyc_verification", "sign": "loan_approval"}
+    return {"intent": intent, "action_log": log, "current_phase": phase_map.get(intent, "intent_discovery")}

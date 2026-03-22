@@ -53,12 +53,31 @@ def verification_agent_node(state: dict) -> dict:
     if issues:
         issue_text = "\n".join(f"  • {i}" for i in issues)
         msg = f"⚠️ **KYC Verification Issues Found:**\n{issue_text}\n\nPlease re-upload correct documents."
-        return {"kyc_status": "failed", "messages": [AIMessage(content=msg)]}
+        return {
+            "kyc_status": "failed", 
+            "messages": [AIMessage(content=msg)],
+            "current_phase": "kyc_verification"
+        }
+
+    # Update permanent customer profile with verified info
+    updated_customer = {**customer}
+    if docs.get("address_extracted"):
+        updated_customer["address"] = docs["address_extracted"]
+    if docs.get("dob_extracted"):
+        updated_customer["dob"] = docs["dob_extracted"]
+    if docs.get("document_number"):
+        updated_customer["id_number"] = docs["document_number"]
 
     msg = (
         f"✅ **KYC Verified Successfully!**\n"
         f"- Name: {customer.get('name', 'N/A')} ✓\n"
         f"- Document Type: {docs.get('document_type', 'N/A')} ✓\n"
+        f"- Profile Updated: Address & ID verified ✓\n"
         f"- OCR Confidence: {docs.get('confidence', 0):.0%} ✓"
     )
-    return {"kyc_status": "verified", "messages": [AIMessage(content=msg)]}
+    return {
+        "kyc_status": "verified", 
+        "customer_data": updated_customer,
+        "messages": [AIMessage(content=msg)],
+        "current_phase": "fraud_check"
+    }

@@ -125,5 +125,17 @@ export const apiClient = {
       body: JSON.stringify({ message, history }),
     });
     return res.json();
+  },
+  
+  async getSessionsByPhone(phone: string) {
+    const res = await fetch(`${BASE_URL}/session/by-phone/${phone}`);
+    if (!res.ok) throw new Error('Failed to fetch sessions');
+    return res.json();
+  },
+
+  async getHistory(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/history`);
+    if (!res.ok) throw new Error('Failed to fetch history');
+    return res.json();
   }
 };

@@ -36,4 +36,8 @@ def emi_agent_node(state: dict) -> dict:
 
     import json
     msg_json = json.dumps({"type": "emi_slider", "content": msg})
-    return {"loan_terms": updated_terms, "messages": [AIMessage(content=msg_json)]}
+    return {
+        "loan_terms": updated_terms, 
+        "messages": [AIMessage(content=msg_json)],
+        "current_phase": "kyc_verification"
+    }

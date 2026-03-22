@@ -76,6 +76,27 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
         customer = _lookup_customer_by_email(email, password)
 
     if customer:
+        from api.services.session_service import search_sessions_by_phone
+        past_sessions = await search_sessions_by_phone(clean_phone)
+        
+        # Extract past loan info
+        past_loans = []
+        for ps in past_sessions:
+            if ps.get("session_id") == session_id: continue # Skip current
+            
+            p_data = ps.get("state", {}).get("loan_terms", {})
+            p_sanction = ps.get("state", {}).get("sanction_pdf")
+            p_decision = ps.get("state", {}).get("decision")
+            
+            if p_data or p_sanction:
+                past_loans.append({
+                    "amount": p_data.get("principal"),
+                    "type": p_data.get("loan_type"),
+                    "decision": p_decision,
+                    "sanction_letter": p_sanction,
+                    "date": ps.get("updated_at")
+                })
+
         await update_session(session_id, {
             "customer_id": customer.get("id", clean_phone),
             "is_existing_customer": True,
@@ -92,6 +113,7 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "risk_flags": customer.get("risk_flags", []),
                 "past_records": customer.get("past_records", ""),
                 "drop_off_history": customer.get("drop_off_history", ""),
+                "past_loans": past_loans,
             }
         })
         await advance_phase(session_id, "customer_identified")
@@ -106,6 +128,8 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "pre_approved_limit": customer.get("pre_approved_limit", 0),
                 "existing_emi_total": customer.get("existing_emi_total", 0),
                 "current_loans": customer.get("current_loans", []),
+                "past_loans": past_loans,
+                "past_records": customer.get("past_records", ""),
             },
             "message": f"Welcome back, {customer.get('name', 'Customer')}!"
         }
@@ -121,7 +145,7 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "city": "",
                 "salary": 0,
                 "credit_score": 700,
-                "pre_approved_limit": 100000,
+                "pre_approved_limit": 25000,
                 "existing_emi_total": 0,
                 "current_loans": [],
                 "risk_flags": [],
@@ -241,6 +265,24 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         # Persist final state to DB
         await update_session(session_id, final_state)
         
+        # If loan is signed, log it for future historical lookups
+        if final_state.get("is_signed"):
+            try:
+                from db.mock_database import loan_applications_collection
+                from datetime import datetime
+                loan_doc = {
+                    "session_id": session_id,
+                    "phone": final_state.get("customer_data", {}).get("phone"),
+                    "name": final_state.get("customer_data", {}).get("name"),
+                    "loan_type": final_state.get("loan_terms", {}).get("loan_type", "Personal"),
+                    "amount": final_state.get("loan_terms", {}).get("principal", 0),
+                    "status": "Signed & Disbursed",
+                    "created_at": datetime.now().isoformat()
+                }
+                await loan_applications_collection.insert_one(loan_doc)
+                print(f"✅ [SALES SERVICE] Loan logged for {loan_doc['name']}")
+            except Exception as le:
+                print(f"⚠️ [SALES SERVICE] Failed to log loan: {le}")
         return {
             "reply": reply,
             "all_replies": new_ai,

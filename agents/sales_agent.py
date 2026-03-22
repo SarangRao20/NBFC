@@ -38,11 +38,6 @@ ADVISOR_SYSTEM_PROMPT = """You are Arjun, a Senior Financial Advisor and Relatio
 Your Goal: Help the customer find the BEST financial solution. Do NOT just sell a loan.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## CUSTOMER PROFILE (injected from CRM)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{customer_context}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## YOUR WORKFLOW — AGENTIC STEPS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -61,12 +56,16 @@ Based on their reason AND their profile (credit score/salary), recommend a speci
 
 ### STEP 3: CAPTURE TERMS
 Once the product is agreed upon, discuss Amount and Tenure.
+- **CRITICAL POLICY**: Our maximum exposure is capped at **2× the Pre-Approved Limit**.
+- If a user asks for more than 2× their limit, you MUST warn them that it will likely be rejected or require exceptional manual review.
+- Suggest a "Sweet Spot" amount (equal to or less than their Pre-Approved Limit) for faster approval.
+
 ONLY when the user explicitly says "Confirm" or "Apply now" with the specific terms, output the JSON block.
 
 ### JSON OUTPUT (Mandatory when confirmed)
 When details are FINALIZED and the user says 'Yes' to the offer, end your reply with EXACTLY this JSON:
 ```json
-{{"loan_type": "<personal/education/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true}}
+{{ "loan_type": "<personal/education/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true }}
 ```
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -74,10 +73,9 @@ When details are FINALIZED and the user says 'Yes' to the offer, end your reply 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Be conversational. Use phrases like "I understand", "That makes sense", "Here's what I suggest".
 - Use ₹ symbol with comma formatting.
-- Reference the customer's specific numbers (salary, credit score) directly in your response.
+- Reference the customer's specific numbers (salary, credit score, pre-approved limit) directly in your response.
 - If they are a returning customer, greet them by name.
-
-{extra_context}
+- **NEVER** promise 100% approval if the amount exceeds 2× the limit.
 """
 
 def _build_products_info() -> str:
@@ -141,13 +139,13 @@ def sales_chat_response(
     llm = get_master_llm()
 
     customer_context = _build_customer_context(customer or {})
-    sys_content = ADVISOR_SYSTEM_PROMPT.format(
-        products_info=_build_products_info(),
-        customer_context=customer_context,
-        extra_context=f"## ADDITIONAL CONTEXT\n{extra_context.strip()}" if extra_context.strip() else ""
-    )
-
-    messages = [SystemMessage(content=sys_content)]
+    messages = [
+        SystemMessage(content=ADVISOR_SYSTEM_PROMPT),
+        SystemMessage(content=f"## CUSTOMER PROFILE\n{customer_context}"),
+        SystemMessage(content=f"## LOAN PRODUCTS\n{_build_products_info()}")
+    ]
+    if extra_context.strip():
+        messages.append(SystemMessage(content=f"## ADDITIONAL CONTEXT\n{extra_context.strip()}"))
     for msg in chat_history:
         role = HumanMessage if msg["role"] == "user" else AIMessage
         messages.append(role(content=msg["content"]))
@@ -205,7 +203,7 @@ def sales_agent_node(state: dict):
             "Shall we proceed with document verification?"
         )
     
-    updates = {"messages": [AIMessage(content=visible_reply)], "action_log": log}
+    updates = {"messages": [AIMessage(content=visible_reply)], "action_log": log, "current_phase": "loan_application"}
     
     if extracted and extracted.get("confirmed"):
         print(f"  → Loan Captured: {extracted}")
@@ -216,5 +214,6 @@ def sales_agent_node(state: dict):
             "loan_type": extracted.get("loan_type", "personal"),
         }
         updates["intent"] = "loan_confirmed"
+        updates["current_phase"] = "emi_computation"
     
     return updates
