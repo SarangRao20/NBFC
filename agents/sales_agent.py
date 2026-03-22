@@ -129,7 +129,7 @@ def _extract_json_from_response(text: str) -> Optional[dict]:
     return None
 
 
-def sales_chat_response(
+async def sales_chat_response(
     user_message: str,
     chat_history: list[dict],
     extra_context: str = "",
@@ -151,14 +151,14 @@ def sales_chat_response(
         messages.append(role(content=msg["content"]))
     messages.append(HumanMessage(content=user_message))
 
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)
     reply = response.content
     extracted = _extract_json_from_response(reply)
 
     return {"reply": reply, "extracted": extracted}
 
 
-def sales_agent_node(state: dict):
+async def sales_agent_node(state: dict):
     """LangGraph node for Sales / Advisor interaction."""
     import re as _re
     print("🗣️ [SALES AGENT] Processing turn...")
@@ -180,7 +180,7 @@ def sales_agent_node(state: dict):
     customer_context = state.get("customer_data", {}).copy()
     customer_context["intent"] = state.get("intent", "Checking options")
 
-    res = sales_chat_response(
+    res = await sales_chat_response(
         user_message=user_msg,
         chat_history=history[:-1] if history else [],
         customer=customer_context

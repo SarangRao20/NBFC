@@ -74,7 +74,7 @@ FORMAT:
 - End with a positive, forward-looking statement
 """
 
-def advisor_agent_node(state: dict) -> dict:
+async def advisor_agent_node(state: dict) -> dict:
     """LLM-powered post-decision financial advisor with rich contextual prompt."""
     print("💡 [ADVISOR AGENT] Generating personalized advice...")
 
@@ -196,7 +196,7 @@ CASE: NO ACTIVE LOANS (ADVICE ONLY)
     ]
 
     messages = [sys_msg] + context_msgs + state.get("messages", [])
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)
     
     updates = {"messages": [response]}
     

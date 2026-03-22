@@ -29,7 +29,7 @@ Return EXACTLY a JSON block:
 ```
 """
 
-def intent_node(state: dict):
+async def intent_node(state: dict):
     """Classifies user intent to set the next workflow."""
     print("🎯 [INTENT AGENT] Analyzing user intent...")
     log = list(state.get("action_log") or [])
@@ -50,7 +50,7 @@ def intent_node(state: dict):
         intent = 'unclear'
         try:
             # Avoid structured output; use manual parsing for robustness
-            res = llm.invoke([
+            res = await llm.ainvoke([
                 SystemMessage(content=INTENT_SYSTEM_PROMPT),
                 HumanMessage(content=f"User Message: {user_msg}")
             ])

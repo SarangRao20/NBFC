@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage
 
 
-def verification_agent_node(state: dict) -> dict:
+async def verification_agent_node(state: dict) -> dict:
     """Verifies KYC: checks that document-extracted name matches CRM records."""
     print("✅ [VERIFICATION AGENT] Cross-checking CRM...")
 

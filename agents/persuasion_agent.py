@@ -111,7 +111,7 @@ def _calculate_options(salary, existing_emi, rate, original_principal, original_
     return options, round(max_principal_same_tenure if options else 0)
 
 
-def persuasion_agent_node(state: dict) -> dict:
+async def persuasion_agent_node(state: dict) -> dict:
     """Persuasion Loop: negotiate revised loan terms after soft rejection."""
     print("🤝 [PERSUASION AGENT] Entering negotiation mode...")
 

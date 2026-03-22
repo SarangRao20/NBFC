@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage
 os.makedirs("data/sanctions", exist_ok=True)
 
 
-def sanction_agent_node(state: dict):
+async def sanction_agent_node(state: dict):
     """
     Generates a formal Sanction Letter PDF string based on confirmed loan details.
     """

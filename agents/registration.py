@@ -85,12 +85,15 @@ def pull_customer_from_db(phone: str) -> dict | None:
 
 
 # ─── Nodes ───────────────────────────────────────────────────────────────────────
-def registration_chat_node(state: dict):
-    print("--- REGISTRATION AGENT: CHATTING ---")
-    from config import get_extraction_llm
-    llm = get_extraction_llm()
-    phase = "registration"
-
+async def registration_chat_node(state: dict):
+    """Generates the chat response for Phase 0 based on current progress."""
+    print("🗣️ [REGISTRATION AGENT] Generating response...")
+    from langchain_core.messages import SystemMessage, AIMessage
+    from config import get_master_llm
+    
+    llm = get_master_llm()
+    phase = state.get("current_phase", "registration")
+    
     phone = state.get("customer_data", {}).get("phone")
     otp_verified = state.get("is_authenticated", False)
     name = state.get("customer_data", {}).get("name")
@@ -106,7 +109,7 @@ def registration_chat_node(state: dict):
         sys_prompt += "Great! You're all set. How can I assist you further today?"
 
     messages = [SystemMessage(content=sys_prompt)] + state["messages"]
-    response = llm.invoke(messages)
+    response = await llm.ainvoke(messages)
     
     # Ensure Dev OTP is never lost due to message rendering overrides
     dev_otp = state.get("customer_data", {}).get("dev_otp")

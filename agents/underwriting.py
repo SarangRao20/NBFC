@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.messages import AIMessage
 
-def underwriting_agent_node(state: dict) -> dict:
+async def underwriting_agent_node(state: dict) -> dict:
     """Deterministic underwriting engine checking NTC and FOIR heuristics."""
     print("⚖️ [UNDERWRITING AGENT] Evaluating advanced eligibility rules...")
 

@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage
 
 
-def emi_agent_node(state: dict) -> dict:
+async def emi_agent_node(state: dict) -> dict:
     """Pure deterministic math — no LLM tokens wasted."""
     print("🔢 [EMI AGENT] Calculating...")
 

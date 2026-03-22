@@ -47,7 +47,7 @@ class MasterState(TypedDict):
 
 
 # ─── Supervisor ──────────────────────────────────────────────────────────────
-def supervisor_node(state: MasterState):
+async def supervisor_node(state: MasterState):
     """Pure pass-through hub — no logic, just triggers router. Resets action log."""
     print("🤖 [SUPERVISOR] Evaluating state...")
     return {"action_log": []}   # Fresh log each turn

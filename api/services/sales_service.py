@@ -229,7 +229,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     graph = compile_master_graph()
     
     try:
-        final_state = graph.invoke(state, config={"recursion_limit": 25})
+        final_state = await graph.ainvoke(state, config={"recursion_limit": 25})
         print("✅ [SALES SERVICE] Graph run complete.")
 
         # Collect NEW AI messages (not re-emitting old history)

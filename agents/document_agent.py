@@ -77,7 +77,7 @@ OUTPUT — Return ONLY this JSON (no markdown, no prose):
 }"""
 
 
-def document_agent_node(state: dict) -> dict:
+async def document_agent_node(state: dict) -> dict:
     """Processes an uploaded document image using Gemini Vision with detailed forensic prompt."""
     print("📄 [DOCUMENT AGENT] Processing uploaded document...")
 
@@ -119,7 +119,7 @@ def document_agent_node(state: dict) -> dict:
             {"type": "text", "text": DOCUMENT_OCR_PROMPT},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_data}"}}
         ])
-        response = vision_llm.invoke([message])
+        response = await vision_llm.ainvoke([message])
 
         # Robust JSON extraction using regex
         json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
