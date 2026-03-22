@@ -92,6 +92,9 @@ def _default_state() -> dict:
         # Advisory (Phase 9)
         "advisory_message": "",
 
+        "action_log": [],
+        "options": [],
+
         # Session status
         "status": "active",
     }

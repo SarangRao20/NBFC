@@ -1,4 +1,5 @@
 export interface AppState {
+  sessionId: string | null;
   customerName: string;
   requestedAmount: number;
   roi: number;
@@ -8,12 +9,15 @@ export interface AppState {
   preApprovedLimit: number;
   underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved' | 'Reject';
   activeAgent: string | null;
+  thinkingAgents: string[];
   needsDocument: boolean;
   requiredDocuments: string[];
   documents: {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';
   };
+  actionLog: string[];
+  options: string[];
   pastLoans?: Array<{
     amount: number;
     type: string;

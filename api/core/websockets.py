@@ -41,4 +41,12 @@ class ConnectionManager:
             for conn in disconnected:
                 self.disconnect(conn, session_id)
 
+    async def broadcast_thinking(self, session_id: str, agent_name: str, thinking: bool):
+        """Broadcast an agent's 'thinking' status to the session."""
+        await self.broadcast_to_session(session_id, {
+            "type": "AGENT_THINKING",
+            "agent": agent_name,
+            "thinking": thinking
+        })
+
 manager = ConnectionManager()

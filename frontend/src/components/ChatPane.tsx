@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ChatMessage, AppState } from '../types';
+import { apiClient } from '../api/client';
 import { Send, Paperclip, FileText, CheckCircle2, UploadCloud, BrainCircuit, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AgentTypingIndicator from './AgentTypingIndicator';
@@ -202,17 +203,39 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                     </p>
                   </div>
                   <div className="flex space-x-3">
-                    <button className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95 shadow-sm">
+                    <button 
+                      onClick={async () => {
+                        if (!appState.sessionId) return;
+                        try {
+                          const blob = await apiClient.downloadLetter(appState.sessionId);
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `Sanction_Letter_${appState.sessionId.slice(0, 8)}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                        } catch (err) {
+                          console.error('Download failed:', err);
+                        }
+                      }}
+                      className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95 shadow-sm"
+                    >
                       Download PDF
                     </button>
                     <button 
                       disabled={isSigning}
-                      onClick={() => {
+                      onClick={async () => {
+                        if (!appState.sessionId) return;
                         setIsSigning(true);
-                        setTimeout(() => {
+                        try {
+                          await apiClient.esignAccept(appState.sessionId);
                           onSendMessage("I accept the sanction letter and e-sign it.");
+                        } catch (err) {
+                          console.error('E-sign failed:', err);
+                        } finally {
                           setIsSigning(false);
-                        }, 1500);
+                        }
                       }}
                       className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 shadow-sm shadow-emerald-600/20 text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95">
                       {isSigning ? (

@@ -34,9 +34,17 @@ def _token_name_match(name1: str, name2: str) -> bool:
     return shorter.issubset(longer)
 
 
+from api.core.websockets import manager
+
 async def fraud_agent_node(state: dict) -> dict:
     """Rule-based fraud detection with 6 independently scored signals."""
+    session_id = state.get("session_id", "default")
+    await manager.broadcast_thinking(session_id, "Fraud Agent", True)
+    
     print("🚨 [FRAUD AGENT] Analyzing fraud signals...")
+    
+    log = list(state.get("action_log") or [])
+    log.append("🚨 Starting 6-point Fraud Risk Screening...")
 
     customer = state.get("customer_data", {})
     docs = state.get("documents", {})
@@ -133,15 +141,19 @@ async def fraud_agent_node(state: dict) -> dict:
     if score >= 0.70:
         level = "🔴 HIGH RISK — Escalating to Manual Audit"
         escalation = "\n\n**⚡ ESCALATION TRIGGERED**: This application requires mandatory human review. Disbursement is BLOCKED until cleared by the Risk team."
+        log.append("🔴 CRITICAL: High fraud risk detected. Manual audit required.")
     elif score >= 0.40:
         level = "🟡 MEDIUM RISK — Additional Verification Recommended"
         escalation = "\n\n**Note**: Standard processing can continue, but please re-verify the flagged documents before disbursement."
+        log.append("🟡 WARNING: Medium fraud risk signals identified.")
     elif score >= 0.20:
         level = "🟠 LOW-MEDIUM RISK — Minor Anomalies Noted"
         escalation = "\n\nStandard processing can proceed. Flagged items are logged for audit."
+        log.append("🟠 Note: Minor anomalies detected in fraud screening.")
     else:
         level = "🟢 LOW RISK — Cleared for Processing"
         escalation = ""
+        log.append("🟢 Fraud screening passed.")
 
     signal_text = "\n\n".join(signals) if signals else "✅ No fraud signals detected across all 6 checks."
 
@@ -154,9 +166,12 @@ async def fraud_agent_node(state: dict) -> dict:
         f"{escalation}"
     )
 
+    await manager.broadcast_thinking(session_id, "Fraud Agent", False)
     return {
         "fraud_score": score,
         "fraud_signals": signals_triggered,
         "messages": [AIMessage(content=msg)],
+        "action_log": log,
+        "options": ["Proceed to Approval", "Talk to Specialist", "Exit"] if score < 0.7 else ["Request Callback", "Call Fraud Desk", "Exit"],
         "current_phase": "underwriting"
     }

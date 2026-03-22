@@ -23,6 +23,9 @@ def underwriting_agent_node(state: dict) -> dict:
     """Deterministic underwriting engine checking NTC and FOIR heuristics."""
     print("⚖️ [UNDERWRITING AGENT] Evaluating advanced eligibility rules...")
 
+    log = list(state.get("action_log") or [])
+    log.append("⚖️ Running eligibility scoring engine...")
+
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
     docs = state.get("documents", {})
@@ -53,9 +56,11 @@ def underwriting_agent_node(state: dict) -> dict:
         reasons.append(f"Fraud score ({fraud_score}) ≥ 0.7 — Escalated to manual audit.")
         decision = "hard_reject"
         risk_level = "high"
+        log.append("🔴 CRITICAL: Fraud threshold exceeded.")
 
     # Pre-check: NTC (New To Credit) Thin-file Detection
     elif score == 0 or score == -1:
+        log.append("ℹ️ New-to-Credit profile detected.")
         if not docs.get("bank_statement_verified"):
             reasons.append("New-To-Credit Detected. Please upload 6 months' Bank Statement for limit assessment.")
             decision = "pending_docs"
@@ -71,9 +76,11 @@ def underwriting_agent_node(state: dict) -> dict:
             reasons.append(f"Credit Score ({score}) is below the minimum threshold of 700.")
             decision = "hard_reject"
             risk_level = "high"
+            log.append(f"❌ Credit score {score} is below threshold.")
             
         # Branch 2: Credit Score IS >= 700 -> Check Loan Limit
         else:
+            log.append(f"✅ Credit score {score} verified.")
             # Categorize the Limit
             if principal <= pre_approved:
                 limit_category = "Low"
@@ -87,12 +94,14 @@ def underwriting_agent_node(state: dict) -> dict:
                 # Tag: Low Risk -> Approved (Bypasses DTI caps!)
                 risk_level = "low"
                 decision = "approve"
+                log.append("✅ Loan within pre-approved limits.")
                 
             elif limit_category == "High":
                 # Hard Reject: Exposure Limit
                 reasons.append(f"Requested loan strongly exceeds maximum permissible exposure (2× pre-approved limit).")
                 decision = "hard_reject"
                 risk_level = "high"
+                log.append("❌ Loan exceeds maximum exposure limits.")
                 
             elif limit_category == "Medium":
                 # Calculate DTI
@@ -100,26 +109,32 @@ def underwriting_agent_node(state: dict) -> dict:
                 if not docs.get("verified"):
                     reasons.append("To approve a medium-exposure loan exceeding your basic pre-approved limits, please upload your Salary Slip.")
                     decision = "pending_docs"
+                    log.append("⏳ Documentation pending for higher limit.")
                 else:
+                    log.append(f"📊 Analyzing DTI ratio ({dti*100:.1f}%)...")
                     if dti > 0.50:
                         # High DTI -> Soft Reject
                         reasons.append(f"EMI pushes DTI to {dti*100:.1f}%, exceeding 50% safety limit.")
                         decision = "soft_reject"
                         risk_level = "medium"
+                        log.append("⚠️ DTI safety limit exceeded.")
                         if max_affordable_principal > 0:
                             alternative_offer = min(max_affordable_principal, 2 * pre_approved)
                     else:
                         # Acceptable DTI -> Approved
                         decision = "approve"
                         risk_level = "medium"
+                        log.append("✅ DTI within safe limits.")
 
     # Rule 9: Explainability Layer Output Generator
     if decision == "approve":
         msg = f"✅ **LOAN APPROVED**\n\nYour application for ₹{principal:,} has been approved! Your EMI of ₹{emi:,.2f} fits perfectly within your profile."
+        opts = ["Accept & Proceed", "Talk to Specialist", "Exit"]
     
     elif decision == "pending_docs":
         msg = (f"⏳ **LOAN PENDING (Additional Documents Required)**\n\n"
                f"**Decision Reasoning**: {' '.join(reasons)}")
+        opts = ["Upload Now", "Ask Arjun for Help", "Exit"]
         
     elif decision == "soft_reject":
         reason_text = "\n".join(f"• {r}" for r in reasons)
@@ -127,11 +142,13 @@ def underwriting_agent_node(state: dict) -> dict:
                f"**Cause**:\n{reason_text}\n\n"
                f"💡 **Smart Re-Optimization Offer**: While we cannot approve ₹{principal:,.0f}, we can instantly approve an optimized alternative "
                f"loan amount of **₹{alternative_offer:,.0f}** for the exact same tenure based on your verified safety limits.")
+        opts = ["Accept ₹{alternative_offer:,}", "Edit Amount", "Talk to Specialist"]
                
     else:
         reason_text = "\n".join(f"• {r}" for r in reasons)
         msg = (f"❌ **LOAN REJECTED**\n\n"
                f"**Decision Reasoning**:\n{reason_text}")
+        opts = ["View Recovery Plan", "Talk to Specialist", "Exit"]
 
     return {
         "decision": decision,
@@ -139,5 +156,7 @@ def underwriting_agent_node(state: dict) -> dict:
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
-        "messages": [AIMessage(content=msg)]
+        "messages": [AIMessage(content=msg)],
+        "action_log": log,
+        "options": opts
     }

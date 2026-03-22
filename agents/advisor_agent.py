@@ -10,40 +10,48 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_master_llm
 from langchain_core.messages import AIMessage, SystemMessage
 
+ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor with 12+ years of expertise in retail banking.
 
-ADVISOR_PROMPT_TEMPLATE = """You are Priya, the Senior Financial Wellness Advisor at FinServe NBFC. Your role is to provide deep, personalized financial guidance and to support the customer through the final stages of their journey (Approval & Signing).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR CORE RESPONSIBILITIES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **Financial Health**: Analyze the customer's Debt-to-Income (DTI) ratio and provide honest advice.
-2. **ROI Explanation**: Help the customer understand why they got a specific rate and how they can improve it in the future.
-3. **Post-Sanction Support**: Guide the user through the E-Sign process once they are approved.
-4. **General Wellness**: Provide tips on credit building and smart money management.
+Your tone is professional, empathetic, and data-driven. You use a structured 'WhatsApp Business' format with emojis for readability.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 🚫 STRICT BOUNDARIES (ANTI-HALLUCINATION):
+## YOUR CORE ADVISORY PROTOCOLS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- **NO PRODUCT CAPTURE**: Do NOT negotiate new loan amounts, tenures, or products. If the user wants to change their loan amount, say: "I'll put you back in touch with our Loan Specialist, Arjun, to restructure your request."
-- **NO GUARANTEES**: Never guarantee approval or specific disbursement times. Use words like "typically" or "standard processing time."
-- **STAY IN CHARACTER**: You are Priya, a caring but data-driven advisor. Do NOT use Sales-style pressure.
+1. **DTI Transparency**: Always explain the Debt-to-Income ratio. If it's > 50%, be firm about the risks.
+2. **ROI Focus**: Explain how timely repayments improve their CIBIL score and reduce future interest costs.
+3. **E-Sign Facilitation**: Once approved, guide them to the 'Accept & E-Sign' button.
+4. **Hard Rejection Protocol**: If the loan is rejected, never say 'Sorry, bye'. Instead, provide a 3-step 'Credit Recovery Plan'.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## ADVISORY OUTPUT RULES:
+## 📱 MESSAGE FORMAT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+*   Use bold for emphasis.
+*   Use checklists for steps.
+*   Keep paragraphs short.
+
+CASE: APPROVED
+"🎉 **Good news, {name}!** Your loan of ₹{amount} has been sanctioned..."
+
+CASE: REJECTED
+"📋 **Update on your application...** While we can't proceed today, here is your recovery plan..."
+━━━━━━━━━━━
 CASE: SIGNED & COMPLETED
 - Acknowledge signature and explain next steps for disbursement.
 
 CASE: APPROVED (PENDING SIGNATURE)
 - Warmly explain the offer, EMI dates, and provide the 'Accept & E-Sign' link.
-
 CASE: REJECTED / SOFT REJECT
 - Provide constructive feedback on how to improve eligibility (e.g., "Reducing your existing EMI of ₹{existing_emi_total:,} would improve your chances.")
 """
 
 
+from api.core.websockets import manager
+
 async def advisor_agent_node(state: dict) -> dict:
     """LLM-powered post-decision financial advisor with rich contextual prompt."""
+    session_id = state.get("session_id", "default")
+    await manager.broadcast_thinking(session_id, "Priya (Advisor)", True)
+    
     print("💡 [ADVISOR AGENT] Generating personalized advice...")
 
     llm = get_master_llm()
@@ -117,7 +125,7 @@ City: {customer.get("city", "N/A")}
 Monthly Salary: ₹{salary:,}
 Credit Score: {customer.get("credit_score", "N/A")}
 Pre-Approved Limit: ₹{customer.get("pre_approved_limit", 0):,}
-Current EMI Burden: ₹{existing_emi_total:,}/month
+Current EMI Burden: ₹{existing_emi:,}/month
 Active Loans: {", ".join(customer.get("current_loans", [])) or "None"}
 """
 
@@ -163,13 +171,21 @@ CASE: NO ACTIVE LOANS (ADVICE ONLY)
         SystemMessage(content=f"### ALTERNATIVE OFFER (if applicable)\nSuggested Amount: ₹{suggested_amount:,}\nSuggested EMI: ₹{suggested_emi:,}")
     ]
 
+    log = list(state.get("action_log") or [])
+    log.append(f"⚖️ Priya is assessing DTI for {adj_decision.upper()} case...")
+    
     messages = [sys_msg] + context_msgs + state.get("messages", [])
     response = await llm.ainvoke(messages)
     
-    updates = {"messages": [response]}
+    updates = {
+        "messages": [response],
+        "action_log": log,
+        "options": ["Accept & E-Sign", "Talk to Specialist", "Exit"] if adj_decision == "approve" else ["View Recovery Plan", "Talk to Specialist", "About DTI"]
+    }
     
     # If the user just signed, update the state and send notification
     if state.get("intent") == "sign":
+        log.append("✍️ E-Signature confirmed.")
         updates["is_signed"] = True
         updates["current_phase"] = "loan_disbursed"
         print("✅ [ADVISOR AGENT] Signature recorded. Loan transitioning to disbursed phase.")

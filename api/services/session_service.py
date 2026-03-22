@@ -142,6 +142,8 @@ async def search_sessions_by_phone(phone: str) -> list:
     results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     
     # Cache for 15 minutes
+    cache = await get_cache()
+    cache_key = f"sessions_by_phone:{clean_phone}"
     await cache.set(cache_key, results, ttl=900)
     
     return results

@@ -162,6 +162,26 @@ export default function DashboardPane({ appState, onLoadSession }: Props) {
         </div>
       )}
 
+      {/* System Reasoning Log */}
+      <div className="flex-1 flex flex-col min-h-0 mb-3">
+        <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center">
+          <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-1.5 animate-pulse" />
+          System Reasoning
+        </h3>
+        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-hide text-[10px] bg-white rounded-lg border border-slate-100 p-2 shadow-inner">
+          {appState.actionLog && appState.actionLog.length > 0 ? (
+            appState.actionLog.map((log, i) => (
+              <div key={i} className="flex space-x-2 items-start border-l-2 border-emerald-100 pl-2 py-0.5">
+                <span className="text-slate-500 font-mono text-[8px] mt-0.5">[{i+1}]</span>
+                <span className="text-slate-600 leading-tight">{log}</span>
+              </div>
+            ))
+          ) : (
+            <div className="text-slate-400 italic text-center py-4">Waiting for agent actions...</div>
+          )}
+        </div>
+      </div>
+
       {/* Recent Chat Sessions */}
       {appState.pastSessions && appState.pastSessions.length > 0 && (
         <div className="flex-1 flex flex-col min-h-0 mt-3 pt-3 border-t border-slate-200">

@@ -110,15 +110,23 @@ OUTPUT — Return ONLY this JSON (no markdown, no prose):
 }"""
 
 
+from api.core.websockets import manager
+
 async def document_agent_node(state: dict) -> dict:
     """Processes an uploaded document image using Gemini Vision with detailed forensic prompt."""
+    session_id = state.get("session_id", "default")
+    await manager.broadcast_thinking(session_id, "Document Agent", True)
+
     print("📄 [DOCUMENT AGENT] Processing uploaded document...")
+    log = list(state.get("action_log") or [])
+    log.append("📄 Reading uploaded document...")
 
     doc_path = state.get("documents", {}).get("salary_slip_path", "")
 
     if not doc_path or not os.path.exists(doc_path):
+        await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
-            "documents": {**state.get("documents", {}), "verified": False},
+            "documents": {**state.get("documents", {}), "verified": False, "ocr_error": "No document path found"},
             "messages": [AIMessage(content=(
                 "📄 **Document Required**\n\n"
                 "Please upload one of the following documents to continue:\n"
@@ -155,15 +163,20 @@ async def document_agent_node(state: dict) -> dict:
         response = await vision_llm.ainvoke([message])
 
         # Robust JSON extraction using regex
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        text_content = response.content
+        print(f"📄 [DOCUMENT AGENT] Raw OCR Response: {text_content[:200]}...")
+        
+        json_match = re.search(r'\{.*\}', text_content, re.DOTALL)
         if json_match:
             try:
                 extracted = json.loads(json_match.group(0))
             except Exception as je:
                 print(f"  ❌ JSON parse error: {je}")
-                raise ValueError("Could not parse extracted document data.")
+                # Fallback: Try to manual parse if it's very close
+                extracted = {"document_type": "Unknown", "confidence": 0.3}
         else:
-            raise ValueError("No valid data block found in document analysis.")
+            print("  ⚠️ No JSON found in OCR response. Attempting recovery...")
+            extracted = {"document_type": "Unknown", "confidence": 0.1}
 
         # --- Enhanced Verification Logic ---
         confidence = float(extracted.get("confidence", 0))
@@ -198,6 +211,9 @@ async def document_agent_node(state: dict) -> dict:
         is_verified = all(verification_checks.values())
         
         # Build detailed verification message
+        log.append(f"🔍 Analyzing {document_type}...")
+        
+        reason = ""
         if not is_verified:
             issues = []
             if not verification_checks["confidence_ok"]:
@@ -205,25 +221,28 @@ async def document_agent_node(state: dict) -> dict:
             if verification_checks["not_tampered"]:
                 issues.append("Document appears tampered")
             if not verification_checks["valid_doc_type"]:
-                issues.append(f"Invalid document type. Required: {', '.join(required_docs)}")
+                issues.append(f"Invalid document type. Expected one of: {', '.join(required_docs)}")
             if not verification_checks["name_match"] and customer_name:
                 issues.append(f"Name mismatch: '{name_extracted}' vs '{customer_data.get('name', '')}'")
             
             reason = "; ".join(issues)
             msg = f"❌ **Document Verification Failed:** {reason}\n\nPlease upload a valid, original document."
+            log.append(f"❌ Verification failed: {reason}")
             print(f"  ⚠️ Document rejected: {reason}")
         else:
             confidence_emoji = "🟢" if confidence >= 0.85 else "🟡"
             msg = f"✅ **{document_type} verified successfully** {confidence_emoji} ({confidence:.0%} confidence)"
             if customer_name and name_match_score > 0.7:
                 msg += f"\n✅ Identity verified: Name matches ({name_match_score:.0%} similarity)"
+            log.append(f"✅ {document_type} verified successfully.")
             print(f"  ✅ Document verified: {document_type} for {customer_name or 'Unknown'}")
 
         doc_data = {
             **state.get("documents", {}),
             "verified": is_verified,
-            "document_type": extracted.get("document_type", "Unknown"),
-            "name_extracted": extracted.get("name_extracted", "Unknown"),
+            "ocr_error": reason if not is_verified else "",
+            "document_type": document_type,
+            "name_extracted": name_extracted,
             "salary_extracted": float(extracted.get("salary_extracted") or 0),
             "gross_salary_extracted": float(extracted.get("gross_salary_extracted") or 0),
             "employer_name": extracted.get("employer_name", ""),
@@ -235,7 +254,6 @@ async def document_agent_node(state: dict) -> dict:
             "tamper_reason": extracted.get("tamper_reason", ""),
             "audit_path": audit_path,
             "notes": extracted.get("notes", ""),
-            # Add verification metadata
             "verification_checks": verification_checks,
             "name_match_score": name_match_score,
             "required_documents": required_docs,
@@ -259,17 +277,21 @@ async def document_agent_node(state: dict) -> dict:
         verification_summary = "\n" + "\n".join(verification_details) if verification_details else ""
 
         final_msg = msg + verification_summary + salary_line + employer_line + tamper_warn
-
+        
+        await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
             "documents": doc_data, 
             "messages": [AIMessage(content=final_msg)],
-            "current_phase": "kyc_verification" if not doc_data.get("verified") else "underwriting"
+            "action_log": log,
+            "options": ["Proceed to Fraud Check", "Re-upload Document", "Talk to Specialist"] if is_verified else ["Re-upload Document", "Need help?", "Exit"],
+            "current_phase": "kyc_verification" if not doc_data.get("verified") else "fraud_analysis"
         }
 
     except Exception as e:
         print(f"  ❌ Document agent error: {e}")
+        await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
-            "documents": {**state.get("documents", {}), "verified": False},
+            "documents": {**state.get("documents", {}), "verified": False, "ocr_error": str(e)},
             "messages": [AIMessage(content=(
                 f"❌ **Document Processing Failed**\n\n"
                 "We couldn't process your document. Please ensure:\n"

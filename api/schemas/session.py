@@ -55,6 +55,8 @@ class SessionStateResponse(BaseModel):
     risk_level: Optional[str] = ""
     negotiation_round: Optional[int] = 0
     sanction_pdf: Optional[str] = ""
+    action_log: Optional[list[str]] = []
+    options: Optional[list[str]] = []
     phase_history: Optional[list[dict]] = []
 
 

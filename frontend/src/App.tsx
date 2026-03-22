@@ -6,6 +6,7 @@ import { apiClient } from './api/client';
 import { wsClient } from './api/websocket';
 
 const INITIAL_APP_STATE: AppState = {
+  sessionId: null,
   customerName: '',
   requestedAmount: 0,
   roi: 0,
@@ -15,12 +16,15 @@ const INITIAL_APP_STATE: AppState = {
   preApprovedLimit: 0,
   underwritingStatus: 'Pending Evaluation',
   activeAgent: null,
+  thinkingAgents: [],
   needsDocument: false,
   requiredDocuments: [],
   documents: {
     pan: 'pending',
     bankStatement: 'pending',
   },
+  actionLog: [],
+  options: []
 };
 
 const INITIAL_CHAT_HISTORY: ChatMessage[] = [];
@@ -43,6 +47,7 @@ function App() {
       try {
         const { session_id } = await apiClient.startSession();
         setSessionId(session_id);
+        setAppState(prev => ({ ...prev, sessionId: session_id }));
         setChatPhase('phone');
 
         // Automatically trigger initial greeting from Arjun
@@ -90,13 +95,36 @@ function App() {
       console.log('📥 [WS EVENT]', data);
       
       if (data.type === 'AGENT_STEP') {
-        const steps = data.steps || [];
-        const lastStep = steps[steps.length - 1];
-        if (lastStep) {
-          setAppState(prev => ({ ...prev, activeAgent: `🔍 ${lastStep.agent_name || 'Agent'} is working...` }));
+        const steps = data.action_log || data.steps || [];
+        const options = data.options || [];
+        setAppState(prev => ({ 
+          ...prev, 
+          actionLog: Array.isArray(steps) ? steps : [steps], 
+          options: options,
+          activeAgent: Array.isArray(steps) && steps.length > 0 ? `🔍 ${steps[steps.length - 1]}...` : prev.activeAgent 
+        }));
+        
+        // If we have options, push them to chat as well for accessibility
+        if (options && options.length > 0) {
+          pushAgentMessage('I have prepared some options for you:', 'text', `msg-opt-${Date.now()}`, options);
         }
       }
       
+      if (data.type === 'AGENT_THINKING') {
+        const { agent, thinking } = data;
+        setAppState(prev => {
+          const newThinking = thinking 
+            ? [...new Set([...prev.thinkingAgents, agent])]
+            : prev.thinkingAgents.filter(a => a !== agent);
+          
+          return {
+            ...prev,
+            thinkingAgents: newThinking,
+            activeAgent: newThinking.length > 0 ? `🔍 ${newThinking.join(', ')} is thinking...` : null
+          };
+        });
+      }
+
       if (data.type === 'PHASE_UPDATE') {
         console.log(`🚀 [PHASE UPDATE] -> ${data.phase}`);
         // Automatically sync state when phase changes
@@ -136,14 +164,22 @@ function App() {
   const runNegotiation = async () => {
     if (!sessionId) return;
     const thinkingId = pushAgentMessage('Persuasion loop activated...', 'thinking');
-    setAppState(prev => ({ ...prev, activeAgent: '🤝 Sales Agent building counter-offer...' }));
+    setAppState(prev => ({ 
+      ...prev, 
+      thinkingAgents: [...prev.thinkingAgents, 'Sales Agent'],
+      activeAgent: '🤝 Sales Agent building counter-offer...' 
+    }));
     
     try {
       await apiClient.analyzeRejection(sessionId);
       const suggestion = await apiClient.suggestFix(sessionId);
 
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [],
+        activeAgent: null 
+      }));
 
       if (suggestion.options && suggestion.options.length > 0) {
         setChatPhase('negotiate');
@@ -154,14 +190,22 @@ function App() {
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       pushAgentMessage("Error generating counter offer.");
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [],
+        activeAgent: null 
+      }));
     }
   };
 
   const runUnderwriting = async () => {
     if (!sessionId) return;
     const thinkingId = pushAgentMessage('Consulting decision engine...', 'thinking');
-    setAppState(prev => ({ ...prev, activeAgent: '📊 Underwriting Agent is evaluating...' }));
+    setAppState(prev => ({ 
+      ...prev, 
+      thinkingAgents: [...prev.thinkingAgents, 'Underwriting Agent'],
+      activeAgent: '📊 Underwriting Agent is evaluating...' 
+    }));
     
     try {
       const uwResult = await apiClient.underwrite(sessionId);
@@ -169,6 +213,7 @@ function App() {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       setAppState(prev => ({ 
         ...prev, 
+        thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Underwriting Agent'),
         activeAgent: null,
         underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
       }));
@@ -184,7 +229,11 @@ function App() {
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       pushAgentMessage("Error during underwriting.");
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Underwriting Agent'),
+        activeAgent: null 
+      }));
     }
   };
 
@@ -203,6 +252,7 @@ function App() {
       ...prev,
       needsDocument: false,
       documents: { ...prev.documents, bankStatement: 'verified' },
+      thinkingAgents: [...prev.thinkingAgents, 'Document Agent'],
       activeAgent: '📄 Processing Document...'
     }));
 
@@ -217,7 +267,11 @@ function App() {
       await apiClient.fraudCheck(sessionId);
       
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [],
+        activeAgent: null 
+      }));
       
       pushAgentMessage('Documents verified successfully. Moving to Underwriting...');
       
@@ -227,13 +281,18 @@ function App() {
     } catch (err) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       pushAgentMessage('Error processing document. Please check backend logs.');
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [],
+        activeAgent: null 
+      }));
     }
   };
 
   const loadSession = async (sid: string) => {
     try {
       setSessionId(sid);
+      setAppState(prev => ({ ...prev, sessionId: sid }));
       const state = await apiClient.getSession(sid);
       const history = await apiClient.getHistory(sid);
 
@@ -247,9 +306,11 @@ function App() {
           emi: state.loan_terms?.emi || 0,
           creditScore: state.customer_data?.credit_score || 0,
           preApprovedLimit: state.customer_data?.pre_approved_limit || 0,
-          underwritingStatus: state.decision ? (state.decision.charAt(0).toUpperCase() + state.decision.slice(1).replace('_', ' ')) as any : 'Pending Evaluation',
-          activeAgent: null,
-          needsDocument: state.current_phase === 'document',
+          underwritingStatus: state.decision === 'approve' ? 'Approved' : (state.decision === 'soft_reject' ? 'Soft-Rejected' : 'Pending Evaluation'),
+          activeAgent: state.current_phase,
+          actionLog: state.action_log || [],
+          options: state.options || [],
+          needsDocument: state.current_phase === 'kyc_agent',
           requiredDocuments: state.current_phase === 'document' ? ["Identity (PAN or Aadhaar)"] : [],
           documents: {
             pan: state.documents?.verified ? 'verified' : 'pending',
@@ -299,12 +360,20 @@ function App() {
 
     try {
       // General agent-driven chat
-      setAppState(prev => ({ ...prev, activeAgent: 'Thinking...' }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [...prev.thinkingAgents, 'Arjun'],
+        activeAgent: 'Thinking...' 
+      }));
       
       let res: any = null;
       try {
         res = await apiClient.chat(sessionId, text, chatHistory); 
-        setAppState(prev => ({ ...prev, activeAgent: null }));
+        setAppState(prev => ({ 
+          ...prev, 
+          thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Arjun'),
+          activeAgent: null 
+        }));
 
         // Handle multiple replies if available
         if (res.all_replies && res.all_replies.length > 0) {
@@ -321,7 +390,11 @@ function App() {
       } catch (err) {
         console.error("Chat API failed:", err);
         pushAgentMessage("System Error: Chat communication failed.");
-        setAppState(prev => ({ ...prev, activeAgent: null }));
+        setAppState(prev => ({ 
+          ...prev, 
+          thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Arjun'),
+          activeAgent: null 
+        }));
         return; // Stop if chat fails
       }
 
@@ -374,7 +447,11 @@ function App() {
     } catch (err) {
       console.error("Top-level API error:", err);
       pushAgentMessage("System Error: Failed to communicate with backend API.");
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      setAppState(prev => ({ 
+        ...prev, 
+        thinkingAgents: [],
+        activeAgent: null 
+      }));
     }
 
   };

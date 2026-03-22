@@ -6,9 +6,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.messages import AIMessage
 
 
+from api.core.websockets import manager
+
 async def verification_agent_node(state: dict) -> dict:
     """Verifies KYC: checks that document-extracted name matches CRM records."""
+    session_id = state.get("session_id", "default")
+    await manager.broadcast_thinking(session_id, "KYC Agent", True)
+    
     print("✅ [VERIFICATION AGENT] Cross-checking CRM...")
+    
+    log = list(state.get("action_log") or [])
+    log.append("✅ Verification Agent: Cross-checking CRM and Document data...")
 
     customer = state.get("customer_data", {})
     docs = state.get("documents", {})
@@ -21,6 +29,7 @@ async def verification_agent_node(state: dict) -> dict:
 
     if not doc_verified:
         issues.append("Document has not been verified yet.")
+        log.append("⚠️ Document verification pending.")
 
     if reg_name and doc_name:
         # Token overlap: all tokens from shorter name must exist in longer name's tokens
@@ -30,9 +39,13 @@ async def verification_agent_node(state: dict) -> dict:
         longer = doc_tokens if len(reg_tokens) <= len(doc_tokens) else reg_tokens
         if not shorter.issubset(longer):
             issues.append(f"Name mismatch: CRM='{customer.get('name')}' vs Document='{docs.get('name_extracted')}'")
+            log.append(f"❌ Name mismatch detected: {customer.get('name')} vs {docs.get('name_extracted')}")
+        else:
+            log.append("✅ Identity Name Match confirmed.")
 
     if docs.get("tampered"):
         issues.append("Document flagged as potentially tampered by OCR analysis.")
+        log.append("🚨 TAMPER ALERT: Forensic scan flagged anomalies.")
 
     # 3-Layer Document Type Verification
     terms = state.get("loan_terms", {})
@@ -46,16 +59,22 @@ async def verification_agent_node(state: dict) -> dict:
     if principal > pre_approved:
         if "salary slip" not in doc_type:
             issues.append(f"High-value loan requested (₹{principal:,} > Limit ₹{pre_approved:,}). A Salary Slip is mandatory, but received '{docs.get('document_type')}'.")
+            log.append(f"⚠️ Mandatory Salary Slip missing for ₹{principal:,} loan.")
     else:
         if "pan" not in doc_type and "aadhaar" not in doc_type:
             issues.append(f"Identity verification required for regular loans. Please upload PAN Card or Aadhaar Card. Received '{docs.get('document_type')}'.")
+            log.append("⚠️ Identity document missing.")
 
     if issues:
         issue_text = "\n".join(f"  • {i}" for i in issues)
         msg = f"⚠️ **KYC Verification Issues Found:**\n{issue_text}\n\nPlease re-upload correct documents."
-        return {
+        log.append("❌ KYC verification failed.")
+        await manager.broadcast_thinking(session_id, "KYC Agent", False)
+    return {
             "kyc_status": "failed", 
             "messages": [AIMessage(content=msg)],
+            "action_log": log,
+            "options": ["Re-upload Document", "Need help?", "Exit"],
             "current_phase": "kyc_verification"
         }
 
@@ -75,9 +94,13 @@ async def verification_agent_node(state: dict) -> dict:
         f"- Profile Updated: Address & ID verified ✓\n"
         f"- OCR Confidence: {docs.get('confidence', 0):.0%} ✓"
     )
+    log.append("✅ KYC verification successful. All checks passed.")
+    await manager.broadcast_thinking(session_id, "KYC Agent", False)
     return {
         "kyc_status": "verified", 
         "customer_data": updated_customer,
         "messages": [AIMessage(content=msg)],
+        "action_log": log,
+        "options": ["Proceed to Fraud Screening", "About My Privacy", "Exit"],
         "current_phase": "fraud_check"
     }

@@ -23,6 +23,7 @@ class DocumentData(TypedDict, total=False):
     salary_extracted: float
     verified: bool
     confidence: float
+    ocr_error: str
 
 class MasterState(TypedDict):
     """The global session state for the 9-Agent pipeline."""
@@ -66,4 +67,11 @@ class MasterState(TypedDict):
     
     # Routing Tracker: which agent holds the baton currently
     next_agent: str
+    routing_reasoning: str
+    
+    # Glass Box Reasoning & UI interaction
+    action_log: List[str]  # Human-readable step log for the UI
+    options: List[str]     # Interaction buttons (e.g. ["Yes", "No"])
+    is_signed: bool
+    current_phase: str
 

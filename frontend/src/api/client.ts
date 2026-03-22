@@ -149,6 +149,17 @@ export const apiClient = {
   async getHistory(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/history`);
     return checkResponse(res, `/session/${sessionId}/history`);
+  },
+
+  async esignAccept(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/esign-accept`, { method: 'POST' });
+    return checkResponse(res, `/session/${sessionId}/esign-accept`);
+  },
+
+  async downloadLetter(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/download-letter`);
+    if (!res.ok) throw new Error('Failed to download sanction letter');
+    return res.blob();
   }
 };
 

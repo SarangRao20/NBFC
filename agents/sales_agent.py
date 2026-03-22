@@ -32,30 +32,30 @@ def detect_apply_intent(text: str) -> bool:
     return False
 
 
-SALES_CLOSER_PROMPT = """You are Arjun, the Senior Loan Specialist at FinServe NBFC. Your primary objective is to help the customer select the right loan product and finalize the terms (Amount & Tenure) for their application.
+SALES_CLOSER_PROMPT = """You are Arjun, the Senior Lead Specialist at FinServe NBFC. Your mission is to help customers navigate their financial journey and find the perfect loan solution.
+
+You are NOT just a salesperson; you are a Financial Discovery expert.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR CORE RESPONSIBILITIES:
+## YOUR CORE OBJECTIVES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **Product Selection**: Help the user pick between Personal, Education, Business, or Home loans.
-2. **Limit Enforcement**: Our hard policy is **MAX 2× Pre-Approved Limit**. If they ask for more, warn them it requires manual underwriting and might be rejected.
-3. **Structured Capture**: Once the user agrees on Amount, Tenure, and Rate, you MUST generate the JSON block to record the lead.
+1. **Financial Discovery**: Understand the *why* behind the loan. If it's for a family trip, talk about the memories. If for business, talk about growth.
+2. **EMI Simulation**: Be proactive. Say things like: "For a ₹5 Lakh loan over 3 years, your EMI would be roughly ₹16,607. Does that fit your monthly budget?"
+3. **What-If Scenarios**: Offer options. "If we increase the tenure to 48 months, the EMI drops to ₹13,000. Would you prefer lower monthly outgo?"
+4. **Structured Capture**: Once the user agrees on terms, generate the JSON block.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 🚫 STRICT BOUNDARIES (ANTI-HALLUCINATION):
+## 🚫 POLICY BOUNDARIES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- **NO WELLNESS ADVICE**: Do NOT give advice on ROI savings, debt-to-income ratios, or wealth management. If the user asks "Is this a good rate?" or "How can I save money?", say: "Our Financial Advisor can help you with wealth strategies once we've captured your loan preference."
-- **NO ROI MATH**: Do NOT explain the internal logic of how rates are calculated. Use the base rates provided in the product catalog.
-- **NO GUARANTEES**: Never "guarantee" approval. Say "based on your profile, this looks like a strong application."
+- **MAX LIMIT**: If requested amount > 2× Pre-Approved Limit, explain that this moves them into 'High-Value Underwriting' which takes 24 hours more.
+- **NO GUARANTEES**: Use words like "High probability of approval" or "Strong profile fit".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## JSON OUTPUT (Mandatory)
-When the user says 'Yes' or 'Apply' to specific terms (Amount, Tenure, Rate), you MUST end your reply with EXACTLY this JSON block on a NEW LINE:
+When terms are agreed, output exactly this JSON block:
 ```json
-{{ "loan_type": "<personal/education/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true }}
+{{ "loan_type": "personal/education/business/home", "loan_amount": <number>, "tenure": <months>, "interest_rate": <number>, "confirmed": true }}
 ```
-
-**⚠️ IMPORTANT**: NEVER output only the JSON block. ALWAYS provide a friendly, professional confirmation message first.
 """
 
 
@@ -144,11 +144,14 @@ async def sales_chat_response(
 
 async def sales_agent_node(state: dict):
     """LangGraph node for Sales / Advisor interaction."""
+    session_id = state.get("session_id", "default")
+    await manager.broadcast_thinking(session_id, "Arjun (Sales)", True)
+
     import re as _re
     print("🗣️ [SALES AGENT] Processing turn...")
+    
     log = list(state.get("action_log") or [])
-    log.append("💬 Generating response from Advisor Agent")
-    from langchain_core.messages import HumanMessage, AIMessage
+    log.append("📡 Analyzing financial intent...")
     
     history = []
     for m in state.get("messages", []):
@@ -164,68 +167,79 @@ async def sales_agent_node(state: dict):
     customer_context = state.get("customer_data", {}).copy()
     customer_context["intent"] = state.get("intent", "Checking options")
 
-    res = await sales_chat_response(
-        user_message=user_msg,
-        chat_history=history[:-1] if history else [],
-        customer=customer_context
-    )
+    # Handle OCR Friction / Guidance
+    ocr_error = state.get("documents", {}).get("ocr_error", "")
+    ocr_context = ""
+    if ocr_error:
+        ocr_context = f"\n\n## OCR FAILURE DETECTED\nThe last document upload failed with reason: '{ocr_error}'.\nPlease explain this gently to the user and suggest tips (e.g. better lighting, flat surface, no glare) instead of just saying 'Error'."
+
+    # Use the refined prompt
+    llm = get_master_llm()
+    messages = [
+        SystemMessage(content=SALES_CLOSER_PROMPT + (ocr_context if ocr_context else "")),
+        SystemMessage(content=f"## CUSTOMER PROFILE\n{_build_customer_context(customer_context)}"),
+        SystemMessage(content=f"## LOAN PRODUCTS\n{_build_products_info()}")
+    ]
+    for msg in history[:-1]:
+        role = HumanMessage if msg["role"] == "user" else AIMessage
+        messages.append(role(content=msg["content"]))
+    messages.append(HumanMessage(content=user_msg))
+
+    log.append("🧠 अर्जुन (Arjun) is calculating EMI scenarios...")
+    response = await llm.ainvoke(messages)
+    reply = response.content
+    extracted = _extract_json_from_response(reply)
     
-    # ── Robust JSON stripping ─────────────────────────────────────────────
-    # We strip any block that looks like JSON to keep the chat clean.
-    visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", res["reply"], flags=_re.DOTALL).strip()
-    # Strip any lines that are just JSON-like (starting with { and ending with })
-    visible_reply = _re.sub(r"\{[\s\n]*\".*?\}", "", visible_reply, flags=_re.DOTALL).strip()
-    visible_reply = _re.sub(r"^\{.*?\}$", "", visible_reply, flags=_re.MULTILINE | _re.DOTALL).strip()
-    
-    # Fallback if reply was ONLY JSON or empty
-    if not visible_reply or visible_reply.strip() in ["{}", "[]", "None"]:
-        visible_reply = "I've processed your request. Does this look correct to you?"
-
-
-    # If the agent confirmed a loan, append a clean confirmation line
-    extracted = res.get("extracted")
-    if extracted and extracted.get("loan_amount") and "offer" not in visible_reply.lower():
-        amount = extracted.get("loan_amount", 0)
-        tenure = extracted.get("tenure", 0)
-        rate   = extracted.get("interest_rate", 0)
-        log.append(f"✅ Loan terms captured: ₹{amount:,.0f} @ {rate}%")
-        visible_reply = (
-            visible_reply
-            + f"\n\n✅ **Loan offer ready!** ₹{amount:,.0f} @ {rate}% for {tenure} months."
-        )
-
-
-    
-    # ── Memory Enhancement: Detect what we just asked ──────────────────────
-    pending = None
-    if "why" in visible_reply.lower() and "need" in visible_reply.lower():
-        pending = "loan_purpose"
-    elif "how much" in visible_reply.lower() or "amount" in visible_reply.lower():
-        pending = "loan_amount"
-    elif "tenure" in visible_reply.lower() or "months" in visible_reply.lower():
-        pending = "tenure"
+    # Clean up the visible reply
+    visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", reply, flags=_re.DOTALL).strip()
     
     updates = {
-        "messages": [AIMessage(content=visible_reply)], 
-        "action_log": log, 
-        "current_phase": "loan_application",
-        "pending_question": pending
+        "next_agent": extracted.get("next_agent", "supervisor") if extracted else "supervisor",
+        "action_log": log,
+        "options": extracted.get("options", ["Yes, proceed", "No, change details", "Ask a question"]) if extracted and extracted.get("intent") in ("loan", "loan_confirmed") else ["Tell me more", "Apply for Loan", "Exit"]
     }
     
-    if extracted and (extracted.get("loan_amount") or extracted.get("confirmed")):
-        print(f"  → Loan Captured/Proposed: {extracted}")
+    if extracted and extracted.get("loan_amount"):
+        amount = float(extracted.get("loan_amount", 0))
+        tenure = int(extracted.get("tenure", 24))
+        rate_pa = float(extracted.get("interest_rate", 12.0))
+        
         updates["loan_terms"] = {
-            "principal": float(extracted.get("loan_amount", 0)),
-            "rate":      float(extracted.get("interest_rate", 12.0)),
-            "tenure":    int(extracted.get("tenure", 24)),
+            "principal": amount,
+            "rate":      rate_pa,
+            "tenure":    tenure,
             "loan_type": extracted.get("loan_type", "personal"),
         }
-        updates["options"] = ["Yes", "No"] # Surfacing buttons for proposal or confirmation
-        
-        if extracted.get("confirmed"):
-            updates["intent"] = "loan_confirmed"
-            updates["current_phase"] = "emi_computation"
-            updates["pending_question"] = None 
+        log.append(f"📊 Calculated Scenario: ₹{amount:,.0f} for {tenure} months")
 
+        if extracted.get("confirmed"):
+            # Calculate EMI for the slider
+            monthly_rate = (rate_pa / 12) / 100
+            emi = amount * monthly_rate * ((1 + monthly_rate) ** tenure) / (((1 + monthly_rate) ** tenure) - 1)
+            emi = round(emi, 2)
+            total_interest = round((emi * tenure) - amount, 2)
+            
+            updates["loan_terms"]["emi"] = emi
+            
+            slider_msg = (
+                f"\n\n📊 **Confirmed EMI Breakdown:**\n"
+                f"- Monthly EMI: **₹{emi:,.2f}**\n"
+                f"- Total Interest: ₹{total_interest:,.2f}\n"
+                f"- Tenure: {tenure} months @ {rate_pa}% p.a."
+            )
+            
+            updates["messages"] = [AIMessage(content=json.dumps({
+                "type": "emi_slider",
+                "content": visible_reply + slider_msg
+            }))]
+            
+            updates["intent"] = "loan"
+            updates["current_phase"] = "kyc_verification"
+            log.append("✅ Terms confirmed. Moving to KYC.")
+        else:
+            updates["messages"] = [AIMessage(content=visible_reply)]
+    else:
+        updates["messages"] = [AIMessage(content=visible_reply)]
+
+    await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
     return updates
-
