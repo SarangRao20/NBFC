@@ -58,30 +58,83 @@ def pull_customer_from_db(phone: str) -> dict | None:
     # 2. Check historical loan applications for this phone number
     past_loans = []
     try:
-        # Check mock_db.json if it exists (it contains loan_applications)
         if os.path.exists("mock_db.json"):
             with open("mock_db.json", "r") as f:
                 db_data = json.load(f)
+                
+                # Check explicit loan_applications
                 loans = db_data.get("loan_applications", {})
                 for l_id, loan in loans.items():
-                    # Match by phone (some loans might have phone, others might not)
-                    if normalize_phone(loan.get("phone", "")) == phone:
+                    l_phone = normalize_phone(str(loan.get("phone", "")))
+                    if l_phone == phone:
                         past_loans.append({
                             "amount": loan.get("amount", 0),
                             "type": loan.get("loan_type", "Personal"),
                             "date": loan.get("created_at", "N/A"),
                             "status": loan.get("status", "Approved")
                         })
-    except Exception:
+                
+                # Also check sessions for completed/sanctioned loans
+                sessions = db_data.get("sessions", {})
+                for s_id, sess in sessions.items():
+                    s_phone = normalize_phone(str(sess.get("customer_data", {}).get("phone", "")))
+                    if s_phone == phone:
+                        terms = sess.get("loan_terms", {})
+                        if terms.get("principal") and sess.get("is_authenticated"):
+                            # Avoid duplicates from loan_applications
+                            loan_info = {
+                                "amount": terms.get("principal", 0),
+                                "type": terms.get("loan_type", "Personal"),
+                                "date": sess.get("created_at", "N/A"),
+                                "status": "Sanctioned" if sess.get("sanction_pdf") else "Draft"
+                            }
+                            if loan_info not in past_loans:
+                                past_loans.append(loan_info)
+    except Exception as e:
+        print(f"⚠️ History lookup error: {e}")
         pass
         
-    if customer:
+    if customer or past_loans:
+        if not customer:
+            # Create a shell customer from past loans if not in CRM
+            customer = {"name": "Valued Customer", "phone": phone}
+            
         customer["past_loans"] = past_loans
-        # Also try to find a "last record" note from previous sessions if possible
-        customer["past_records"] = f"Returning customer with {len(past_loans)} previous applications."
+        customer["past_records"] = f"Returning customer with {len(past_loans)} previous records."
         return customer
+
         
     return None
+
+
+REGISTRATION_SYSTEM_PROMPT = """You are Arjun, the Identity & Onboarding Specialist at FinServe NBFC. Your sole responsibility is to ensure the customer's identity is verified and their profile is 100% complete for regulatory compliance.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## YOUR CORE RESPONSIBILITIES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **Welcome & Identity**: Verify the customer's phone number and full name.
+2. **Profile Completeness**: If any mandatory fields are missing (Email, City, Salary, DOB, Occupation), you must ask for them one by one.
+3. **CRM Lookup**: Reference the provided CRM history if available to acknowledge return users.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 🚫 STRICT BOUNDARIES (ANTI-HALLUCINATION):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- **NO LOAN ADVICE**: Do NOT discuss loan products, eligibility, interest rates, or EMI calculations. If the user asks about loans, say: "I'll guide you to our Loan Specialist once we've completed your basic profile."
+- **NO SPECULATION**: Do NOT guess or hallucinate any data. Only use what the user provides or what is in the CRM.
+- **NO SYSTEM DISCLOSURE**: Do NOT discuss internal graph nodes or technical details.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## MANDATORY FIELDS TO CHECK:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Needed Fields: {missing_fields_str}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## CONVERSATION STYLE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Professional, efficient, and welcoming.
+- Use the customer's name if known.
+- If the profile is complete, say: "Perfect! Your profile is now complete. How can I assist you with our services today?"
+"""
 
 
 # ─── Nodes ───────────────────────────────────────────────────────────────────────
@@ -93,30 +146,39 @@ async def registration_chat_node(state: dict):
     
     llm = get_master_llm()
     phase = state.get("current_phase", "registration")
-    
-    phone = state.get("customer_data", {}).get("phone")
     otp_verified = state.get("is_authenticated", False)
-    name = state.get("customer_data", {}).get("name")
+    updates = {}
 
-    sys_prompt = "You are Arjun, a friendly FinServe Assistant. Keep responses short (2-3 sentences max). "
-    if not phone:
-        sys_prompt += "Welcome requested customer warmly. Ask for their 10-digit mobile number to help them with loans, CIBIL tips, or KYC."
-    elif phone and not otp_verified:
-        sys_prompt += f"An OTP has been sent to {phone}. Ask them to enter the 6-digit code from their SMS."
-    elif otp_verified and not name:
-        sys_prompt += "OTP verified! Since you're new here, may I have your full name to set up your profile?"
-    else:
-        sys_prompt += "Great! You're all set. How can I assist you further today?"
+    # Check for missing profile fields
+    required_fields = ["name", "email", "city", "salary", "dob", "occupation"]
+    missing = [f for f in required_fields if not state.get("customer_data", {}).get(f)]
 
-    messages = [SystemMessage(content=sys_prompt)] + state["messages"]
+    
+    # Format missing fields for the prompt
+    missing_fields_str = ", ".join(missing) if missing else "NONE (All complete)"
+    
+    sys_msg = SystemMessage(content=REGISTRATION_SYSTEM_PROMPT.format(
+        missing_fields_str=missing_fields_str
+    ))
+    
+    # Include memory of what we last asked
+    pending = state.get("pending_question", "")
+    memory_msg = SystemMessage(content=f"Last question asked: {pending}") if pending else SystemMessage(content="No pending questions.")
+    
+    messages = [sys_msg, memory_msg] + state.get("messages", [])
+    
     response = await llm.ainvoke(messages)
     
-    # Ensure Dev OTP is never lost due to message rendering overrides
-    dev_otp = state.get("customer_data", {}).get("dev_otp")
-    if dev_otp:
-        response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
+    # Only show Dev OTP during the verification phase
+    if not otp_verified:
+        dev_otp = state.get("customer_data", {}).get("dev_otp")
+        if dev_otp:
+            response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
         
-    return {"messages": [response], "current_phase": phase}
+    updates.update({"messages": [response], "current_phase": phase})
+    return updates
+
+
 
 
 async def registration_extraction_node(state: dict):
@@ -140,26 +202,47 @@ async def registration_extraction_node(state: dict):
 
     # 1. Regex shortcuts (FAST & FREE)
     phone_match = re.search(r"\b(\d{10})\b", user_msg)
-    otp_match = re.search(r"\b(\d{6})\b", user_msg)
+    otp_match   = re.search(r"\b(\d{6})\b", user_msg)
+    email_match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", user_msg)
+    salary_match = re.search(r"(?:salary|income|earn|Rs\.?|₹)\s*(\d+k?|\d{4,7})", user_msg, re.I)
     
-    # 2. LLM Fallback (Manual Parsing to avoid OpenAI 400 errors)
-    extracted_name = None
-    if not phone_match and not otp_match:
-        # Only call LLM if message is long or looks like a name
-        if len(user_msg.split()) > 1 and state.get("is_authenticated"):
-            try:
-                llm = get_extraction_llm()
-                prompt = f"Extract the FULL NAME from this message if present, otherwise return 'NONE':\n\nMESSAGE: {user_msg}\n\nNAME:"
-                res = await llm.ainvoke([HumanMessage(content=prompt)])
-                ans = res.content.strip().replace("'", "").replace("\"", "")
-                if ans != "NONE" and len(ans) > 2:
-                    extracted_name = ans
-            except Exception as e:
-                print(f"  ⚠️ LLM Name Extraction failed: {e}")
+    # 2. LLM Fallback for Name, City, and unstructured fields
+    llm_extracted = {}
+    pending = state.get("pending_question")
+    
+    # Only call LLM if message isn't a simple number/email
+    if len(user_msg.split()) >= 1:
+        try:
+            llm = get_extraction_llm()
+            prompt = f"""Extract profile data from this user message. 
+            CONTEXT: The customer was specifically asked for their {pending if pending else 'name/info'}.
+            MESSAGE: "{user_msg}"
+            
+            Return JSON only:
+            {{
+                "name": "Full name or null",
+                "city": "City name or null",
+                "salary": number or null,
+                "email": "Email or null",
+                "dob": "DD/MM/YYYY or null",
+                "occupation": "Occupation or null",
+                "existing_emi_total": number or null
+            }}
+
+            """
+            res = await llm.ainvoke([HumanMessage(content=prompt)])
+            # Simple cleanup to find JSON
+            json_str = re.search(r"\{.*\}", res.content, re.DOTALL)
+            if json_str:
+                llm_ext = json.loads(json_str.group(0))
+                llm_extracted = {k: v for k, v in llm_ext.items() if v is not None}
+        except Exception as e:
+            print(f"  ⚠️ LLM Extraction failed: {e}")
 
     # Results
     phone = phone_match.group(1) if phone_match else None
     user_otp = otp_match.group(1) if otp_match else None
+    email = email_match.group(0) if email_match else llm_extracted.get("email")
     
     updates = {}
     customer_data = state.get("customer_data", {}).copy()
@@ -170,50 +253,45 @@ async def registration_extraction_node(state: dict):
         clean_phone = normalize_phone(phone)
         log.append(f"📱 Phone number detected: {clean_phone}")
         log.append("🔐 Triggering OTP via SMS gateway")
-        res = send_otp(clean_phone)
+        
+        # Use auth_service for consistent logic
+        from api.services.auth_service import auth_service
+        res = await auth_service.send_otp(clean_phone, "customer@example.com") # Temp email placeholder
+        
         customer_data["phone"] = clean_phone
-        updates["otp_sent"] = res["sent"]
-        if res["sent"]:
-            otp_val = res.get('otp', 'N/A')
+        updates["otp_sent"] = res.get("success", False)
+        if res.get("success"):
+            otp_val = res.get('dev_otp', 'SENT')
             log.append(f"✅ OTP sent successfully")
-            customer_data["dev_otp"] = otp_val # Keep it here to inject into chat later
-            msg = f"📱 OTP sent to {clean_phone}. (Dev OTP: `{otp_val}`)" 
+            customer_data["dev_otp"] = otp_val 
+            msg = f"📱 OTP sent to {clean_phone}."
+            if otp_val != 'SENT': msg += f" (Dev OTP: `{otp_val}`)"
             updates["messages"] = [AIMessage(content=msg)]
         else:
             log.append("❌ OTP delivery failed")
-            updates["messages"] = [AIMessage(content=f"❌ {res['message']}")]
+            updates["messages"] = [AIMessage(content=f"❌ {res.get('message', 'Failed to send OTP')}")]
 
     # Phase 2: Got OTP
     elif user_otp and customer_data.get("phone") and not is_auth:
         log.append(f"🔑 OTP code received — verifying")
-        res = verify_otp(customer_data["phone"], user_otp)
-        if res["verified"]:
+        from api.services.auth_service import auth_service
+        res = await auth_service.verify_otp(customer_data["phone"], user_otp)
+        
+        if res["success"]:
             updates["is_authenticated"] = True
             if "dev_otp" in customer_data:
                 del customer_data["dev_otp"]
+                log.append("🧹 Cleaned sensitive development data")
             log.append("✅ OTP verified successfully")
+
             log.append("🗃️ Looking up customer in CRM database")
             db = pull_customer_from_db(customer_data["phone"])
             if db:
-                customer_data.update({
-                    "name": db["name"], 
-                    "phone": db["phone"], 
-                    "email": db.get("email", ""),
-                    "city": db.get("city", "Unknown"),
-                    "salary": db.get("salary", 0), 
-                    "credit_score": db.get("credit_score", 0),
-                    "pre_approved_limit": db.get("pre_approved_limit", 0),
-                    "existing_emi_total": db.get("existing_emi_total", 0),
-                    "current_loans": db.get("current_loans", []),
-                    "past_loans": db.get("past_loans", []),
-                    "past_records": db.get("past_records", ""),
-                    "risk_flags": db.get("risk_flags", []),
-                    "drop_off_history": db.get("drop_off_history", "")
-                })
+                customer_data.update(db)
                 log.append(f"👤 Existing customer found: {db['name']}")
-                log.append(f"📊 Credit score: {db.get('credit_score')}, Past Loans: {len(db.get('past_loans', []))}")
-                msg = f"✅ Welcome back, **{db['name']}**! I've loaded your profile and your history of {len(db.get('past_loans', []))} previous loans. How can I help you today?"
+                msg = f"✅ Welcome back, **{db['name']}**! I've loaded your profile. How can I help you today?"
                 updates["messages"] = [AIMessage(content=msg)]
+                # Trigger profile check next turn via supervisor
             else:
                 log.append("🆕 New customer — creating fresh profile")
                 updates["messages"] = [AIMessage(content="✅ OTP Verified! You're new here. What's your full name?")]
@@ -221,35 +299,37 @@ async def registration_extraction_node(state: dict):
             log.append("❌ OTP verification failed — incorrect code")
             updates["messages"] = [AIMessage(content=f"❌ {res['message']}")]
 
-    # Phase 3: Got Name
-    elif is_auth and not customer_data.get("name") and extracted_name:
-        log.append(f"📝 Name extracted: {extracted_name}")
-        log.append("✅ New customer profile created")
-        customer_data["name"] = extracted_name
+    # Phase 3: Profile Enrichment
+    elif is_auth:
+        # Merge LLM extractions into customer_data
+        enriched = False
+        for k, v in llm_extracted.items():
+            if v and not customer_data.get(k):
+                customer_data[k] = v
+                log.append(f"📝 Profile update: {k} = {v}")
+                enriched = True
         
-        # ── PERSIST NEW USER TO DATABASE ─────────────────────────────────────
-        try:
-            from db.database import users_collection
-            from datetime import datetime
-            user_record = {
-                "name": extracted_name,
-                "phone": customer_data["phone"],
-                "created_at": datetime.utcnow().isoformat(),
-                "city": "Unknown",
-                "salary": 0,
-                "credit_score": 700, # Default for new users
-                "pre_approved_limit": 25000,
-                "existing_emi_total": 0,
-                "current_loans": [],
-                "past_records": "New customer registered."
-            }
-            await users_collection.insert_one(user_record)
-            print(f"👤 New user persisted: {extracted_name}")
-        except Exception as e:
-            print(f"  ⚠️ Failed to persist new user: {e}")
+        if email and not customer_data.get("email"):
+            customer_data["email"] = email
+            log.append(f"📧 Email extracted: {email}")
+            enriched = True
+            
+        if enriched:
+            # Sync to DB
+            try:
+                from db.database import users_collection
+                await users_collection.update_one(
+                    {"phone": customer_data["phone"]},
+                    {"$set": {k: v for k, v in customer_data.items() if k in ["name", "email", "city", "salary", "existing_emi_total", "credit_score"]}},
+                    upsert=True
+                )
+            except Exception as e:
+                print(f"  ⚠️ DB Update failed: {e}")
 
-        msg = f"✅ Perfect, **{extracted_name}**! Your profile is ready. Do you need a loan, financial advice, or KYC help?"
-        updates["messages"] = [AIMessage(content=msg)]
+    updates["customer_data"] = customer_data
+    updates["action_log"] = log
+    return updates
+
 
     updates["customer_data"] = customer_data
     updates["action_log"] = log

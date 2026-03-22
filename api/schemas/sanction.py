@@ -8,3 +8,10 @@ class SanctionResponse(BaseModel):
     letter_type: str  # "Sanction" | "Rejection"
     loan_terms: dict
     message: str
+
+
+class ESignResponse(BaseModel):
+    success: bool
+    message: str
+    next_step: str  # "advisory" | "end"
+    advisory_message: str = ""  # Message from advisory agent if routed there

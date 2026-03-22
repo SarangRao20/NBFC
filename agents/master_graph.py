@@ -63,75 +63,70 @@ def supervisor_router(state: MasterState) -> str:
     decision     = state.get("decision", "")
     is_signed    = state.get("is_signed", False)
 
-    # ── Phase 0: Registration ──────────────────────────────────────────────
-    if not is_auth or not customer.get("name"):
-        return "registration_agent"   # -> END (chat node, waits for user)
-
-    # ── Phase 0.5: Intent Discovery ────────────────────────────────────────
-    if intent in ("none", ""):
-        return "intent_agent"         # -> END (will ask user what they want)
-
-    # Unclear intent: we need the intent agent to classify the new message
-    if intent == "unclear":
+    # ── 1. AUTHENTICATION FIRST ──────────────────────────────────────────
+    if not is_auth:
+        return "registration_agent"
+    
+    # ── 2. INTENT DISCOVERY ──────────────────────────────────────────────
+    if intent in ("none", "", "unclear"):
         return "intent_agent"
 
-    # ── Phase 1: KYC intent ───────────────────────────────────────────────
+    # ── 3. PROFILE COMPLETENESS (Non-blocking for active workflows) ──────
+    required_fields = ["name", "email", "city", "salary", "dob", "occupation"]
+    missing = [f for f in required_fields if not customer.get(f)]
+    
+    # If we have an intent but missing profile data, we only divert if intent is NOT loan/sign
+    if missing and intent not in ("loan", "loan_confirmed", "sign", "kyc"):
+        return "registration_agent"
+
+
+    # ── 4. WORKFLOW BRANCHING ───────────────────────────────────────────
     if intent == "kyc":
-        return "document_agent"
+        return "document_agent" if not docs.get("verified") else "advisor_agent"
 
-    # ── Phase 1.5: Sign intent ───────────────────────────────────────────
-    if intent == "sign":
-        return "advisor_agent"  # Will process signature and say thanks
+    if intent == "sign" or is_signed:
+        return "advisor_agent"
 
-    # ── Phase 2: Advice intent ────────────────────────────────────────────
     if intent == "advice":
         return "advisor_agent"
 
-    # ── Phase 3: Loan intent ──────────────────────────────────────────────
+    # ── 5. LOAN PIPELINE ────────────────────────────────────────────────
     if intent in ("loan", "loan_confirmed"):
-        # 3.0. Final: Signed & Sealed (Priority)
-        if is_signed:
-            return "advisor_agent"       # -> END
-
-        # 3a. Need to discover loan reason & amount OR wait for confirmation
+        # A. Capture & Sales
         if not terms.get("principal") or intent == "loan":
-            return "sales_agent"       # -> END
-
-        # 3b. Need EMI computed (automatic)
+            return "sales_agent"
+        
+        # B. Calculation (Auto)
         if not terms.get("emi"):
-            return "emi_agent"         # -> END (auto, then done for this turn)
+            return "emi_agent"
 
-        # 3c. Need document verification (prompts user to upload)
+        # C. Verification (Manual/Auto)
         if not docs.get("verified"):
-            return "document_agent"    # -> END
-
-        # 3d. KYC cross-check (automatic but needs docs)
+            return "document_agent"
         if not state.get("kyc_status"):
-            return "verification_agent"  # -> END
-
-        # 3e. Fraud analysis (automatic)
+            return "verification_agent"
+        
+        # D. Security & Fraud (Auto)
         if state.get("fraud_score", -1) < 0:
-            return "fraud_agent"         # -> END
-
-        # 3f. Underwriting decision (automatic)
+            return "fraud_agent"
+        
+        # E. Underwriting (Auto)
         if not decision:
-            return "underwriting_agent"  # -> END
-
-        # 3g. Soft reject → persuasion (chat)
+            return "underwriting_agent"
+        
+        # F. Negotiation (Chat)
         if decision == "soft_reject":
-            return "persuasion_agent"    # -> END
-
-        # 3h. Sanction letter generation (automatic) → advisor sends it
+            return "persuasion_agent"
+        
+        # G. Sanction (Auto -> Advisor)
         if decision == "approve" and not state.get("sanction_pdf"):
-            return "sanction_agent"      # -> advisor_agent -> END
+            return "sanction_agent"
 
-        # 3i. Final: Signed & Sealed (handled above)
-
-        # 3j. Default: advisor wraps up
         return "advisor_agent"
 
-    # Catch-all
+    # Default catch-all
     return "advisor_agent"
+
 
 
 def route_after_intent(state: MasterState) -> str:

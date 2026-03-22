@@ -3,6 +3,7 @@ import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
 import type { AppState, ChatMessage, MessageType } from './types';
 import { apiClient } from './api/client';
+import { wsClient } from './api/websocket';
 
 const INITIAL_APP_STATE: AppState = {
   customerName: '',
@@ -49,24 +50,84 @@ function App() {
         if (res.all_replies && res.all_replies.length > 0) {
           res.all_replies.forEach((m: any) => {
             if (typeof m === 'string') pushAgentMessage(m);
-            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type);
+            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, m.options);
           });
         } else if (res.reply) {
-          pushAgentMessage(res.reply);
+          pushAgentMessage(res.reply, 'text', undefined, res.options);
         }
+
+        // Sync initial state (e.g. if existing user was auto-identified)
+        const fullState = await apiClient.getSession(session_id);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            customerName: fullState.customer_data?.name || prev.customerName,
+            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+            tenure: fullState.loan_terms?.tenure || prev.tenure,
+            roi: fullState.loan_terms?.rate || prev.roi,
+            emi: fullState.loan_terms?.emi || prev.emi,
+            creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+            preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+          }));
+        }
+
       } catch (error) {
         console.error('Failed to initialize backend:', error);
       }
     }
     initBackend();
-  }, []);
 
-  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}`) => {
+    return () => wsClient.disconnect();
+  }, [sessionId]);
+
+  // WebSocket Listener
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    wsClient.connect(sessionId);
+    const unsubscribe = wsClient.subscribe((data) => {
+      console.log('📥 [WS EVENT]', data);
+      
+      if (data.type === 'AGENT_STEP') {
+        const steps = data.steps || [];
+        const lastStep = steps[steps.length - 1];
+        if (lastStep) {
+          setAppState(prev => ({ ...prev, activeAgent: `🔍 ${lastStep.agent_name || 'Agent'} is working...` }));
+        }
+      }
+      
+      if (data.type === 'PHASE_UPDATE') {
+        console.log(`🚀 [PHASE UPDATE] -> ${data.phase}`);
+        // Automatically sync state when phase changes
+        apiClient.getSession(sessionId).then(fullState => {
+          if (fullState) {
+            setAppState(prev => ({
+              ...prev,
+              customerName: fullState.customer_data?.name || prev.customerName,
+              requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+              tenure: fullState.loan_terms?.tenure || prev.tenure,
+              roi: fullState.loan_terms?.rate || prev.roi,
+              emi: fullState.loan_terms?.emi || prev.emi,
+              creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+              preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+              underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+            }));
+          }
+        });
+      }
+    });
+
+    return () => { unsubscribe(); };
+  }, [sessionId]);
+
+  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}`, options?: string[]) => {
     setChatHistory(prev => [...prev, {
       id,
       sender: 'agent',
       type,
       content: text,
+      options,
       timestamp: new Date(),
     }]);
     return id;
@@ -239,65 +300,83 @@ function App() {
     try {
       // General agent-driven chat
       setAppState(prev => ({ ...prev, activeAgent: 'Thinking...' }));
-      const res = await apiClient.chat(sessionId, text, chatHistory); 
-      setAppState(prev => ({ ...prev, activeAgent: null }));
+      
+      let res: any = null;
+      try {
+        res = await apiClient.chat(sessionId, text, chatHistory); 
+        setAppState(prev => ({ ...prev, activeAgent: null }));
 
-      if (res.all_replies && res.all_replies.length > 0) {
-        res.all_replies.forEach((m: any) => {
-            if (typeof m === 'string') pushAgentMessage(m);
-            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type);
-        });
-      } else if (res.reply) {
-        pushAgentMessage(res.reply);
+        // Handle multiple replies if available
+        if (res.all_replies && res.all_replies.length > 0) {
+          res.all_replies.forEach((m: any, idx: number) => {
+              const isLast = idx === res.all_replies.length - 1;
+              const msgOptions = isLast ? (m.options || res.options) : m.options;
+              
+              if (typeof m === 'string') pushAgentMessage(m, 'text', undefined, msgOptions);
+              else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, msgOptions);
+          });
+        } else if (res.reply) {
+          pushAgentMessage(res.reply, 'text', undefined, res.options);
+        }
+      } catch (err) {
+        console.error("Chat API failed:", err);
+        pushAgentMessage("System Error: Chat communication failed.");
+        setAppState(prev => ({ ...prev, activeAgent: null }));
+        return; // Stop if chat fails
       }
 
       // Sync state from backend
-      const fullState = await apiClient.getSession(sessionId);
-      if (fullState) {
-        setAppState(prev => ({
-          ...prev,
-          customerName: fullState.customer_data?.name || prev.customerName,
-          requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
-          tenure: fullState.loan_terms?.tenure || prev.tenure,
-          roi: fullState.loan_terms?.rate || prev.roi, // Match 'rate' from SessionStateResponse
-          emi: fullState.loan_terms?.emi || prev.emi,
-          creditScore: fullState.customer_data?.credit_score || prev.creditScore,
-          preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
-          underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
-          pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
-          pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
-        }));
+      let fullState: any = null;
+      try {
+        fullState = await apiClient.getSession(sessionId);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            customerName: fullState.customer_data?.name || prev.customerName,
+            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+            tenure: fullState.loan_terms?.tenure || prev.tenure,
+            roi: fullState.loan_terms?.rate || prev.roi,
+            emi: fullState.loan_terms?.emi || prev.emi,
+            creditScore: fullState.customer_data?.credit_score || prev.creditScore,
+            preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
+            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+            pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
+            pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
+          }));
+        }
+      } catch (err) {
+        console.error("State sync failed:", err);
       }
 
       // Update Phase based on intent/decision/next_agent
-      if (fullState?.decision === 'soft_reject') {
-        setChatPhase('negotiate');
-      } else if (['loan', 'loan_confirmed'].includes(res.intent) && fullState.loan_terms?.principal) {
-        setChatPhase('document');
-        let docs = ["Identity (PAN or Aadhaar)"];
-        let limit = fullState.customer_data?.pre_approved_limit || 150000;
-        if (fullState.loan_terms.principal > limit) {
-          docs.push("Income Proof (Salary Slip)");
+      try {
+        if (fullState?.decision === 'soft_reject') {
+          setChatPhase('negotiate');
+        } else if (res && ['loan', 'loan_confirmed'].includes(res.intent) && fullState?.loan_terms?.principal) {
+          setChatPhase('document');
+          let docs = ["Identity (PAN or Aadhaar)"];
+          let limit = fullState.customer_data?.pre_approved_limit || 150000;
+          if (fullState.loan_terms.principal > limit) {
+            docs.push("Income Proof (Salary Slip)");
+          }
+          setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
+        } else if (res && res.is_authenticated) {
+          setChatPhase('loan_details'); 
+          // Fetch past sessions when user is identified
+          if (fullState?.customer_data?.phone) {
+            const sessions = await apiClient.getSessionsByPhone(fullState.customer_data.phone);
+            setAppState(prev => ({ ...prev, pastSessions: sessions }));
+          }
         }
-        setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
-      } else if (res.is_authenticated) {
-        setChatPhase('loan_details'); 
-        // Fetch past sessions when user is identified
-        if (fullState.customer_data?.phone) {
-          const sessions = await apiClient.getSessionsByPhone(fullState.customer_data.phone);
-          setAppState(prev => ({ ...prev, pastSessions: sessions }));
-        }
-      }
-
-      // Specific legacy triggers if still helpful (e.g. accepting modified offer from UI)
-      if (chatPhase === 'negotiate' && lowerText.includes('accept')) {
-        // Handled by agent above now, but keeping for direct UI buttons if any exist
+      } catch (err) {
+        console.error("Post-chat logic failed:", err);
       }
     } catch (err) {
-      console.error("API flow error:", err);
+      console.error("Top-level API error:", err);
       pushAgentMessage("System Error: Failed to communicate with backend API.");
       setAppState(prev => ({ ...prev, activeAgent: null }));
     }
+
   };
 
   return (

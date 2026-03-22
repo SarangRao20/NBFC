@@ -38,7 +38,24 @@ async def end_session(session_id: str):
     if not state:
         raise SessionNotFoundError(session_id)
     return await session_service.end_active_session(session_id)
+
+
 @router.get("/by-phone/{phone}", summary="Search Sessions by Phone Number")
 async def get_sessions_by_phone(phone: str):
     """Returns all previous sessions found for this phone number."""
     return await session_service.search_sessions_by_phone(phone)
+
+
+@router.get("/loan-history/{phone}", summary="Get Complete Loan History")
+async def get_loan_history(phone: str):
+    """Returns complete loan history for a customer including all applications and sanctions."""
+    return await session_service.get_customer_loan_history(phone)
+
+
+@router.get("/{session_id}/loan-details", summary="Get Detailed Loan Information")
+async def get_loan_details(session_id: str):
+    """Returns detailed loan information for a specific session."""
+    result = await session_service.get_loan_details_by_session(session_id)
+    if not result:
+        raise SessionNotFoundError(session_id)
+    return result

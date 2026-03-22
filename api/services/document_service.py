@@ -104,11 +104,14 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         from agents.document_agent import document_agent_node
         agent_state = {
             "session_id": session_id,
-            "file_path": file_path,
-            "file_name": file_name,
+            "documents": {
+                "salary_slip_path": file_path,
+                "file_name": file_name
+            },
             "customer_data": state.get("customer_data", {}),
+            "loan_terms": state.get("loan_terms", {})
         }
-        agent_result = document_agent_node(agent_state)
+        agent_result = await document_agent_node(agent_state)
         
         # Extract data from agent result
         agent_docs = agent_result.get("documents", {})
@@ -127,7 +130,8 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
             "verified": agent_docs.get("verified", False),
         }
         
-        print(f"🤖 Document agent processed: {file_name}")
+        print(f"🤖 Document agent processed (real-await): {file_name}")
+
         
     except Exception as e:
         print(f"⚠️ Document agent failed, using mock OCR: {e}")

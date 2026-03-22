@@ -140,6 +140,11 @@ class MockClient:
     async def _ping(self, command):
         print("🏓 MongoDB ping successful (mock)")
         return {"ok": 1}
+    
+    async def close(self):
+        print("🔌 Mock database connection closed.")
+        return None
+
 
 # Mock database
 class MockDatabase:

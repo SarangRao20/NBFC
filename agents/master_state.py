@@ -62,6 +62,8 @@ class MasterState(TypedDict):
     is_authenticated: bool
     otp_sent: bool
     intent: str  # 'loan', 'advice', 'kyc', 'none'
+    pending_question: Optional[str] # Tracks what the agent last asked
     
     # Routing Tracker: which agent holds the baton currently
     next_agent: str
+

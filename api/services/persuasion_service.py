@@ -52,7 +52,7 @@ async def analyze_rejection(session_id: str) -> dict:
         "negotiation_round": negotiation_round
     }
     
-    agent_result = persuasion_agent_node(agent_state)
+    agent_result = await persuasion_agent_node(agent_state)
     
     # Update state from agent result
     await update_session(session_id, {

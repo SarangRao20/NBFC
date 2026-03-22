@@ -33,7 +33,7 @@ export interface SessionSummary {
   decision?: string;
 }
 
-export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps';
+export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps' | 'options';
 
 
 export interface ChatMessage {
@@ -41,5 +41,6 @@ export interface ChatMessage {
   sender: 'user' | 'agent' | 'system';
   type: MessageType;
   content: string;
+  options?: string[];
   timestamp: Date;
 }

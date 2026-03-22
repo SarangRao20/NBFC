@@ -11,3 +11,11 @@ uvicorn
 python-dotenv
 python-multipart
 motor
+pydantic[email]
+email-validator
+pydantic-settings
+redis
+langchain-community
+langchain-google-genai
+langchain-groq
+langchain-openai

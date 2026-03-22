@@ -144,15 +144,20 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc ml-5 mb-2" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal ml-5 mb-2" {...props} />,
-                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-bold text-slate-900" {...props} />,
+                        p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc ml-5 mb-3 space-y-1" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal ml-5 mb-3 space-y-1" {...props} />,
+                        li: ({node, ...props}) => <li className="leading-normal mb-1" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-extrabold text-slate-900" {...props} />,
+                        h1: ({node, ...props}) => <h1 className="text-xl font-black mb-3 text-slate-900" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-lg font-black mb-2 text-slate-900" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-md font-black mb-1 text-slate-900" {...props} />,
                       }}
                     >
                       {msg.content}
                     </ReactMarkdown>
+
+
                   )}
                 </div>
               )}
@@ -160,6 +165,23 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
               {msg.type === 'thinking' && (
                 <AgentTypingIndicator />
               )}
+
+              {msg.options && msg.options.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3 ml-1">
+                  {msg.options.map((option) => (
+                    <motion.button
+                      key={option}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => onSendMessage(option)}
+                      className="px-6 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[14px] font-bold hover:bg-emerald-100 hover:border-emerald-300 transition-all shadow-sm"
+                    >
+                      {option}
+                    </motion.button>
+                  ))}
+                </div>
+              )}
+
 
               {msg.type === 'sanction_letter' && (
                 <div className="bg-white/80 backdrop-blur-md border border-slate-200/60 shadow-xl shadow-slate-900/5 rounded-2xl rounded-bl-[4px] p-6 max-w-[85%] w-[460px]">
@@ -231,11 +253,12 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                   value={appState.tenure}
                   onChange={(e) => {
                     const t = parseInt(e.target.value);
-                    const r = appState.roi / 12 / 100;
-                    const p = appState.requestedAmount;
-                    const calcEmi = Math.round(p * r * Math.pow(1 + r, t) / (Math.pow(1 + r, t) - 1));
+                    const r = (appState.roi || 0) / 12 / 100;
+                    const p = appState.requestedAmount || 0;
+                    const calcEmi = r === 0 ? Math.round(p / t) : Math.round(p * r * Math.pow(1 + r, t) / (Math.pow(1 + r, t) - 1));
                     setAppState(prev => ({ ...prev, tenure: t, emi: calcEmi }));
                   }}
+
                   className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-600 transition-all"
                 />
                 <div className="flex justify-between text-xs font-semibold text-slate-400 mt-2">

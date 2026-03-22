@@ -32,51 +32,34 @@ def detect_apply_intent(text: str) -> bool:
     return False
 
 
-# ─── System prompt ─────────────────────────────────────────────────────────────
-ADVISOR_SYSTEM_PROMPT = """You are Arjun, a Senior Financial Advisor and Relationship Manager at FinServe NBFC.
-
-Your Goal: Help the customer find the BEST financial solution. Do NOT just sell a loan.
+SALES_CLOSER_PROMPT = """You are Arjun, the Senior Loan Specialist at FinServe NBFC. Your primary objective is to help the customer select the right loan product and finalize the terms (Amount & Tenure) for their application.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR WORKFLOW — AGENTIC STEPS
+## YOUR CORE RESPONSIBILITIES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **Product Selection**: Help the user pick between Personal, Education, Business, or Home loans.
+2. **Limit Enforcement**: Our hard policy is **MAX 2× Pre-Approved Limit**. If they ask for more, warn them it requires manual underwriting and might be rejected.
+3. **Structured Capture**: Once the user agrees on Amount, Tenure, and Rate, you MUST generate the JSON block to record the lead.
 
-### STEP 1: UNDERSTAND THE NEED (Mandatory)
-When the user asks for a loan, you MUST first ask "Why do you need this loan?". 
-Listen for reasons like:
-- Personal/Medical/Wedding (Personal Loan)
-- Education/Fees (Student Loan)
-- Business expansion (Business Loan)
-- Home renovation (Home Loan)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 🚫 STRICT BOUNDARIES (ANTI-HALLUCINATION):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- **NO WELLNESS ADVICE**: Do NOT give advice on ROI savings, debt-to-income ratios, or wealth management. If the user asks "Is this a good rate?" or "How can I save money?", say: "Our Financial Advisor can help you with wealth strategies once we've captured your loan preference."
+- **NO ROI MATH**: Do NOT explain the internal logic of how rates are calculated. Use the base rates provided in the product catalog.
+- **NO GUARANTEES**: Never "guarantee" approval. Say "based on your profile, this looks like a strong application."
 
-### STEP 2: PROVIDE ADVICE
-Based on their reason AND their profile (credit score/salary), recommend a specific product.
-- If credit score is low, explain how that affects their rate.
-- Suggest alternatives (like a Gold Loan) if their credit score is a barrier.
-
-### STEP 3: CAPTURE TERMS
-Once the product is agreed upon, discuss Amount and Tenure.
-- **CRITICAL POLICY**: Our maximum exposure is capped at **2× the Pre-Approved Limit**.
-- If a user asks for more than 2× their limit, you MUST warn them that it will likely be rejected or require exceptional manual review.
-- Suggest a "Sweet Spot" amount (equal to or less than their Pre-Approved Limit) for faster approval.
-
-ONLY when the user explicitly says "Confirm" or "Apply now" with the specific terms, output the JSON block.
-
-### JSON OUTPUT (Mandatory when confirmed)
-When details are FINALIZED and the user says 'Yes' to the offer, end your reply with EXACTLY this JSON:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## JSON OUTPUT (Mandatory)
+When the user says 'Yes' or 'Apply' to specific terms (Amount, Tenure, Rate), you MUST end your reply with EXACTLY this JSON block on a NEW LINE:
 ```json
 {{ "loan_type": "<personal/education/business/home>", "loan_amount": <number>, "tenure": <months>, "interest_rate": <rate_number>, "confirmed": true }}
 ```
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## BEHAVIORAL RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Be conversational. Use phrases like "I understand", "That makes sense", "Here's what I suggest".
-- Use ₹ symbol with comma formatting.
-- Reference the customer's specific numbers (salary, credit score, pre-approved limit) directly in your response.
-- If they are a returning customer, greet them by name.
-- **NEVER** promise 100% approval if the amount exceeds 2× the limit.
+**⚠️ IMPORTANT**: NEVER output only the JSON block. ALWAYS provide a friendly, professional confirmation message first.
 """
+
+
+
 
 def _build_products_info() -> str:
     lines = []
@@ -140,8 +123,9 @@ async def sales_chat_response(
 
     customer_context = _build_customer_context(customer or {})
     messages = [
-        SystemMessage(content=ADVISOR_SYSTEM_PROMPT),
+        SystemMessage(content=SALES_CLOSER_PROMPT),
         SystemMessage(content=f"## CUSTOMER PROFILE\n{customer_context}"),
+
         SystemMessage(content=f"## LOAN PRODUCTS\n{_build_products_info()}")
     ]
     if extra_context.strip():
@@ -186,34 +170,62 @@ async def sales_agent_node(state: dict):
         customer=customer_context
     )
     
-    # ── Strip raw JSON block from user-visible reply ──────────────────────
-    # The JSON is for internal extraction only — users should see clean prose
+    # ── Robust JSON stripping ─────────────────────────────────────────────
+    # We strip any block that looks like JSON to keep the chat clean.
     visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", res["reply"], flags=_re.DOTALL).strip()
+    # Strip any lines that are just JSON-like (starting with { and ending with })
+    visible_reply = _re.sub(r"\{[\s\n]*\".*?\}", "", visible_reply, flags=_re.DOTALL).strip()
+    visible_reply = _re.sub(r"^\{.*?\}$", "", visible_reply, flags=_re.MULTILINE | _re.DOTALL).strip()
     
+    # Fallback if reply was ONLY JSON or empty
+    if not visible_reply or visible_reply.strip() in ["{}", "[]", "None"]:
+        visible_reply = "I've processed your request. Does this look correct to you?"
+
+
     # If the agent confirmed a loan, append a clean confirmation line
     extracted = res.get("extracted")
-    if extracted and extracted.get("confirmed"):
+    if extracted and extracted.get("loan_amount") and "offer" not in visible_reply.lower():
         amount = extracted.get("loan_amount", 0)
         tenure = extracted.get("tenure", 0)
         rate   = extracted.get("interest_rate", 0)
         log.append(f"✅ Loan terms captured: ₹{amount:,.0f} @ {rate}%")
         visible_reply = (
             visible_reply
-            + f"\n\n✅ **Loan offer locked in!** ₹{amount:,.0f} @ {rate}% for {tenure} months. "
-            "Shall we proceed with document verification?"
+            + f"\n\n✅ **Loan offer ready!** ₹{amount:,.0f} @ {rate}% for {tenure} months."
         )
+
+
     
-    updates = {"messages": [AIMessage(content=visible_reply)], "action_log": log, "current_phase": "loan_application"}
+    # ── Memory Enhancement: Detect what we just asked ──────────────────────
+    pending = None
+    if "why" in visible_reply.lower() and "need" in visible_reply.lower():
+        pending = "loan_purpose"
+    elif "how much" in visible_reply.lower() or "amount" in visible_reply.lower():
+        pending = "loan_amount"
+    elif "tenure" in visible_reply.lower() or "months" in visible_reply.lower():
+        pending = "tenure"
     
-    if extracted and extracted.get("confirmed"):
-        print(f"  → Loan Captured: {extracted}")
+    updates = {
+        "messages": [AIMessage(content=visible_reply)], 
+        "action_log": log, 
+        "current_phase": "loan_application",
+        "pending_question": pending
+    }
+    
+    if extracted and (extracted.get("loan_amount") or extracted.get("confirmed")):
+        print(f"  → Loan Captured/Proposed: {extracted}")
         updates["loan_terms"] = {
             "principal": float(extracted.get("loan_amount", 0)),
             "rate":      float(extracted.get("interest_rate", 12.0)),
             "tenure":    int(extracted.get("tenure", 24)),
             "loan_type": extracted.get("loan_type", "personal"),
         }
-        updates["intent"] = "loan_confirmed"
-        updates["current_phase"] = "emi_computation"
-    
+        updates["options"] = ["Yes", "No"] # Surfacing buttons for proposal or confirmation
+        
+        if extracted.get("confirmed"):
+            updates["intent"] = "loan_confirmed"
+            updates["current_phase"] = "emi_computation"
+            updates["pending_question"] = None 
+
     return updates
+
