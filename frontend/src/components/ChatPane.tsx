@@ -256,8 +256,9 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
 
   {/* Input Area */}
   <div className="p-4 px-8 border-t border-slate-100 bg-white">
-    <AnimatePresence mode="wait">
-      {appState.needsDocument ? (
+    {/* Document Upload Cards - shown above input when needed */}
+    <AnimatePresence>
+      {appState.needsDocument && (
         <motion.div
           key="dropzone"
           initial={{ opacity: 0, height: 0, scale: 0.95 }}
@@ -304,42 +305,39 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
             ))}
           </div>
         </motion.div>
-          ) : (
-            <motion.form 
-              key="chat-input"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onSubmit={handleSubmit} 
-              className="flex flex-col relative w-full rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-200 bg-slate-50 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500/50 transition-all overflow-hidden group"
-            >
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit(e);
-                  }
-                }}
-                placeholder="Talk or type to the Agent..."
-                className="w-full bg-transparent p-5 pb-14 outline-none resize-none min-h-[110px] text-[15px] font-medium placeholder:text-slate-400"
-              />
-              <div className="absolute bottom-3 right-3 left-3 flex justify-between items-center">
-                <button type="button" className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-xl transition-colors">
-                  <Paperclip size={20} />
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={!input.trim()}
-                  className="px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center shadow-md shadow-slate-900/20 active:scale-95 group-focus-within:bg-slate-900"
-                >
-                  Send <Send size={16} className="ml-2" />
-                </button>
-              </div>
-            </motion.form>
-          )}
-        </AnimatePresence>
+      )}
+    </AnimatePresence>
+
+    {/* Chat Input - always visible */}
+    <form 
+      onSubmit={handleSubmit} 
+      className="flex flex-col relative w-full rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-200 bg-slate-50 focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500/50 transition-all overflow-hidden group"
+    >
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSubmit(e);
+          }
+        }}
+        placeholder="Talk or type to the Agent..."
+        className="w-full bg-transparent p-4 pb-12 outline-none resize-none min-h-[80px] text-[15px] font-medium placeholder:text-slate-400"
+      />
+      <div className="absolute bottom-3 right-3 left-3 flex justify-between items-center">
+        <button type="button" className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-xl transition-colors">
+          <Paperclip size={20} />
+        </button>
+        <button 
+          type="submit" 
+          disabled={!input.trim()}
+          className="px-5 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center shadow-md shadow-slate-900/20 active:scale-95 group-focus-within:bg-slate-900"
+        >
+          Send <Send size={16} className="ml-2" />
+        </button>
+      </div>
+    </form>
         <div className="text-center mt-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center space-x-1.5">
           <span>Powered by LangGraph</span>
           <span className="w-1 h-1 rounded-full bg-slate-300"></span>

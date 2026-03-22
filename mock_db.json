@@ -79,9 +79,124 @@
         }
       ],
       "action_log": []
-    }
-  },
-  "loan_applications": {},
-  "chat_sessions": {},
-  "uploaded_documents": {}
-}
+    },
+    "beb53721-1a0e-403a-973c-79f8b6383fcf": {
+      "session_id": "test_session_id",
+      "customer_id": "TEST_CUST",
+      "customer_data": {
+        "name": "Test User",
+        "phone": "9999999999",
+        "id": "TEST_CUST"
+      },
+      "loan_terms": {
+        "principal": 50000,
+        "tenure": 12,
+        "rate": 10.5,
+        "emi": 4500,
+        "loan_type": "Personal"
+      },
+      "reasons": [
+        "High Income",
+        "Good Credit"
+      ],
+      "decision": "approve",
+      "_id": "beb53721-1a0e-403a-973c-79f8b6383fcf"
+    },
+    "test_session_id": {
+      "_id": "test_session_id",
+      "session_id": "test_session_id",
+      "customer_id": "TEST_CUST",
+      "customer_data": {
+        "name": "Test User",
+        "phone": "9999999999",
+        "id": "TEST_CUST"
+      },
+      "loan_terms": {
+        "principal": 50000,
+        "tenure": 12,
+        "rate": 10.5,
+        "emi": 4500,
+        "loan_type": "Personal"
+      },
+      "phase_history": [
+        {
+          "phase": "sanction_generated",
+          "timestamp": "2026-03-22T11:42:45.532078"
+        }
+      ],
+      "reasons": [
+        "High Income",
+        "Good Credit"
+      ],
+      "decision": "approve",
+      "sanction_pdf": "data/sanctions\\TEST_CUST_Sanction_20260322_171245.pdf",
+      "current_phase": "sanction_generated"
+    },
+    "9a9192c3-059f-404c-8462-5085ea3a0cf0": {
+      "session_id": "9a9192c3-059f-404c-8462-5085ea3a0cf0",
+      "created_at": "2026-03-22T11:51:57.814340",
+      "current_phase": "session_started",
+      "phase_history": [
+        {
+          "phase": "session_started",
+          "timestamp": "2026-03-22T11:51:57.814340"
+        }
+      ],
+      "customer_id": "",
+      "customer_data": {
+        "name": "",
+        "phone": "",
+        "email": "",
+        "city": "",
+        "salary": 0,
+        "credit_score": 0,
+        "pre_approved_limit": 0,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "past_records": "",
+        "drop_off_history": ""
+      },
+      "is_existing_customer": false,
+      "loan_terms": {
+        "loan_type": "",
+        "principal": 0,
+        "rate": 0.0,
+        "tenure": 0,
+        "emi": 0.0
+      },
+      "documents": {
+        "salary_slip_path": "",
+        "salary_extracted": 0.0,
+        "gross_salary_extracted": 0.0,
+        "employer_name": "",
+        "document_type": "",
+        "document_number": "",
+        "confidence": 0.0,
+        "verified": false,
+        "tampered": false,
+        "tamper_reason": "",
+        "name_extracted": ""
+      },
+      "kyc_status": "",
+      "kyc_issues": [],
+      "fraud_score": -1.0,
+      "fraud_signals": 0,
+      "fraud_details": [],
+      "decision": "",
+      "dti_ratio": 0.0,
+      "risk_level": "",
+      "alternative_offer": 0.0,
+      "reasons": [],
+      "is_authenticated": false,
+      "otp_sent": false,
+      "intent": "none",
+      "next_agent": "registration_agent",
+      "negotiation_round": 0,
+      "persuasion_options": [],
+      "persuasion_status": "",
+      "sanction_pdf": "",
+      "advisory_message": "",
+      "status": "active",
+      "_id": "9a9192c3-059f-404c-8462-5085ea3a0cf0",
+      "messages": [
