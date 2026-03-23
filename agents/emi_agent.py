@@ -39,5 +39,7 @@ async def emi_agent_node(state: dict) -> dict:
     return {
         "loan_terms": updated_terms, 
         "messages": [AIMessage(content=msg_json)],
-        "current_phase": "kyc_verification"
+        "current_phase": "sales",
+        "pending_question": "confirm_loan_terms",
+        "options": ["Yes, Proceed", "No, Change Details"]
     }

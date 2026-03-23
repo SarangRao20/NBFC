@@ -19,6 +19,29 @@ from api.routers.auth import router as auth_router
 
 settings = get_settings()
 
+# Ensure stdout/stderr use UTF-8 on Windows to avoid UnicodeEncodeError when printing
+import sys, os
+if os.name == "nt":
+    try:
+        # Force UTF-8 mode for the interpreter and reconfigure text streams
+        os.environ.setdefault("PYTHONUTF8", "1")
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        # Reconfigure existing text streams to utf-8 and replace invalid chars
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Fallback for older Python versions: wrap buffers with TextIOWrapper
+            import io
+            try:
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+    except Exception:
+        # Best-effort: if reconfigure not available, fall back silently
+        pass
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -122,7 +145,7 @@ async def startup_db():
 async def create_user(user: User):
     try:
         user_dict = user.dict()
-        result = await users_collection.insert_one(user_dict)
+        result = users_collection.insert_one(user_dict)
         return {"id": str(result.inserted_id)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
@@ -130,14 +153,14 @@ async def create_user(user: User):
 @app.get("/users", tags=["Users"])
 async def get_users():
     users = []
-    async for user in users_collection.find():
+    for user in users_collection.find():
         user["_id"] = str(user["_id"])
         users.append(user)
     return users
 
 @app.get("/users/{user_id}", tags=["Users"])
 async def get_user(user_id: str):
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user["_id"] = str(user["_id"])
@@ -145,7 +168,7 @@ async def get_user(user_id: str):
 
 @app.put("/users/{user_id}", tags=["Users"])
 async def update_user(user_id: str, user: User):
-    result = await users_collection.update_one(
+    result = users_collection.update_one(
         {"_id": ObjectId(user_id)}, {"$set": user.dict()}
     )
     if result.matched_count == 0:
@@ -154,7 +177,7 @@ async def update_user(user_id: str, user: User):
 
 @app.delete("/users/{user_id}", tags=["Users"])
 async def delete_user(user_id: str):
-    result = await users_collection.delete_one({"_id": ObjectId(user_id)})
+    result = users_collection.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Deleted"}

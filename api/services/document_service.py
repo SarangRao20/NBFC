@@ -10,6 +10,7 @@ from datetime import datetime
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
 from db.database import documents_collection, MONGO_URI
+from db.gridfs_service import upload_file_to_gridfs
 
 settings = get_settings()
 
@@ -51,7 +52,7 @@ async def save_document_to_db(session_id: str, document_data: dict) -> str:
             "agent_processed": document_data.get("agent_processed", False),
         }
         
-        result = await documents_collection.insert_one(document_record)
+        result = documents_collection.insert_one(document_record)
         storage_info = "GridFS" if USE_GRIDFS else "local storage"
         print(f"📄 Document saved to database ({storage_info}): {result.inserted_id}")
         return str(result.inserted_id)

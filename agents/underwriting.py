@@ -9,7 +9,9 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from datetime import datetime, timedelta
 from langchain_core.messages import AIMessage
+from agents.session_manager import SessionManager
 
 
 def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_months: int) -> float:
@@ -52,8 +54,18 @@ def underwriting_agent_node(state: dict) -> dict:
     pre_approved = customer.get("pre_approved_limit", customer.get("limit", 0))
     existing_emi = customer.get("existing_emi_total", 0)
     
-    principal = terms.get("principal", 0)
     emi = terms.get("emi", 0)
+    principal = terms.get("principal", 0)
+    
+    # ⚠️ GUARD: Do not evaluate if loan amount isn't captured yet
+    if principal <= 0:
+        print("⚖️ [UNDERWRITING] Skipping evaluation - No principal amount set.")
+        return {
+            "decision": "",
+            "messages": [AIMessage(content="I'm still waiting for your loan details to perform a credit check.")],
+            "current_phase": "sales"
+        }
+    
     rate = terms.get("rate", 0.10)  # Default 10% annual rate
     tenure = terms.get("tenure", 12)  # Default 12 months
     fraud_score = state.get("fraud_score", 0.0)
@@ -76,6 +88,36 @@ def underwriting_agent_node(state: dict) -> dict:
     else:
         risk_level = "low"
 
+    # Rule 4: Professional Risk Scoring (New)
+    occupation = customer.get("occupation", "").lower()
+    employer = customer.get("employer_name", "").lower()
+    
+    # Simulate high-value employer whitelist
+    WHITELIST_EMPLOYERS = ["google", "microsoft", "amazon", "tcs", "infosys", "hdfc", "isro"]
+    is_whitelisted = any(w in employer for w in WHITELIST_EMPLOYERS)
+    
+    if is_whitelisted:
+        risk_level = "low"
+        print(f"🌟 [WHITELIST] Employer '{employer}' recognized. Risk level set to Low.")
+    elif occupation in ["business", "self-employed"]:
+        # Simulate Cash-flow underwriting (UPI Transaction Velocity)
+        upi_velocity = state.get("simulated_upi_velocity", 0.85) # Mocked high velocity
+        if upi_velocity < 0.5:
+            reasons.append("Low transaction velocity detected in digital cash-flow analysis.")
+            risk_level = "high"
+        else:
+            print(f"📈 [CASH-FLOW] Stable transaction velocity ({upi_velocity}) detected.")
+
+    # Rule 4.5: Loan-to-Value (LTV) for Car/Home loans
+    loan_purpose = terms.get("loan_purpose", "").lower()
+    if any(p in loan_purpose for p in ["car", "home", "property"]):
+        market_value = principal / 0.8  # Assume user needs 80% LTV
+        ltv = principal / market_value
+        if ltv > 0.85:
+            reasons.append(f"Loan-to-Value ratio ({ltv*100:.0f}%) exceeds the 85% safety cap for asset-backed loans.")
+            decision = "soft_reject"
+            alternative_offer = 0.80 * market_value
+
     # Evaluate Logical Gates
     if fraud_score >= 0.7:
         reasons.append(f"Fraud score ({fraud_score}) ≥ 0.7 — Escalated to manual audit.")
@@ -93,9 +135,20 @@ def underwriting_agent_node(state: dict) -> dict:
             
     # Standard CIBIL Borrower
     else:
+        # NEW: Global History Check
+        past_records = (customer.get("past_records") or "").lower()
+        if "rejected" in past_records or "fraud" in past_records:
+            reasons.append(f"Historical system records flag recent rejection or risk: {past_records[:50]}...")
+            risk_level = "high"
+            if "fraud" in past_records: decision = "hard_reject"
+
         if score < 700:
             reasons.append(f"Credit score ({score}) is below the minimum threshold of 700.")
             decision = "hard_reject"
+        elif occupation == "student" and principal > 25000:
+             reasons.append("Maximum loan for students is ₹25,000 without a co-signer.")
+             decision = "soft_reject"
+             alternative_offer = 25000.0
         elif principal > 2 * pre_approved:
             reasons.append(f"Requested loan exceeds maximum permissible exposure (2× limit).")
             decision = "hard_reject"
@@ -116,6 +169,8 @@ def underwriting_agent_node(state: dict) -> dict:
             alt_p = _calculate_max_principal(max_viable_emi, rate, tenure)
             # Cap the alternative offer to the absolute maximum exposure limit (2x pre-approved)
             alt_p = min(alt_p, 2 * pre_approved)
+            # Round down to nearest 5000 for realistic offering
+            alt_p = (alt_p // 5000) * 5000
             alternative_offer = alt_p
             # Reclassify as soft_reject — eligible for Persuasion Loop negotiation
             if alt_p > 1000:
@@ -146,11 +201,63 @@ def underwriting_agent_node(state: dict) -> dict:
         msg = (f"❌ **LOAN REJECTED**\n\n"
                f"**Decision Reasoning**:\n{reason_text}")
 
-    return {
+    # ✅ Calculate EMI dates when approved
+    if decision == "approve":
+        today = datetime.now()
+        emi_day = state.get("loan_terms", {}).get("emi_day_of_month", 28)
+        
+        # First EMI: next month on selected day
+        first_emi = today.replace(day=min(emi_day, 28))  # Cap at 28 to avoid invalid dates
+        if first_emi <= today:
+            # Move to next month if that day already passed
+            if first_emi.month == 12:
+                first_emi = first_emi.replace(year=first_emi.year + 1, month=1)
+            else:
+                first_emi = first_emi.replace(month=first_emi.month + 1)
+        
+        sanction_date = today.strftime("%Y-%m-%d")
+        first_emi_str = first_emi.strftime("%Y-%m-%d")
+    else:
+        sanction_date = None
+        first_emi_str = None
+
+    updates = {
         "decision": decision,
         "dti_ratio": dti,
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
-        "messages": [AIMessage(content=msg)]
+        "messages": [AIMessage(content=msg)],
+        "current_phase": "underwriting",
+        
+        # ✅ Add EMI tracking fields
+        "loan_terms": {
+            **state.get("loan_terms", {}),
+            "sanction_date": sanction_date,
+            "first_emi_date": first_emi_str,
+            "next_emi_date": first_emi_str,
+            "emi_day_of_month": state.get("loan_terms", {}).get("emi_day_of_month", 28),
+            "payments_made": 0,
+            "days_overdue": 0,
+            "last_payment_date": None
+        },
+        
+        # ✅ Add YES/NO button options based on decision
+        "options": (
+            ["✅ Accept Loan Offer", "❓ Ask Questions Before Proceeding"]
+            if decision == "approve"
+            else [f"💪 Try ₹{alternative_offer:,.0f} Instead", "❌ Exit Application"]
+            if decision == "soft_reject"
+            else ["🔄 Reapply in 90 Days", "💬 Speak to Customer Support"]
+        )
     }
+    
+    # Save session to MongoDB
+    session_id = state.get("session_id", "default")
+    try:
+        SessionManager.save_session(session_id, updates)
+        print(f"💾 Session {session_id} saved to MongoDB")
+    except Exception as e:
+        print(f"⚠️ Failed to save session: {e}")
+    
+    return updates

@@ -1,16 +1,30 @@
 """Authentication Service - Enhanced with Redis caching, OTP management, and profile completeness."""
 
+import json
+import os
 import random
 import string
-import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from api.core.redis_cache import get_cache
 from api.core.email_service import get_email_service
 from api.core.state_manager import get_session, update_session
 from api.config import get_settings
+from mock_apis.otp_service import send_otp as mock_send_otp, verify_otp as mock_verify_otp
 
 settings = get_settings()
+
+CUSTOMERS_FILE = os.path.join("mock_apis", "customers.json")
+
+def load_mock_customers() -> List[Dict]:
+    if os.path.exists(CUSTOMERS_FILE):
+        with open(CUSTOMERS_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_mock_customers(customers: List[Dict]):
+    with open(CUSTOMERS_FILE, "w") as f:
+        json.dump(customers, f, indent=4)
 
 
 class AuthService:
@@ -49,112 +63,41 @@ class AuthService:
         print(f"🛠️ Development OTP set for {phone}: {dev_otp}")
         return True
     
-    async def send_otp(self, phone: str, email: str) -> Dict[str, Any]:
-        """Send OTP to customer's email or use dev mode"""
+    async def send_otp(self, phone: str, email: str = None) -> Dict[str, Any]:
+        """Send OTP using mock_apis/otp_service.py"""
         await self._get_services()
         
-        # Priority: Development mode toggle
-        if settings.DISABLE_OTP:
-            await self.generate_dev_otp(phone, settings.DEV_OTP)
+        try:
+            result = mock_send_otp(phone)
             return {
-                "success": True,
-                "message": f"Development mode: Your OTP is {settings.DEV_OTP}",
+                "success": result.get("sent", False),
+                "message": result.get("message", "OTP process finished"),
                 "phone": phone,
                 "email": email,
-                "otp_sent": False,
-                "dev_otp": settings.DEV_OTP
+                "otp_sent": result.get("sent", False),
+                "dev_mode": "otp" in result,
+                "dev_otp": result.get("otp")
             }
-
-        try:
-            # Get customer data to personalize email
-
-            customer_data = await self.cache.get_customer(phone)
-            customer_name = customer_data.get('name', 'Customer') if customer_data else 'Customer'
-            
-            # Generate OTP
-            otp = await self.generate_otp(phone)
-            
-            # Send email
-            email_sent = await self.email_service.send_otp_email(email, customer_name, otp)
-            
-            if email_sent:
-                return {
-                    "success": True,
-                    "message": "OTP sent to your registered email address",
-                    "phone": phone,
-                    "email": email,
-                    "otp_sent": True
-                }
-            else:
-                # Fallback: show OTP in development mode
-                if settings.DISABLE_OTP:
-                    return {
-                        "success": True,
-                        "message": f"Development mode: Your OTP is {settings.DEV_OTP}",
-                        "phone": phone,
-                        "email": email,
-                        "otp_sent": False,
-                        "dev_otp": settings.DEV_OTP
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "message": "Failed to send OTP email. Please try again.",
-                        "phone": phone,
-                        "email": email,
-                        "otp_sent": False
-                    }
-        
         except Exception as e:
             print(f"❌ OTP send failed: {e}")
             return {
                 "success": False,
                 "message": f"Failed to send OTP: {str(e)}",
                 "phone": phone,
-                "email": email,
                 "otp_sent": False
             }
     
     async def verify_otp(self, phone: str, otp: str) -> Dict[str, Any]:
-        """Verify OTP against cached value"""
+        """Verify OTP using mock_apis/otp_service.py"""
         await self._get_services()
         
         try:
-            # In development mode, accept dev OTP
-            if settings.DISABLE_OTP and otp == settings.DEV_OTP:
-                await self.cache.delete_otp(phone)
-                return {
-                    "success": True,
-                    "message": "Development OTP verified successfully",
-                    "phone": phone,
-                    "dev_mode": True
-                }
-            
-            # Normal OTP verification
-            cached_otp = await self.cache.get_otp(phone)
-            
-            if not cached_otp:
-                return {
-                    "success": False,
-                    "message": "OTP expired or not found. Please request a new OTP.",
-                    "phone": phone
-                }
-            
-            if otp == cached_otp:
-                # Delete OTP after successful verification
-                await self.cache.delete_otp(phone)
-                return {
-                    "success": True,
-                    "message": "OTP verified successfully",
-                    "phone": phone
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Invalid OTP. Please check and try again.",
-                    "phone": phone
-                }
-        
+            result = mock_verify_otp(phone, otp)
+            return {
+                "success": result.get("verified", False),
+                "message": result.get("message", "Verification finished"),
+                "phone": phone
+            }
         except Exception as e:
             print(f"❌ OTP verification failed: {e}")
             return {
@@ -174,7 +117,7 @@ class AuthService:
             if not customer_data:
                 # Try to get from database
                 from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = users_collection.find_one({"phone": phone})
                 
                 if customer_data:
                     # Cache for future use
@@ -248,13 +191,30 @@ class AuthService:
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = users_collection.find_one({"phone": phone})
                 
                 if customer_data:
                     await self.cache.set_customer(phone, customer_data)
             
             if not customer_data:
+                customers = load_mock_customers()
+                customer_data = next((c for c in customers if c.get("phone") == phone), None)
+                if customer_data:
+                    await self.cache.set_customer(phone, customer_data)
+            
+            if not customer_data:
                 raise Exception("Customer not found")
+            
+            # Get loan history to enrich profile
+            history_result = await self.get_customer_loan_history(phone)
+            past_loans = history_result.get("history", [])
+            customer_data["past_loans"] = past_loans
+            customer_data["is_new_customer"] = len(past_loans) == 0
+            
+            # Aggregate active EMI from historical loans
+            active_emi = sum(loan.get("emi", 0) for loan in past_loans if loan.get("status") == "Approved")
+            customer_data["existing_emi_total"] = active_emi
+            print(f"💰 Aggregated active EMI for {phone}: ₹{active_emi:,.2f}")
             
             # Create new session
             from api.core.state_manager import create_session
@@ -294,7 +254,7 @@ class AuthService:
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = users_collection.find_one({"phone": phone})
                 
                 if not customer_data:
                     return {
@@ -307,7 +267,7 @@ class AuthService:
             
             # Update in database
             from db.database import users_collection
-            await users_collection.update_one(
+            users_collection.update_one(
                 {"phone": phone},
                 {"$set": updates}
             )
@@ -349,11 +309,11 @@ class AuthService:
             
             # Get from database
             from db.database import loan_applications_collection
-            applications = await loan_applications_collection.find({"phone": phone})
+            applications = loan_applications_collection.find({"phone": phone})
             
             # Convert to list and sort
             history = []
-            async for app in applications:
+            for app in applications:
                 history.append({
                     "session_id": app.get("session_id"),
                     "amount": app.get("amount", 0),
@@ -389,24 +349,83 @@ class AuthService:
                 "error": str(e)
             }
     
-    async def logout(self, session_id: str) -> bool:
-        """Logout and clean up session"""
-        await self._get_services()
+    async def login_with_password(self, phone: str, password: str) -> Dict[str, Any]:
+        """Login with phone and password using mock customers database."""
+        customers = load_mock_customers()
+        user = next((c for c in customers if c.get("phone") == phone), None)
         
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        if user.get("password") != password:
+            return {"success": False, "message": "Invalid password"}
+        
+        # Create session
+        session_data = await self.create_login_session(phone)
+        
+        return {
+            "success": True,
+            "message": "Login successful",
+            "session_id": session_data["session_id"],
+            "customer_data": user
+        }
+
+    async def register_customer(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Register new customer and save to both mock JSON and MongoDB."""
+        phone = user_data.get("phone")
+        if not phone:
+            return {"success": False, "message": "Phone number required"}
+            
+        customers = load_mock_customers()
+        if any(c.get("phone") == phone for c in customers):
+            return {"success": False, "message": "User already exists"}
+            
+        # Add to mock database
+        new_user = {
+            "id": f"CUST{len(customers) + 1:03d}",
+            **user_data,
+            "credit_score": user_data.get("credit_score", 700),
+            "pre_approved_limit": user_data.get("pre_approved_limit", 100000),
+            "existing_emi_total": user_data.get("existing_emi_total", 0),
+            "current_loans": [],
+            "risk_flags": [],
+            "created_at": datetime.utcnow().isoformat()
+        }
+        customers.append(new_user)
+        save_mock_customers(customers)
+        
+        # Also save to MongoDB users collection
         try:
-            # Delete session from cache
-            await self.cache.delete_session(session_id)
-            
-            # Mark session as ended in database
-            from api.core.state_manager import end_session
-            await end_session(session_id)
-            
-            print(f"✅ Logout successful for session: {session_id}")
-            return True
-        
+            from db.database import users_collection
+            users_collection.insert_one({"_id": phone, **new_user})
         except Exception as e:
-            print(f"❌ Logout failed: {e}")
-            return False
+            print(f"⚠️ Failed to save to MongoDB: {e}")
+            
+        return {"success": True, "message": "Registration successful", "customer_data": new_user}
+
+    async def verify_session(self, session_id: str) -> Dict[str, Any]:
+        """Verify if a session exists and return customer data."""
+        await self._get_services()
+        try:
+            # Check MongoDB for the session
+            from api.core.state_manager import get_session
+            session = await get_session(session_id)
+            
+            if not session:
+                return {"success": False, "message": "Session not found or expired"}
+                
+            customer_data = session.get("customer_data")
+            if not customer_data:
+                return {"success": False, "message": "Customer data not found in session"}
+                
+            return {
+                "success": True,
+                "customer_data": customer_data,
+                "session_id": session_id
+            }
+        except Exception as e:
+            print(f"❌ Session verification failed: {e}")
+            return {"success": False, "message": str(e)}
 
 # Global auth service instance
 auth_service = AuthService()

@@ -158,26 +158,26 @@ JSON OUTPUT CONTRACT (STRICT)
 IF USER ACCEPTS:
 
 ```json
-{
+{{
   "action": "accept",
   "revised_amount": <number>,
   "revised_tenure": <months>,
   "revised_emi": <number>
-}
+}}
 
 Mapping:
 
-Option A → use {safe_max_amount}, {original_tenure}, {option_a_emi}
-Option B → use {original_principal}, {extended_tenure}, {option_b_emi}
+Option A → use {{safe_max_amount}}, {{original_tenure}}, {{option_a_emi}}
+Option B → use {{original_principal}}, {{extended_tenure}}, {{option_b_emi}}
 
 IF USER DECLINES OR MAX ROUNDS REACHED:
 
-{
+{{
   "action": "decline",
   "revised_amount": null,
   "revised_tenure": null,
   "revised_emi": null
-}
+}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL OUTPUT RULES
@@ -346,7 +346,6 @@ async def persuasion_agent_node(state: dict) -> dict:
                 dti_pct=dti*100,
                 reasons="; ".join(reasons) if reasons else "DTI exceeds 50%",
                 safe_max_amount=options[0]["amount"] if options else principal,
-                original_tenure=tenure,
                 option_a_emi=options[0]["emi"] if options else 0,
                 extended_tenure=options[1]["tenure"] if len(options) > 1 else tenure + 12,
                 option_b_emi=options[1]["emi"] if len(options) > 1 else 0,

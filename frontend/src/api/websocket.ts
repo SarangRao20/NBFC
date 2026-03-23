@@ -3,13 +3,10 @@ type WSCallback = (data: any) => void;
 class WebSocketClient {
   private socket: WebSocket | null = null;
   private callbacks: Set<WSCallback> = new Set();
-  private sessionId: string | null = null;
   private reconnectTimer: any = null;
 
   connect(sessionId: string) {
     if (this.socket || !sessionId) return;
-    this.sessionId = sessionId;
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = import.meta.env.VITE_API_URL 
       ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '') 

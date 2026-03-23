@@ -1,9 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
+import AuthWrapper from './components/AuthWrapper';
 import type { AppState, ChatMessage, MessageType } from './types';
 import { apiClient } from './api/client';
 import { wsClient } from './api/websocket';
+
+interface UserData {
+  name: string;
+  phone: string;
+  dob: string;
+  profession: string;
+  address: string;
+  email: string;
+  password: string;
+  city?: string;
+  salary?: number;
+}
 
 const INITIAL_APP_STATE: AppState = {
   sessionId: null,
@@ -29,29 +42,92 @@ const INITIAL_APP_STATE: AppState = {
 
 const INITIAL_CHAT_HISTORY: ChatMessage[] = [];
 
-type ChatPhase = 'init' | 'phone' | 'name' | 'loan_details' | 'document' | 'processing' | 'evaluate' | 'negotiate' | 'accepted';
+type ChatPhase = 'init' | 'phone' | 'name' | 'loan_details' | 'document' | 'processing' | 'evaluate' | 'negotiate' | 'accepted' | 'onboarding';
 
 function App() {
   const [appState, setAppState] = useState<AppState>(INITIAL_APP_STATE);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(INITIAL_CHAT_HISTORY);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // @ts-ignore - currentUser is currently unused but kept for future features
+  const [currentUser] = useState<UserData | null>(null);
+  // @ts-ignore - chatPhase is currently unused but kept for state consistency
   const [chatPhase, setChatPhase] = useState<ChatPhase>('init');
   const greetingStarted = useRef(false);
 
-  // Initialize Backend Session
+  // Persistence: Check for existing session on mount
   useEffect(() => {
-    if (greetingStarted.current) return;
+    const savedSessionId = localStorage.getItem('nbfc_session_id');
+    if (savedSessionId) {
+      async function resumeSession() {
+        try {
+          // Verify session first
+          const verifyUrl = `http://localhost:8000/auth/verify?session_id=${savedSessionId}`;
+          const vResp = await fetch(verifyUrl);
+          const vData = await vResp.json();
+          
+          if (vResp.ok && vData.success) {
+            setSessionId(savedSessionId);
+            setIsAuthenticated(true);
+            // Load full state (history, terms etc)
+            await loadSession(savedSessionId);
+            console.log("🔄 Session resumed successfully:", savedSessionId);
+          } else {
+            localStorage.removeItem('nbfc_session_id');
+            localStorage.removeItem('nbfc_customer_name');
+          }
+        } catch (err) {
+          console.error("Failed to resume session:", err);
+        }
+      }
+      resumeSession();
+    }
+  }, []);
+
+  const fetchPastSessions = async (phone?: string) => {
+    if (!phone) return;
+    try {
+      const sessions = await apiClient.getSessionsByPhone(phone);
+      setAppState(prev => ({ ...prev, pastSessions: sessions || [] }));
+    } catch (err) {
+      console.error('Failed to fetch past sessions:', err);
+    }
+  };
+
+  const handleAuthComplete = (userData: UserData, newSessionId: string) => {
+    // @ts-ignore - setCurrentUser is currently unused but kept for future features
+    // setCurrentUser(userData);
+    setSessionId(newSessionId);
+    setIsAuthenticated(true);
+    
+    // Persist to localStorage
+    localStorage.setItem('nbfc_session_id', newSessionId);
+    localStorage.setItem('nbfc_customer_name', userData.name);
+
+    setAppState(prev => ({ 
+      ...prev, 
+      sessionId: newSessionId,
+      customerName: userData.name,
+      creditScore: userData.salary ? 700 : 650, // Simple credit score logic
+      preApprovedLimit: userData.salary ? userData.salary * 3 : 100000, // Simple limit calculation
+      actionLog: []
+    }));
+    fetchPastSessions(userData.phone);
+    setChatPhase('loan_details');
+  };
+
+  // Initialize Backend Session after authentication
+  useEffect(() => {
+    if (!isAuthenticated || !sessionId || greetingStarted.current) return;
     greetingStarted.current = true;
 
     async function initBackend() {
       try {
-        const { session_id } = await apiClient.startSession();
-        setSessionId(session_id);
-        setAppState(prev => ({ ...prev, sessionId: session_id }));
-        setChatPhase('phone');
+        // Set session ID and start chat
+        setAppState(prev => ({ ...prev, sessionId: sessionId }));
 
         // Automatically trigger initial greeting from Arjun
-        const res = await apiClient.chat(session_id, "hello");
+        const res = await apiClient.chat(sessionId!, "hello");
         if (res.all_replies && res.all_replies.length > 0) {
           res.all_replies.forEach((m: any) => {
             if (typeof m === 'string') pushAgentMessage(m);
@@ -61,22 +137,6 @@ function App() {
           pushAgentMessage(res.reply, 'text', undefined, res.options);
         }
 
-        // Sync initial state (e.g. if existing user was auto-identified)
-        const fullState = await apiClient.getSession(session_id);
-        if (fullState) {
-          setAppState(prev => ({
-            ...prev,
-            customerName: fullState.customer_data?.name || prev.customerName,
-            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
-            tenure: fullState.loan_terms?.tenure || prev.tenure,
-            roi: fullState.loan_terms?.rate || prev.roi,
-            emi: fullState.loan_terms?.emi || prev.emi,
-            creditScore: fullState.customer_data?.credit_score || prev.creditScore,
-            preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
-            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
-          }));
-        }
-
       } catch (error) {
         console.error('Failed to initialize backend:', error);
       }
@@ -84,7 +144,7 @@ function App() {
     initBackend();
 
     return () => wsClient.disconnect();
-  }, [sessionId]);
+  }, [sessionId, isAuthenticated]);
 
   // WebSocket Listener
   useEffect(() => {
@@ -106,7 +166,7 @@ function App() {
         
         // If we have options, push them to chat as well for accessibility
         if (options && options.length > 0) {
-          pushAgentMessage('I have prepared some options for you:', 'text', `msg-opt-${Date.now()}`, options);
+          pushAgentMessage('I have prepared some options for you:', 'text', `msg-opt-${Date.now()}-${Math.random()}`, options);
         }
       }
       
@@ -149,13 +209,18 @@ function App() {
     return () => { unsubscribe(); };
   }, [sessionId]);
 
-  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}`, options?: string[]) => {
+  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}-${Math.random()}`, options?: string[]) => {
+    const autoOptions = options && options.length > 0
+      ? options
+      : (/\b(yes|no)\b/i.test(text) && (/\?/g.test(text) || /confirm|proceed|accept|decline/i.test(text))
+        ? ['Yes', 'No']
+        : undefined);
     setChatHistory(prev => [...prev, {
       id,
       sender: 'agent',
       type,
       content: text,
-      options,
+      options: autoOptions,
       timestamp: new Date(),
     }]);
     return id;
@@ -241,7 +306,7 @@ function App() {
     if (!sessionId) return;
     
     setChatHistory(prev => [...prev, {
-      id: `msg-upload-${Date.now()}`,
+      id: `msg-upload-${Date.now()}-${Math.random()}`,
       sender: 'user',
       type: 'text',
       content: `Uploaded ${file.name}`,
@@ -292,7 +357,7 @@ function App() {
   const loadSession = async (sid: string) => {
     try {
       setSessionId(sid);
-      setAppState(prev => ({ ...prev, sessionId: sid }));
+      setAppState(prev => ({ ...prev, sessionId: sid, actionLog: [] }));
       const state = await apiClient.getSession(sid);
       const history = await apiClient.getHistory(sid);
 
@@ -319,6 +384,7 @@ function App() {
           pastLoans: state.customer_data?.past_loans,
           pastRecords: state.customer_data?.past_records,
         }));
+        await fetchPastSessions(state.customer_data?.phone);
       }
 
       if (history.history && history.history.length > 0) {
@@ -345,6 +411,40 @@ function App() {
     }
   };
 
+  const handleNewChat = async () => {
+    try {
+      const resp = await apiClient.startSession();
+      if (resp && resp.session_id) {
+        setSessionId(resp.session_id);
+        const user = { name: appState.customerName, phone: '', email: '', dob: '', profession: '', address: '', password: '' };
+        // We keep the customerName but reset everything else
+        setAppState({
+          ...INITIAL_APP_STATE,
+          sessionId: resp.session_id,
+          customerName: appState.customerName,
+          pastSessions: appState.pastSessions
+        });
+        setChatHistory([]);
+        setChatPhase('init');
+        greetingStarted.current = false;
+        console.log("🆕 New session started:", resp.session_id);
+      }
+    } catch (err) {
+      console.error("Failed to start new chat:", err);
+      pushAgentMessage("Error: Failed to start a new chat session.");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('nbfc_session_id');
+    localStorage.removeItem('nbfc_customer_name');
+    setSessionId(null);
+    setIsAuthenticated(false);
+    setAppState(INITIAL_APP_STATE);
+    setChatHistory(INITIAL_CHAT_HISTORY);
+    greetingStarted.current = false;
+  };
+
   const handleSendMessage = async (text: string) => {
     if (!sessionId) return;
 
@@ -356,8 +456,6 @@ function App() {
       timestamp: new Date(),
     }]);
 
-    const lowerText = text.toLowerCase().trim();
-
     try {
       // General agent-driven chat
       setAppState(prev => ({ 
@@ -368,7 +466,7 @@ function App() {
       
       let res: any = null;
       try {
-        res = await apiClient.chat(sessionId, text, chatHistory); 
+        res = await apiClient.chat(sessionId!, text, chatHistory); 
         setAppState(prev => ({ 
           ...prev, 
           thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Arjun'),
@@ -425,21 +523,23 @@ function App() {
       try {
         if (fullState?.decision === 'soft_reject') {
           setChatPhase('negotiate');
-        } else if (res && ['loan', 'loan_confirmed'].includes(res.intent) && fullState?.loan_terms?.principal) {
+        } else if (fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document') {
           setChatPhase('document');
           let docs = ["Identity (PAN or Aadhaar)"];
           let limit = fullState.customer_data?.pre_approved_limit || 150000;
-          if (fullState.loan_terms.principal > limit) {
+          if (fullState.loan_terms?.principal > limit) {
             docs.push("Income Proof (Salary Slip)");
           }
           setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
-        } else if (res && res.is_authenticated) {
+        } else if (fullState?.current_phase === 'sales' || fullState?.loan_terms?.principal) {
           setChatPhase('loan_details'); 
           // Fetch past sessions when user is identified
           if (fullState?.customer_data?.phone) {
             const sessions = await apiClient.getSessionsByPhone(fullState.customer_data.phone);
             setAppState(prev => ({ ...prev, pastSessions: sessions }));
           }
+        } else {
+          setChatPhase('onboarding');
         }
       } catch (err) {
         console.error("Post-chat logic failed:", err);
@@ -456,9 +556,19 @@ function App() {
 
   };
 
+  // Show AuthWrapper if not authenticated, otherwise show main app
+  if (!isAuthenticated) {
+    return <AuthWrapper onAuthComplete={handleAuthComplete} />;
+  }
+
   return (
     <div className="w-full h-screen flex overflow-hidden font-sans bg-slate-50 text-slate-900 leading-relaxed">
-      <DashboardPane appState={appState} onLoadSession={loadSession} />
+      <DashboardPane 
+        appState={appState} 
+        onLoadSession={loadSession} 
+        onNewChat={handleNewChat} 
+        onLogout={handleLogout}
+      />
       <ChatPane 
         appState={appState} 
         setAppState={setAppState} 

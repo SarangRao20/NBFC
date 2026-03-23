@@ -225,7 +225,50 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     
     state = await get_session(session_id)
     if not state:
-        return None
+        # Create new session if it doesn't exist
+        from api.core.state_manager import create_session, _default_state
+        from datetime import datetime
+        state = _default_state()
+        state["session_id"] = session_id
+        state["created_at"] = datetime.utcnow().isoformat()
+        state["current_phase"] = "session_started"
+        # Insert directly into MongoDB
+        from db.database import sessions_collection
+        sessions_collection.insert_one({"_id": session_id, **state})
+
+    # Fast-path for EMI reminder queries using stored sanction/loan records.
+    lowered = (user_message or "").lower()
+    if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay"]):
+        try:
+            from db.database import loan_applications_collection
+            phone = state.get("customer_data", {}).get("phone")
+            if phone:
+                apps_cursor = loan_applications_collection.find({"phone": phone})
+                apps = []
+                for app in apps_cursor:
+                    if app.get("status") in ["Approved", "Signed & Disbursed"]:
+                        apps.append(app)
+
+                if apps:
+                    lines = ["Your active EMI obligations are:"]
+                    for idx, app in enumerate(apps[:5], start=1):
+                        amount = app.get("amount", 0)
+                        emi = app.get("emi", 0)
+                        due = app.get("first_emi_due_date") or "Not available"
+                        lines.append(f"{idx}. Loan ₹{amount:,.0f} | EMI ₹{emi:,.0f} | Next due: {due}")
+                    lines.append("Please pay on or before due date to avoid penalties.")
+                    reply = "\n".join(lines)
+                    return _clean_dict({
+                        "reply": reply,
+                        "all_replies": [{"type": "text", "content": reply}],
+                        "next_agent": "advisor_agent",
+                        "intent": state.get("intent", "advice"),
+                        "is_authenticated": state.get("is_authenticated", True),
+                        "loan_terms": state.get("loan_terms", {}),
+                        "customer_data": state.get("customer_data", {}),
+                    })
+        except Exception as emi_err:
+            print(f"⚠️ EMI lookup failed: {emi_err}")
 
     # Rebuild message list from history or stored state
     current_messages = []
@@ -238,6 +281,9 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     else:
         for m in state.get("messages", []):
             if isinstance(m, dict):
+                # Skip frontend-specific message types that aren't LangChain messages
+                if m.get("type") in ["agent_steps", "sanction_letter", "emi_slider"]:
+                    continue
                 role_type = m.get("sender", m.get("role"))
                 role = HumanMessage if role_type == "user" else AIMessage
                 content = m.get("kwargs", {}).get("content", m.get("content", m.get("text", "")))
@@ -251,16 +297,35 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     # Track how many AI messages exist before the graph runs
     pre_run_ai_count = sum(1 for m in current_messages if isinstance(m, AIMessage))
 
-    # Update local state for graph invocation
-    state["messages"] = current_messages
+    # Update local state for graph invocation - ONLY pass LangChain messages
+    clean_state = state.copy()
+    # Aggressive filtering: ONLY allow HumanMessage and AIMessage objects
+    clean_state["messages"] = [m for m in current_messages if not isinstance(m, dict)]
+    
+    # Debug: Check for any dict messages that slipped through
+    for i, msg in enumerate(clean_state["messages"]):
+        if isinstance(msg, dict):
+            print(f"⚠️ [CRITICAL] Found dict message at index {i}: {msg}")
     
     # Run the Master Graph
     print(f"🧠 [SALES SERVICE] Invoking MasterGraph for session {session_id}...")
     graph = compile_master_graph()
     
     try:
-        final_state = await graph.ainvoke(state, config={"recursion_limit": 25})
+        print(f"📊 [DEBUG] State keys before graph invocation: {list(clean_state.keys())}")
+        print(f"📊 [DEBUG] customer_data keys: {list(clean_state.get('customer_data', {}).keys())}")
+        print(f"📊 [DEBUG] Messages count before graph: {len(clean_state['messages'])}")
+        final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 25})
         print("✅ [SALES SERVICE] Graph run complete.")
+
+        # CRITICAL: Filter out ALL dict messages from final_state - only allow LangChain message objects
+        filtered_final_messages = []
+        for msg in final_state.get("messages", []):
+            if isinstance(msg, dict):
+                print(f"⚠️ [FILTER] Removed dict message: {msg.get('type', 'unknown')}")
+                continue
+            filtered_final_messages.append(msg)
+        final_state["messages"] = filtered_final_messages
 
         # Collect NEW AI messages (not re-emitting old history)
         all_messages = final_state.get("messages", [])
@@ -288,11 +353,12 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                 "steps": _clean_dict(logs)
             }))
 
-            step_msg = {
-                "type": "agent_steps", 
-                "content": json.dumps({"steps": _clean_dict(logs)})
-            }
-            new_ai.insert(0, step_msg)
+            # REMOVED: Don't add agent_steps to chat messages - they show in UI
+            # step_msg = {
+            #     "type": "agent_steps", 
+            #     "content": json.dumps({"steps": _clean_dict(logs)})
+            # }
+            # new_ai.insert(0, step_msg)
 
         # Attach options to the last AI message for frontend rendering
         if final_state.get("options") and new_ai:
@@ -306,6 +372,14 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         # Ensure session metadata is preserved in the final state
         final_state["session_id"] = session_id
         final_state["status"] = state.get("status", "active")
+
+        # Filter out frontend-specific message types from state before saving
+        filtered_messages = []
+        for msg in final_state.get("messages", []):
+            if isinstance(msg, dict) and msg.get("type") in ["agent_steps", "sanction_letter", "emi_slider"]:
+                continue  # Skip frontend-specific messages
+            filtered_messages.append(msg)
+        final_state["messages"] = filtered_messages
 
         # Persist final state to DB (Bypassing Redis for state sync per user request)
         await update_session(session_id, final_state)
@@ -327,7 +401,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                     "status": "Signed & Disbursed",
                     "created_at": datetime.now().isoformat()
                 }
-                await loan_applications_collection.insert_one(loan_doc)
+                loan_applications_collection.insert_one(loan_doc)
                 print(f"✅ [SALES SERVICE] Loan logged for {loan_doc['name']}")
             except Exception as le:
                 print(f"⚠️ [SALES SERVICE] Failed to log loan: {le}")
@@ -344,6 +418,18 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
 
         
     except Exception as e:
+        import traceback, json
         print(f"❌ Master Graph Error: {e}")
-        import traceback; traceback.print_exc()
-        return {"reply": f"Technical issue in the brain: {str(e)}", "error": True}
+        traceback.print_exc()
+        # Persist an error action to the session so it's visible in logs
+        try:
+            await update_session(session_id, {"action_log": [f"❌ Master Graph Error: {str(e)}"]})
+        except Exception:
+            pass
+        # Return structured error for frontend and include minimal safe fields
+        return _clean_dict({
+            "reply": f"Technical issue in the brain: {str(e)}",
+            "error": True,
+            "error_detail": str(e),
+            "customer_data": state.get("customer_data", {}),
+        })

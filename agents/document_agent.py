@@ -184,12 +184,12 @@ Return EXACTLY ONE JSON object.
 No explanations. No extra text.
 
 ```json
-{
+{{
   "total_documents_processed": <integer>,
   "extracted_documents": [
-    {
+    {{
       "document_type": "<PAN | Aadhaar | Salary Slip | Bank Statement | Form16 | Unknown>",
-      "extracted_data": {
+      "extracted_data": {{
         "full_name": "<string or null>",
         "document_number": "<string or null>",
         "dob": "<YYYY-MM-DD or null>",
@@ -197,16 +197,16 @@ No explanations. No extra text.
         "net_monthly_income": <integer or null>,
         "gross_monthly_income": <integer or null>,
         "document_date": "<YYYY-MM-DD or null>"
-      },
-      "forensic_analysis": {
+      }},
+      "forensic_analysis": {{
         "confidence_score": <float>,
         "is_tampered": <true | false>,
         "tamper_indicators": ["<string>", "..."],
         "fraud_signals": ["<string>", "..."]
-      }
-    }
+      }}
+    }}
   ]
-}
+}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HARD CONSTRAINTS
@@ -296,7 +296,7 @@ async def document_agent_node(state: dict) -> dict:
 
     try:
         message = HumanMessage(content=[
-            {"type": "text", "text": DOCUMENT_OCR_PROMPT},
+            {"type": "text", "text": DOCUMENT_VISION_AGENT_PROMPT},
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_data}"}}
         ])
         response = await vision_llm.ainvoke([message])

@@ -92,7 +92,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
       {/* Header */}
       <div className="h-16 border-b border-slate-100 flex items-center px-8 bg-white/80 backdrop-blur-md sticky top-0 z-10 justify-between">
         <h1 className="text-[17px] font-bold text-slate-800 flex items-center">
-          Sales Agent <span className="text-slate-400 text-sm font-semibold ml-2.5 border-l border-slate-200 pl-2.5">Dynamic Command Center</span>
+          Loan Assistant <span className="text-slate-400 text-sm font-semibold ml-2.5 border-l border-slate-200 pl-2.5">Customer Support</span>
         </h1>
         
         {/* The 'Brain' Visualizer */}
@@ -385,9 +385,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
       </div>
     </form>
         <div className="text-center mt-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center space-x-1.5">
-          <span>Powered by LangGraph</span>
-          <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-          <span>Agentic Workflow</span>
+          <span>Secure NBFC Assistant</span>
         </div>
       </div>
     </div>

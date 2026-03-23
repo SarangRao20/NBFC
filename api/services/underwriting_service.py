@@ -142,7 +142,9 @@ async def underwrite(session_id: str) -> dict:
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
+        "message": message,
     })
+
     await advance_phase(session_id, "underwriting_complete")
 
     return {

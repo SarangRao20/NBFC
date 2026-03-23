@@ -70,7 +70,7 @@ async def verification_agent_node(state: dict) -> dict:
         msg = f"⚠️ **KYC Verification Issues Found:**\n{issue_text}\n\nPlease re-upload correct documents."
         log.append("❌ KYC verification failed.")
         await manager.broadcast_thinking(session_id, "KYC Agent", False)
-    return {
+        return {
             "kyc_status": "failed", 
             "messages": [AIMessage(content=msg)],
             "action_log": log,

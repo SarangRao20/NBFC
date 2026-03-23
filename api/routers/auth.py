@@ -2,10 +2,10 @@
 
 import random
 import string
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Form
 from pydantic import BaseModel
 from api.schemas.auth import OTPRequest, OTPVerify, LoginResponse, ProfileCheckResponse
-from api.services import auth_service
+from api.services.auth_service import auth_service
 from api.core.redis_cache import get_cache
 from api.core.exceptions import SessionNotFoundError
 from api.config import get_settings
@@ -23,13 +23,16 @@ class DevOTPRequest(BaseModel):
 
 @router.post("/send-otp", response_model=dict,
              summary="Send OTP with Development Bypass Option")
-async def send_otp(request: OTPRequest):
+async def send_otp(
+    phone: str = Form(...),
+    email: str = Form("")
+):
     """Send OTP to customer's email with development bypass option."""
     try:
         # Check if OTP is disabled for development
         if settings.DISABLE_OTP:
             dev_otp = settings.DEV_OTP
-            success = await auth_service.generate_dev_otp(request.phone, dev_otp)
+            success = await auth_service.generate_dev_otp(phone, dev_otp)
             
             return {
                 "success": success,
@@ -40,7 +43,7 @@ async def send_otp(request: OTPRequest):
             }
         
         # Normal OTP flow
-        result = await auth_service.send_otp(request.phone, request.email)
+        result = await auth_service.send_otp(phone, email)
         return result
         
     except Exception as e:
@@ -52,7 +55,11 @@ async def send_otp(request: OTPRequest):
 
 @router.post("/verify-otp", response_model=OTPVerify,
              summary="Verify OTP with Development Bypass")
-async def verify_otp(phone: str, otp: str, use_dev_otp: bool = False):
+async def verify_otp(
+    phone: str = Form(...),
+    otp: str = Form(...),
+    use_dev_otp: bool = Form(False)
+):
     """Verify OTP with development bypass option."""
     try:
         # Check if using development OTP
@@ -82,8 +89,96 @@ async def verify_otp(phone: str, otp: str, use_dev_otp: bool = False):
 
 
 @router.post("/login", response_model=LoginResponse,
-             summary="Enhanced Login with Profile Check")
-async def login(phone: str, otp: str, use_dev_otp: bool = False):
+             summary="Login with phone and password")
+async def login(
+    phone: str = Form(...),
+    password: str = Form(...)
+):
+    """Login with phone and password using mock customers database."""
+    try:
+        result = await auth_service.login_with_password(phone, password)
+        
+        if result["success"]:
+            return LoginResponse(
+                success=True,
+                message=result["message"],
+                session_id=result["session_id"],
+                profile_complete=True,
+                customer_data=result["customer_data"],
+                requires_profile_update=False
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=result["message"]
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
+        )
+
+
+@router.post("/register", response_model=dict,
+             summary="Register new customer")
+async def register(
+    phone: str = Form(...),
+    email: str = Form(...),
+    name: str = Form(...),
+    password: str = Form(...),
+    city: str = Form(None),
+    salary: float = Form(None),
+    dob: str = Form(None),
+    profession: str = Form(None),
+    address: str = Form(None)
+):
+    """Register new customer with OTP verification."""
+    try:
+        user_data = {
+            "phone": phone,
+            "email": email,
+            "name": name,
+            "password": password,
+            "city": city,
+            "salary": salary,
+            "dob": dob,
+            "profession": profession,
+            "address": address
+        }
+        
+        result = await auth_service.register_customer(user_data)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": "Registration successful",
+                "customer_data": result["customer_data"]
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result["message"]
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}"
+        )
+
+
+@router.post("/login-otp", response_model=LoginResponse,
+             summary="Enhanced Login with OTP and Profile Check")
+async def login_otp(
+    phone: str = Form(...),
+    otp: str = Form(...),
+    use_dev_otp: bool = Form(False)
+):
     """Enhanced login that checks profile completeness."""
     try:
         # Verify OTP first
@@ -228,3 +323,15 @@ async def toggle_otp(disable: bool = True, dev_otp: str = "123456"):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to toggle OTP: {str(e)}"
         )
+
+
+@router.get("/verify", summary="Verify Session")
+async def verify_session(session_id: str):
+    """Verify if a session is still valid and return customer data."""
+    result = await auth_service.verify_session(session_id)
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=result["message"]
+        )
+    return result

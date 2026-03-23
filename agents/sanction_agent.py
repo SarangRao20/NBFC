@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
 from langchain_core.messages import AIMessage
+from agents.session_manager import SessionManager
 
 # Ensure output directories exist
 os.makedirs("data/sanctions", exist_ok=True)
@@ -131,9 +132,33 @@ async def sanction_agent_node(state: dict):
     
     log.append(f"📫 Document dispatched to user.")
 
-    return {
+    updates = {
         "sanction_pdf": filepath, 
         "messages": [AIMessage(content=msg)],
         "action_log": log,
-        "options": ["Download Letter", "Complete Session"]
+        "options": ["Download Letter", "Complete Session"],
+        "current_phase": "sanction"
     }
+    
+    # Save document to MongoDB
+    session_id = state.get("session_id", "default")
+    try:
+        SessionManager.save_document(
+            session_id,
+            "sanction_letter",
+            filepath,
+            {"letter_type": letter_label},
+            1.0  # 100% confidence for system-generated document
+        )
+        print(f"📋 Sanction letter saved for session {session_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to save document: {e}")
+    
+    # Save session to MongoDB
+    try:
+        SessionManager.save_session(session_id, updates)
+        print(f"💾 Session {session_id} saved to MongoDB")
+    except Exception as e:
+        print(f"⚠️ Failed to save session: {e}")
+    
+    return updates

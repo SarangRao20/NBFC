@@ -7,41 +7,23 @@ Uses a rich LLM prompt to generate specific, non-generic advice.
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from datetime import datetime, timedelta
 from config import get_master_llm
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 
-ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor with 12+ years of expertise in retail banking.
-
-Your tone is professional, empathetic, and data-driven. You use a structured 'WhatsApp Business' format with emojis for readability.
+ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor at FinServe.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR CORE ADVISORY PROTOCOLS:
+## YOUR INTERACTIVE RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **DTI Transparency**: Always explain the Debt-to-Income ratio. If it's > 50%, be firm about the risks.
-2. **ROI Focus**: Explain how timely repayments improve their CIBIL score and reduce future interest costs.
-3. **E-Sign Facilitation**: Once approved, guide them to the 'Accept & E-Sign' button.
-4. **Hard Rejection Protocol**: If the loan is rejected, never say 'Sorry, bye'. Instead, provide a 3-step 'Credit Recovery Plan'.
+1. **BE CONCISE**: Never write more than 2 short sentences.
+2. **ONE QUESTION**: Always end your message with exactly one question to the user.
+3. **NO ROBOTS**: Talk like a human specialist. Use "I've been looking at your profile..." instead of "Based on the data...".
+4. **EMPATHY**: If they are in debt, be supportive. If they are doing well, celebrate it.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 📱 MESSAGE FORMAT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-*   Use bold for emphasis.
-*   Use checklists for steps.
-*   Keep paragraphs short.
-
-CASE: APPROVED
-"🎉 **Good news, {name}!** Your loan of ₹{amount} has been sanctioned..."
-
-CASE: REJECTED
-"📋 **Update on your application...** While we can't proceed today, here is your recovery plan..."
-━━━━━━━━━━━
-CASE: SIGNED & COMPLETED
-- Acknowledge signature and explain next steps for disbursement.
-
-CASE: APPROVED (PENDING SIGNATURE)
-- Warmly explain the offer, EMI dates, and provide the 'Accept & E-Sign' link.
-CASE: REJECTED / SOFT REJECT
-- Provide constructive feedback on how to improve eligibility (e.g., "Reducing your existing EMI of ₹{existing_emi_total:,} would improve your chances.")
+CASE: ADVICE ONLY
+- If the user has just corrected a profile detail (like salary or bike value), acknowledge it humanly (e.g., "Oh, my apologies! with ₹1.5 lakh, that changes things...").
+- Give one small tip. Ask if they want to know more about that topic or something else.
 """
 
 
@@ -73,16 +55,31 @@ async def advisor_agent_node(state: dict) -> dict:
     # Format past loans summary
     past_loans = customer.get("past_loans", [])
     past_loans_summary = ""
-    last_loan_amt = "N/A"
+    active_loans_found = False
     if past_loans:
-        past_loans_summary = "Customer has successfully handled previous loans with us:\n"
-        for pl in past_loans[:3]: # last 3
-            past_loans_summary += f"- ₹{pl.get('amount', 0):,} {pl.get('type','loan')} on {pl.get('date','recent')}: {pl.get('decision','Completed')}\n"
-            if pl.get("amount"): last_loan_amt = f"{pl.get('amount'):,}"
+        past_loans_summary = "Customer Loan Profile:\n"
+        for pl in past_loans:
+            status = pl.get('status', 'Unknown')
+            emi_val = pl.get('emi', 0)
+            if status == "Approved":
+                active_loans_found = True
+                past_loans_summary += f"✅ ACTIVE: ₹{pl.get('amount', 0):,} loan with ₹{emi_val:,} monthly EMI. "
+                if pl.get('tenure'):
+                    past_loans_summary += f"Tenure: {pl.get('tenure')} months. "
+                past_loans_summary += "\n"
+            else:
+                past_loans_summary += f"🕒 PAST: ₹{pl.get('amount', 0):,} {pl.get('type','loan')} - Status: {status}\n"
     else:
         past_loans_summary = "No previous loan history found in sessions."
 
+    if not active_loans_found:
+        existing_emi = customer.get("existing_emi_total", 0)
+        if existing_emi > 0:
+            past_loans_summary += f"\nNote: Customer has external EMI obligations of ₹{existing_emi:,}/month."
+
     # Suggest viable alternate amount if DTI rejection
+    suggested_amount = 0
+    suggested_emi = 0
     if salary > 0 and dti > 0.50:
         target_emi = salary * 0.45 - existing_emi
         rate_monthly = (terms.get("rate") or 12) / 100 / 12
@@ -93,9 +90,6 @@ async def advisor_agent_node(state: dict) -> dict:
         else:
             suggested_amount = int(target_emi * n)
             suggested_emi = int(target_emi)
-    else:
-        suggested_amount = 0
-        suggested_emi = 0
 
     # Prepare documents summary for the LLM
     docs = state.get("documents", {})
@@ -115,10 +109,16 @@ async def advisor_agent_node(state: dict) -> dict:
     # Use "SIGNED" as decision if is_signed is true
     adj_decision = "SIGNED" if is_signed else decision
 
-    # Context strings
-    reasons_str = "; ".join(reasons) if reasons else "N/A"
-    doc_type = docs.get("document_type", "None")
-    doc_conf = f"{docs.get('confidence', 0):.0%}"
+    # Calculate EMI dates
+    today = datetime.now()
+    first_emi_date = today + timedelta(days=30)
+    loan_end_date = first_emi_date + timedelta(days=(tenure - 1) * 30) if tenure > 0 else first_emi_date
+    
+    first_emi_str = first_emi_date.strftime("%d %B %Y")
+    loan_end_str = loan_end_date.strftime("%d %B %Y")
+
+    intent = state.get("intent", "none")
+    log = list(state.get("action_log") or [])
     
     profile_context = f"""Name: {customer.get("name", "Customer")}
 City: {customer.get("city", "N/A")}
@@ -129,6 +129,7 @@ Current EMI Burden: ₹{existing_emi:,}/month
 Active Loans: {", ".join(customer.get("current_loans", [])) or "None"}
 """
 
+    reasons_str = "; ".join(reasons) if reasons else "N/A"
     loan_context = f"""Decision: {adj_decision.upper()}
 Requested Amount: ₹{principal:,}
 Monthly EMI: ₹{emi:,.2f}
@@ -136,61 +137,55 @@ Tenure: {tenure} months
 Loan Type: {terms.get("loan_type", "Personal").capitalize()}
 DTI (Debt-to-Income) Ratio: {dti * 100:.1f}%
 Fraud Risk Score: {fraud:.2f} / 1.0
+First EMI Due Date: {first_emi_str}
+Loan End Date: {loan_end_str}
 Rejection Reasons: {reasons_str}
 """
 
     memories_context = f"""{docs_text}
 {past_loans_summary}
+Customer Since: {customer.get("created_at", "N/A")}
+Score Trend: {customer.get("score_source", "Default")}
 """
 
     # Rejection guidance for the LLM
     rejection_guidance = f"""
 CASE: HARD_REJECT
 - Deliver the news firmly but respectfully.
-- EXPLAIN the specific reason (e.g., "Requested loan of ₹{principal:,} exceeds our maximum exposure limit which is set at 2× your pre-approved limit of ₹{customer.get("pre_approved_limit", 0):,}.").
+- EXPLAIN the specific reason.
 - If credit score is the issue, suggest building credit behavior.
-- Do NOT offer a counter-offer here unless it's a "Soft Reject" case.
 
 CASE: SOFT_REJECT (NEGOTIATION)
-- Acknowledge that while the original request was rejected, they are eligible for a restructured offer.
-- Mention the suggested amount: ₹{suggested_amount:,} with EMI of ₹{suggested_emi:,}.
-- Invite them to explore the counter-offer.
+- Acknowledge the original request was rejected, but they are eligible for a restructured offer.
+- Mention Suggested Amount: ₹{suggested_amount:,} with EMI of ₹{suggested_emi:,}.
 
 CASE: NO ACTIVE LOANS (ADVICE ONLY)
 - If Requested Amount is ₹0, provide general financial wellness advice based on their profile.
-- Reference their city or past records to make it feel local and personal.
 """
 
     sys_msg = SystemMessage(content=ADVISOR_PROMPT_TEMPLATE + rejection_guidance)
     
-    # Context messages to avoid braces issues
     context_msgs = [
         SystemMessage(content=f"### CUSTOMER PROFILE\n{profile_context}"),
         SystemMessage(content=f"### LOAN APPLICATION RESULT\n{loan_context}"),
         SystemMessage(content=f"### DOCUMENTS & PAST HISTORY\n{memories_context}"),
-        SystemMessage(content=f"### ALTERNATIVE OFFER (if applicable)\nSuggested Amount: ₹{suggested_amount:,}\nSuggested EMI: ₹{suggested_emi:,}")
+        SystemMessage(content=f"### ALTERNATIVE OFFER\nSuggested Amount: ₹{suggested_amount:,}\nSuggested EMI: ₹{suggested_emi:,}")
     ]
 
-    log = list(state.get("action_log") or [])
-    log.append(f"⚖️ Priya is assessing DTI for {adj_decision.upper()} case...")
-    
     messages = [sys_msg] + context_msgs + state.get("messages", [])
     response = await llm.ainvoke(messages)
     
     updates = {
         "messages": [response],
-        "action_log": log,
+        "action_log": log + [f"⚖️ Priya responded for {adj_decision.upper()} case"],
         "options": ["Accept & E-Sign", "Talk to Specialist", "Exit"] if adj_decision == "approve" else ["View Recovery Plan", "Talk to Specialist", "About DTI"]
     }
     
-    # If the user just signed, update the state and send notification
-    if state.get("intent") == "sign":
+    if intent == "sign":
         log.append("✍️ E-Signature confirmed.")
         updates["is_signed"] = True
         updates["current_phase"] = "loan_disbursed"
-        print("✅ [ADVISOR AGENT] Signature recorded. Loan transitioning to disbursed phase.")
         
-        # Trigger Email Notification
         try:
             from api.core.email_service import get_email_service
             email_svc = await get_email_service()
@@ -198,25 +193,21 @@ CASE: NO ACTIVE LOANS (ADVICE ONLY)
                 customer_data=customer,
                 loan_terms=terms,
                 decision=decision,
-                session_id=state.get("session_id", "N/A")
+                session_id=session_id
             )
-            print("📧 [ADVISOR AGENT] Loan confirmation email sent.")
         except Exception as e:
-            print(f"  ⚠️ Email notification failed: {e}")
+            print(f"  ⚠️ Email Error: {e}")
 
-    # Ensure loan metadata JSON is present for UI updates if terms are finalized
-    if terms.get("principal") and terms.get("rate") and terms.get("tenure"):
-        if state.get("intent") in ("loan", "loan_confirmed", "sign"):
-            import json
-            loan_json = {
-                "loan_type": terms.get("loan_type", "personal"),
-                "loan_amount": terms.get("principal"),
-                "tenure": terms.get("tenure"),
-                "interest_rate": terms.get("rate"),
-                "confirmed": True if state.get("intent") in ("loan_confirmed", "sign") else False
-            }
-            response.content += f"\n\n```json\n{json.dumps(loan_json)}\n```"
+    # Ensure loan metadata JSON is present
+    if terms.get("principal") and terms.get("tenure"):
+        import json
+        loan_json = {
+            "loan_type": terms.get("loan_type", "personal"),
+            "loan_amount": terms.get("principal"),
+            "tenure": terms.get("tenure"),
+            "interest_rate": terms.get("rate", 12),
+            "confirmed": True if state.get("intent") in ("loan_confirmed", "sign") else False
+        }
+        response.content += f"\n\n```json\n{json.dumps(loan_json)}\n```"
     
     return updates
-
-

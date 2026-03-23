@@ -29,6 +29,25 @@ export interface AppState {
   pastSessions?: SessionSummary[];
 }
 
+export interface UserData {
+  name: string;
+  phone: string;
+  dob: string;
+  profession: string;
+  address: string;
+  email: string;
+  password: string;
+  city?: string;
+  salary?: number;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: UserData | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
 export interface SessionSummary {
   session_id: string;
   created_at: string;

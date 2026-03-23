@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from mock_apis.otp_service import send_otp, verify_otp
 from config import get_extraction_llm
+from agents.session_manager import SessionManager
 
 
 # ─── Pydantic Schema (Keep for documentation, but we'll parse manually) ─────────
@@ -33,12 +34,51 @@ class RegistrationState(TypedDict):
 
 
 def normalize_phone(phone: str) -> str:
-    phone = str(phone).strip().replace(" ", "").replace("-", "")
+    """Normalize phone to 10-digit format, handle various formats."""
+    phone = str(phone).strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
     if phone.startswith("+91"):
         phone = phone[3:]
     elif phone.startswith("91") and len(phone) == 12:
         phone = phone[2:]
-    return "".join(filter(str.isdigit, phone))[-10:]
+    # Extract only digits, take last 10
+    digits_only = "".join(filter(str.isdigit, phone))[-10:]
+    return digits_only if len(digits_only) == 10 else None
+
+
+def is_valid_email(email: str) -> bool:
+    """Validate email format strictly."""
+    if not email or "@" not in email:
+        return False
+    parts = email.split("@")
+    if len(parts) != 2:
+        return False
+    local, domain = parts
+    # Domain must have at least one dot
+    if "." not in domain or domain.count(".") > 2:
+        return False
+    # Domain parts must be non-empty
+    domain_parts = domain.split(".")
+    return all(part for part in domain_parts) and len(domain_parts[-1]) >= 2
+
+
+def extract_salary(text: str) -> int | None:
+    """Extract salary handling commas, k suffix, and lac/lakh."""
+    # First check for lac/lakh patterns
+    lac_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:lac|lakh|lacs|lakhs)\b', text, re.I)
+    if lac_match:
+        return int(float(lac_match.group(1)) * 100000)
+    
+    # Then check for regular patterns with salary keywords
+    match = re.search(r'(?:salary|income|earn|Rs\.?|₹)?\s*([\d,k]+)', text, re.I)
+    if not match:
+        return None
+    salary_str = match.group(1).replace(",", "").lower()
+    try:
+        if salary_str.endswith("k"):
+            return int(float(salary_str[:-1]) * 1000)
+        return int(salary_str)
+    except:
+        return None
 
 
 def _mask_sensitive_display(pan: str | None, aadhaar: str | None) -> str:
@@ -59,8 +99,62 @@ def _mask_sensitive_display(pan: str | None, aadhaar: str | None) -> str:
     return "\n".join(parts)
 
 
+async def lookup_customer_by_phone(phone: str) -> dict | None:
+    """Lookup existing customer by phone in CRM/MongoDB."""
+    try:
+        from db.database import users_collection
+        # Search for user with matching phone
+        user = users_collection.find_one({"phone": phone})
+        if user:
+            print(f"👤 [CRM LOOKUP] Found user by phone: {phone}")
+            return {
+                "name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "phone": user.get("phone", ""),
+                "city": user.get("city", ""),
+                "salary": user.get("salary", 0),
+                "dob": user.get("dob", ""),
+                "credit_score": user.get("credit_score", 650),
+                "pre_approved_limit": user.get("pre_approved_limit", 100000),
+                "existing_emi_total": user.get("existing_emi_total", 0),
+                "is_existing_customer": True
+            }
+    except Exception as e:
+        print(f"⚠️ [CRM LOOKUP] Error looking up by phone: {e}")
+    return None
+
+
+async def lookup_customer_by_email(email: str) -> dict | None:
+    """Lookup existing customer by email in CRM/MongoDB."""
+    try:
+        from db.database import users_collection
+        # Search for user with matching email
+        user = users_collection.find_one({"email": email.lower()})
+        if user:
+            print(f"👤 [CRM LOOKUP] Found user by email: {email}")
+            return {
+                "name": user.get("name", ""),
+                "email": user.get("email", ""),
+                "phone": user.get("phone", ""),
+                "city": user.get("city", ""),
+                "salary": user.get("salary", 0),
+                "dob": user.get("dob", ""),
+                "credit_score": user.get("credit_score", 650),
+                "pre_approved_limit": user.get("pre_approved_limit", 100000),
+                "existing_emi_total": user.get("existing_emi_total", 0),
+                "is_existing_customer": True
+            }
+    except Exception as e:
+        print(f"⚠️ [CRM LOOKUP] Error looking up by email: {e}")
+    return None
+
+
 def pull_customer_from_db(phone: str) -> dict | None:
+    """Pull customer from CRM, set defaults for new users."""
     phone = normalize_phone(phone)
+    if not phone:
+        return None
+    
     customer = None
     
     # 1. Check core CRM (customers.json)
@@ -68,7 +162,8 @@ def pull_customer_from_db(phone: str) -> dict | None:
         with open("mock_apis/customers.json", "r") as f:
             for c in json.load(f):
                 if normalize_phone(c["phone"]) == phone:
-                    customer = c
+                    customer = c.copy()
+                    customer["is_new_customer"] = False
                     break
     except Exception:
         pass
@@ -114,15 +209,40 @@ def pull_customer_from_db(phone: str) -> dict | None:
         
     if customer or past_loans:
         if not customer:
-            # Create a shell customer from past loans if not in CRM
-            customer = {"name": "Valued Customer", "phone": phone}
-            
+            # Create a shell customer from past loans if not in CRM (returning customer)
+            customer = {"name": "Valued Customer", "phone": phone, "is_new_customer": False}
+        else:
+            customer["is_new_customer"] = False
+        
+        # Set defaults from CRM or use fallback
+        if "existing_emi_total" not in customer or customer.get("existing_emi_total") is None:
+            customer["existing_emi_total"] = 0
+        if "credit_score" not in customer or customer.get("credit_score") <= 0:
+            customer["credit_score"] = 750  # Returning customer baseline
+            customer["score_source"] = "crm_returning"
+        else:
+            customer["score_source"] = "cibil"
+        
         customer["past_loans"] = past_loans
         customer["past_records"] = f"Returning customer with {len(past_loans)} previous records."
         return customer
-
-        
-    return None
+    
+    # NEW CUSTOMER: return minimal shell with defaults
+    return {
+        "name": "",
+        "phone": phone,
+        "email": "",
+        "city": "",
+        "salary": 0,
+        "dob": "",
+        "is_new_customer": True,
+        "credit_score": 650,           # ✅ Default for new users
+        "score_source": "system_default",
+        "existing_emi_total": 0,        # ✅ Default for new users
+        "pre_approved_limit": 100000,   # Default for new users
+        "past_loans": [],
+        "past_records": "New customer"
+    }
 
 
 REGISTRATION_AGENT_PROMPT = """You are the **Identity & Onboarding Specialist** at FinServe NBFC.
@@ -160,11 +280,10 @@ CORE RESPONSIBILITIES
 
 1. MULTI-STEP ONBOARDING (PACING)
 - Ask for MAXIMUM 1–2 fields per message
-- Group related fields together:
-  - Email + City
-  - DOB + Salary
-  - PAN + Aadhaar
-- Do NOT ask all fields at once
+- Group related fields together (Email + City, DOB + Salary, PAN + Aadhaar)
+- Progressive disclosure: basic info first (name, email), sensitive later (PAN, Aadhaar)
+- Avoid overwhelming the user with multiple questions at once
+- Example good flow: "What's your email?" → "Which city?" → "Your date of birth?" → "Monthly salary?"
 
 ---
 
@@ -178,16 +297,16 @@ CORE RESPONSIBILITIES
 
 3. DATA CAPTURE RULES
 
-Extract ONLY from user input:
-- email
-- city
-- salary (convert to integer)
-- dob (convert to YYYY-MM-DD)
-- pan_number
-- aadhaar_number
+Extract from user input:
+- email (validate: contains @ and ., lowercase it)
+- city (capitalize first letter)
+- salary (extract number, handle formats like "50,000" or "50k", convert to integer)
+- dob (extract date, convert to YYYY-MM-DD format)
+- pan_number (10 alphanumeric, uppercase)
+- aadhaar_number (12 digits)
 
 If a field is not provided → return null
-
+If format is invalid → ask user to clarify ("I need a valid email with @")
 Do NOT guess or infer missing values
 
 ---
@@ -228,19 +347,24 @@ IMPORTANT:
 
 7. FINAL HANDOFF (CRITICAL)
 
-When ALL required fields are collected:
+When ALL required fields are collected (name, email, phone, city, salary, dob):
 
-- Inform user:
-  "Your profile is now complete."
+1. Celebrate completion:
+   "✅ Your profile is complete! You're all set."
 
-- Reveal:
-  Pre-approved limit ₹{pre_approved_limit}
+2. Reveal pre-approved limit with context:
+   "💰 Pre-Approved Limit: ₹{pre_approved_limit}
+   This is the maximum we can approve for you based on your profile.
+   You can request up to this amount."
 
-- Transition:
-  Ask user if they want to proceed to loan exploration
+3. Provide clear next step:
+   "Ready to explore loan options? I'll connect you with our Loan Specialist to discuss your needs."
+
+4. Offer action buttons:
+   [✅ Explore Loans] [❓ Have Questions?]
 
 Example:
-"You now have a pre-approved limit of ₹{pre_approved_limit}. Shall I connect you with our Loan Specialist?"
+"Perfect, {{name}}! Your profile is now complete. Your pre-approved limit is ₹{pre_approved_limit}. Shall we start exploring loan options?"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRICT GUARDRAILS
@@ -276,18 +400,18 @@ JSON OUTPUT CONTRACT (STRICT)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ```json
-{
-  "newly_collected_data": {
+{{
+  "newly_collected_data": {{
     "email": "<string or null>",
     "city": "<string or null>",
     "salary": <integer or null>,
     "dob": "<YYYY-MM-DD or null>",
     "pan_number": "<raw unmasked value or null>",
     "aadhaar_number": "<raw unmasked value or null>"
-  },
+  }},
   "missing_fields_remaining": <integer>,
   "profile_complete": <true | false>
-}
+}}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CRITICAL OUTPUT RULES
@@ -332,23 +456,20 @@ Act with precision, clarity, and strict adherence to data privacy.
 
 # ─── Nodes ───────────────────────────────────────────────────────────────────────
 async def registration_chat_node(state: dict):
-    """Generates the chat response for Phase 0 based on current progress."""
+    """Generates the chat response for onboarding based on current progress."""
     print("🗣️ [REGISTRATION AGENT] Generating response...")
     from langchain_core.messages import SystemMessage, AIMessage
     from config import get_master_llm
     
     llm = get_master_llm()
-    phase = state.get("current_phase", "registration")
-    otp_verified = state.get("is_authenticated", False)
     updates = {}
 
     # Check for missing profile fields
-    required_fields = ["name", "email", "city", "salary", "dob", "occupation"]
+    required_fields = ["name", "email", "city", "salary", "dob"]
     missing = [f for f in required_fields if not state.get("customer_data", {}).get(f)]
-
     
     # Format missing fields for the prompt
-    missing_fields_str = ", ".join(missing) if missing else "NONE (All complete)"
+    missing_fields_str = ", ".join(missing) if missing else "None"
     
     sys_msg = SystemMessage(content=REGISTRATION_AGENT_PROMPT.format(
         missing_fields_str=missing_fields_str,
@@ -365,14 +486,8 @@ async def registration_chat_node(state: dict):
     
     response = await llm.ainvoke(messages)
     
-    # Only show Dev OTP during the verification phase
-    if not otp_verified:
-        dev_otp = state.get("customer_data", {}).get("dev_otp")
-        if dev_otp:
-            response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
-    
-    # Check if profile complete and append JSON schema
-    is_complete = len(missing) == 0 and otp_verified
+    # Check if profile complete (no missing required fields)
+    is_complete = len(missing) == 0
     if is_complete:
         # Add pre-approved limit revelation if not already shown
         pre_limit = state.get("customer_data", {}).get("pre_approved_limit", 0)
@@ -380,29 +495,38 @@ async def registration_chat_node(state: dict):
             response.content += f"\n\n**Pre-Approved Limit:** ₹{pre_limit:,}"
             response.content += f"\nYou're ready to explore our loan products!"
         
-        # Append JSON schema
-        json_output = {
+        updates["profile_complete"] = True
+        # Store JSON data in state, not in chat message
+        updates["collected_data"] = {
             "newly_collected_data": {},
             "missing_fields_remaining": 0,
             "profile_complete": True
         }
-        response.content += f"\n\n```json\n{json.dumps(json_output, indent=2)}\n```"
-        updates["profile_complete"] = True
         
-    updates.update({"messages": [response], "current_phase": phase})
+    updates.update({"messages": [response], "current_phase": "registration"})
+    
+    # Save session to MongoDB
+    session_id = state.get("session_id", "default")
+    try:
+        SessionManager.save_session(session_id, updates)
+        print(f"💾 Session {session_id} saved to MongoDB")
+    except Exception as e:
+        print(f"⚠️ Failed to save session: {e}")
+    
     return updates
 
 
 
 
 async def registration_extraction_node(state: dict):
-    """Robust extractor using regex + simple LLM fallback (no fragile tool-calls)."""
+    """Simplified extractor: Collect bare minimum to authenticate, then enrich."""
     print("--- REGISTRATION AGENT: EXTRACTION ---")
     log = list(state.get("action_log") or [])
     log.append("🔍 Running Registration Extraction Node")
     
-    if state.get("is_authenticated") and state.get("customer_data", {}).get("name"):
-        log.append("⏭️ Already authenticated — skipping extraction")
+    # Skip if profile is complete
+    if state.get("profile_complete"):
+        log.append("⏭️ Profile complete — moving to intent discovery")
         return {"action_log": log, "current_phase": "intent_discovery"}
 
     user_msg = ""
@@ -414,11 +538,18 @@ async def registration_extraction_node(state: dict):
     if not user_msg or len(user_msg.strip()) < 2:
         return {}
 
-    # 1. Regex shortcuts (FAST & FREE)
-    phone_match = re.search(r"\b(\d{10})\b", user_msg)
-    otp_match   = re.search(r"\b(\d{6})\b", user_msg)
-    email_match = re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", user_msg)
-    salary_match = re.search(r"(?:salary|income|earn|Rs\.?|₹)\s*(\d+k?|\d{4,7})", user_msg, re.I)
+    # 1. ✅ FIXED REGEX SHORTCUTS - Handle various formats
+    # Phone: Handle formats like "9876-543-210", "9876 543 210", "+91-9876543210"
+    cleaned = user_msg.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    phone_match = re.search(r"(?:\+91)?(\d{10})", cleaned)
+    
+    otp_match = re.search(r"\b(\d{6})\b", user_msg)
+    
+    # ✅ FIXED EMAIL - Stricter validation
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", user_msg)
+    
+    # ✅ FIXED SALARY - Handle commas ("₹50,000" or "50,000")
+    salary = extract_salary(user_msg)
     
     # 2. LLM Fallback for Name, City, and unstructured fields
     llm_extracted = {}
@@ -456,154 +587,75 @@ async def registration_extraction_node(state: dict):
     # Results
     phone = phone_match.group(1) if phone_match else None
     user_otp = otp_match.group(1) if otp_match else None
-    email = email_match.group(0) if email_match else llm_extracted.get("email")
+    email = email_match.group(0).lower() if email_match and is_valid_email(email_match.group(0)) else llm_extracted.get("email")
     
     updates = {}
     customer_data = state.get("customer_data", {}).copy()
-    is_auth = state.get("is_authenticated", False)
 
-    # Phase 1: Got phone
-    if phone and not customer_data.get("phone") and not is_auth:
-        clean_phone = normalize_phone(phone)
-        log.append(f"📱 Phone number detected: {clean_phone}")
-        log.append("🔐 Triggering OTP via SMS gateway")
-        
-        # Use auth_service for consistent logic
-        from api.services.auth_service import auth_service
-        res = await auth_service.send_otp(clean_phone, "customer@example.com") # Temp email placeholder
-        
-        customer_data["phone"] = clean_phone
-        updates["otp_sent"] = res.get("success", False)
-        if res.get("success"):
-            otp_val = res.get('dev_otp', 'SENT')
-            log.append(f"✅ OTP sent successfully")
-            customer_data["dev_otp"] = otp_val 
-            msg = f"📱 OTP sent to {clean_phone}."
-            if otp_val != 'SENT': msg += f" (Dev OTP: `{otp_val}`)"
-            updates["messages"] = [AIMessage(content=msg)]
+    # ✅ CAPTURE ALL AVAILABLE DATA FIRST
+    # Capture phone if available
+    if phone and not customer_data.get("phone"):
+        normalized = normalize_phone(phone)
+        if normalized:
+            customer_data["phone"] = normalized
+            log.append(f"☎️ Phone: {normalized}")
+            # 🔍 CRM LOOKUP: Check if user exists in CRM
+            crm_data = await lookup_customer_by_phone(normalized)
+            if crm_data:
+                log.append(f"👤 Found existing customer in CRM")
+                # Merge CRM data (CRM takes precedence for existing fields)
+                for key, value in crm_data.items():
+                    if value and not customer_data.get(key):
+                        customer_data[key] = value
+                        log.append(f"  ↳ Loaded {key} from CRM")
+    
+    # Capture email if available
+    if email and not customer_data.get("email"):
+        if is_valid_email(email):
+            customer_data["email"] = email.lower()
+            log.append(f"📧 Email: {email}")
+            # 🔍 CRM LOOKUP: Check if user exists in CRM by email
+            crm_data = await lookup_customer_by_email(email.lower())
+            if crm_data:
+                log.append(f"👤 Found existing customer in CRM by email")
+                # Merge CRM data (CRM takes precedence for existing fields)
+                for key, value in crm_data.items():
+                    if value and not customer_data.get(key):
+                        customer_data[key] = value
+                        log.append(f"  ↳ Loaded {key} from CRM")
         else:
-            log.append("❌ OTP delivery failed")
-            updates["messages"] = [AIMessage(content=f"❌ {res.get('message', 'Failed to send OTP')}")]
-
-    # Phase 2: Got OTP
-    elif user_otp and customer_data.get("phone") and not is_auth:
-        log.append(f"🔑 OTP code received — verifying")
-        from api.services.auth_service import auth_service
-        res = await auth_service.verify_otp(customer_data["phone"], user_otp)
-        
-        if res["success"]:
-            updates["is_authenticated"] = True
-            if "dev_otp" in customer_data:
-                del customer_data["dev_otp"]
-                log.append("🧹 Cleaned sensitive development data")
-            log.append("✅ OTP verified successfully")
-
-            log.append("🗃️ Looking up customer in CRM database")
-            db = pull_customer_from_db(customer_data["phone"])
-            if db:
-                customer_data.update(db)
-                log.append(f"👤 Existing customer found: {db['name']}")
-                msg = f"✅ Welcome back, **{db['name']}**! I've loaded your profile. How can I help you today?"
-                updates["messages"] = [AIMessage(content=msg)]
-                # Trigger profile check next turn via supervisor
-            else:
-                log.append("🆕 New customer — creating fresh profile")
-                updates["messages"] = [AIMessage(content="✅ OTP Verified! You're new here. What's your full name?")]
-        else:
-            log.append("❌ OTP verification failed — incorrect code")
-            updates["messages"] = [AIMessage(content=f"❌ {res['message']}")]
-
-    # Phase 3: Profile Enrichment
-    elif is_auth:
-        # Merge LLM extractions into customer_data
-        enriched = False
-        masked_msg = ""
-        
-        for k, v in llm_extracted.items():
-            if v and not customer_data.get(k):
+            log.append(f"⚠️ Invalid email format: {email}")
+    
+    # Extract remaining fields via LLM
+    # ✅ Do NOT extract existing_emi_total or occupation - they come from CRM/API
+    for k, v in llm_extracted.items():
+        if v and k not in ["existing_emi_total", "occupation", "salary"]:
+            if not customer_data.get(k):
                 customer_data[k] = v
-                log.append(f"📝 Profile update: {k} = {v}")
-                enriched = True
-        
-        # Email extraction
-        if email and not customer_data.get("email"):
-            customer_data["email"] = email
-            log.append(f"📧 Email extracted: {email}")
-            enriched = True
-        
-        # PAN & Aadhaar masking (store full, display masked)
-        pan = llm_extracted.get("pan_number")
-        aadhaar = llm_extracted.get("aadhaar_number")
-        if pan or aadhaar:
-            if pan and not customer_data.get("pan_number"):
-                customer_data["pan_number"] = pan
-                enriched = True
-            if aadhaar and not customer_data.get("aadhaar_number"):
-                customer_data["aadhaar_number"] = aadhaar
-                enriched = True
-            
-            # Generate masked display message
-            masked_msg = "\n\n" + _mask_sensitive_display(pan, aadhaar)
-            log.append("✅ Sensitive data masked for display (stored securely)")
-            
-        if enriched:
-            # Sync to DB
-            try:
-                from db.database import users_collection
-                await users_collection.update_one(
-                    {"phone": customer_data["phone"]},
-                    {"$set": {k: v for k, v in customer_data.items() if k in ["name", "email", "city", "salary", "existing_emi_total", "credit_score", "pan_number", "aadhaar_number", "dob"]}},
-                    upsert=True
-                )
-            except Exception as e:
-                print(f"  ⚠️ DB Update failed: {e}")
-        
-        # Check if profile is now complete
-        required_fields = ["name", "email", "city", "salary", "dob"]
-        missing = [f for f in required_fields if not customer_data.get(f)]
-        profile_complete = len(missing) == 0
-        
-        # Generate pre-approved limit reveal message if profile complete
-        if profile_complete:
-            pre_limit = customer_data.get("pre_approved_limit", 0)
-            handoff_msg = (
-                f"✅ **Your profile is now complete!**\n\n"
-                f"**Pre-Approved Limit:** ₹{pre_limit:,}\n\n"
-                f"You're now ready to explore our loan products. "
-                f"Shall I connect you with our Loan Specialist?"
-            )
-            
-            if masked_msg:
-                handoff_msg = masked_msg + "\n\n" + handoff_msg
-            
-            updates["messages"] = [AIMessage(content=handoff_msg)]
-            updates["profile_complete"] = True
-            log.append(f"🎉 Profile complete! Pre-approved limit: ₹{pre_limit:,}")
-        elif masked_msg:
-            # Just show the masked message if not complete yet
-            updates["messages"] = [AIMessage(content=masked_msg)]
-        
-        # Build JSON schema output (always append)
-        json_output = {
-            "newly_collected_data": {
-                "email": llm_extracted.get("email"),
-                "city": llm_extracted.get("city"),
-                "salary": llm_extracted.get("salary"),
-                "dob": llm_extracted.get("dob"),
-                "pan_number": llm_extracted.get("pan_number"),
-                "aadhaar_number": llm_extracted.get("aadhaar_number")
-            },
-            "missing_fields_remaining": len(missing),
-            "profile_complete": profile_complete
-        }
-        
-        # Append JSON to response if we had a message
-        if "messages" in updates:
-            updates["messages"][0].content += f"\n\n```json\n{json.dumps(json_output, indent=2)}\n```"
-        else:
-            # Create a message just for the JSON if enriched
-            if enriched:
-                updates["messages"] = [AIMessage(content=f"```json\n{json.dumps(json_output, indent=2)}\n```")]
+                log.append(f"📝 {k.capitalize()}: {v}")
+    
+    # ✅ FIXED: Handle salary extraction with new function
+    if salary and not customer_data.get("salary"):
+        customer_data["salary"] = salary
+        log.append(f"💰 Salary: ₹{salary:,}")
+    
+    # SET AUTHENTICATION: if we have contact info, user is authenticated
+    has_contact = customer_data.get("phone") or customer_data.get("email")
+    if has_contact and not state.get("is_authenticated"):
+        updates["is_authenticated"] = True
+        log.append("Contact info captured - profile enrichment enabled")
+    
+    # CHECK COMPLETION: all required fields present?
+    # ✅ Do NOT require phone/existing_emi_total (they're in CRM)
+    required = ["name", "email", "city", "salary", "dob"]
+    missing = [f for f in required if not customer_data.get(f)]
+    is_complete = len(missing) == 0
+    
+    if is_complete:
+        log.append("Profile COMPLETE - all required fields collected")
+        updates["profile_complete"] = True
+    else:
+        log.append(f"Profile incomplete - missing: {', '.join(missing)}")
 
     updates["customer_data"] = customer_data
     updates["action_log"] = log
@@ -612,7 +664,8 @@ async def registration_extraction_node(state: dict):
 
 # ─── Router ──────────────────────────────────────────────────────────────────────
 def route_registration(state: dict):
-    if state.get("is_authenticated") and state.get("customer_data", {}).get("name"):
+    """Exit registration when profile is complete."""
+    if state.get("profile_complete"):
         return END
     return "chat"
 

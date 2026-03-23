@@ -169,6 +169,24 @@ async def generate_sanction(session_id: str) -> dict:
 
     # ── PERSIST TO LOAN APPLICATIONS COLLECTION ──────────────────────────────
     from db.database import loan_applications_collection
+    disbursed_at = datetime.utcnow()
+    first_emi_due = (disbursed_at.replace(day=5) if disbursed_at.day <= 5 else (disbursed_at.replace(day=5) if disbursed_at.month < 12 else disbursed_at.replace(year=disbursed_at.year + 1, month=1, day=5)))
+    if disbursed_at.day > 5:
+        if disbursed_at.month == 12:
+            first_emi_due = first_emi_due.replace(year=disbursed_at.year + 1, month=1)
+        else:
+            first_emi_due = first_emi_due.replace(month=disbursed_at.month + 1)
+
+    emi_schedule = []
+    if tenure and emi:
+        due = first_emi_due
+        for _ in range(int(tenure)):
+            emi_schedule.append({"due_date": due.date().isoformat(), "amount": emi, "status": "pending"})
+            if due.month == 12:
+                due = due.replace(year=due.year + 1, month=1)
+            else:
+                due = due.replace(month=due.month + 1)
+
     loan_record = {
         "session_id": session_id,
         "customer_id": cust_id,
@@ -185,11 +203,14 @@ async def generate_sanction(session_id: str) -> dict:
         "reasons": reasons,
         "dti_ratio": dti,
         "credit_score": score,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": disbursed_at.isoformat(),
+        "loan_issued_at": disbursed_at.isoformat(),
+        "first_emi_due_date": first_emi_due.date().isoformat(),
+        "emi_schedule": emi_schedule,
         "pdf_path": filepath,
         "email_sent": email_sent
     }
-    await loan_applications_collection.insert_one(loan_record)
+    loan_applications_collection.insert_one(loan_record)
     status_emoji = "✅" if is_approved else "❌"
     print(f"📊 Loan application persisted: {cust_name} ({loan_record['status']}) - {decision}")
 
@@ -238,7 +259,7 @@ async def process_esign_acceptance(session_id: str) -> dict:
         )
     
     # Route to advisory agent
-    from agents.advisory_agent import advisory_agent_node
+    from agents.advisor_agent import advisor_agent_node
     advisory_state = {
         "customer_data": customer,
         "loan_terms": terms,
@@ -247,8 +268,14 @@ async def process_esign_acceptance(session_id: str) -> dict:
         "post_sanction": True
     }
     
-    advisory_result = advisory_agent_node(advisory_state)
-    advisory_message = advisory_result.get("messages", [{}])[0].get("content", "")
+    advisory_result = await advisor_agent_node(advisory_state)
+    msg_obj = advisory_result.get("messages", [None])[0]
+    advisory_message = ""
+    if msg_obj:
+        if hasattr(msg_obj, "content"):
+            advisory_message = msg_obj.content
+        elif isinstance(msg_obj, dict):
+            advisory_message = msg_obj.get("content", "")
     
     # Update session state
     await update_session(session_id, {

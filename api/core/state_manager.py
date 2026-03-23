@@ -34,6 +34,9 @@ def _default_state() -> dict:
             "risk_flags": [],
             "past_records": "",
             "drop_off_history": "",
+            "occupation": "",
+            "employer_name": "",
+            "residence_type": "", # Owned, Rented, etc.
         },
         "is_existing_customer": False,
 
@@ -113,13 +116,99 @@ async def create_session() -> dict:
         "timestamp": state["created_at"],
     })
     
-    await sessions_collection.insert_one(state)
+    sessions_collection.insert_one(state)
     return state
 
 
 async def get_session(session_id: str) -> Optional[dict]:
-    """Retrieve a session by ID from MongoDB. Returns None if not found."""
-    return await sessions_collection.find_one({"_id": session_id})
+    """Retrieve a session by ID from MongoDB. Returns None if not found, otherwise returns complete state schema."""
+    doc = sessions_collection.find_one({"_id": session_id})
+    if not doc:
+        return None
+    
+    # Remove MongoDB _id field and merge with default schema to ensure all fields exist
+    doc.pop("_id", None)
+    
+    # Ensure required nested dicts exist with defaults
+    default_customer = {
+        "name": "",
+        "phone": "",
+        "email": "",
+        "city": "",
+        "salary": 0,
+        "credit_score": 0,
+        "pre_approved_limit": 0,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "past_records": "",
+        "drop_off_history": "",
+    }
+    default_loan_terms = {
+        "loan_type": "",
+        "principal": 0,
+        "rate": 0.0,
+        "tenure": 0,
+        "emi": 0.0,
+    }
+    default_documents = {
+        "salary_slip_path": "",
+        "salary_extracted": 0.0,
+        "gross_salary_extracted": 0.0,
+        "employer_name": "",
+        "document_type": "",
+        "document_number": "",
+        "confidence": 0.0,
+        "verified": False,
+        "tampered": False,
+        "tamper_reason": "",
+        "name_extracted": "",
+    }
+    
+    # Merge defaults for nested objects (fill missing keys)
+    if "customer_data" not in doc or not isinstance(doc.get("customer_data"), dict):
+        doc["customer_data"] = {}
+    doc["customer_data"] = {**default_customer, **doc.get("customer_data", {})}
+    
+    if "loan_terms" not in doc or not isinstance(doc.get("loan_terms"), dict):
+        doc["loan_terms"] = {}
+    doc["loan_terms"] = {**default_loan_terms, **doc.get("loan_terms", {})}
+    
+    if "documents" not in doc or not isinstance(doc.get("documents"), dict):
+        doc["documents"] = {}
+    doc["documents"] = {**default_documents, **doc.get("documents", {})}
+    
+    # Ensure other required fields exist
+    if "messages" not in doc:
+        doc["messages"] = []
+    if "action_log" not in doc:
+        doc["action_log"] = []
+    if "is_authenticated" not in doc:
+        doc["is_authenticated"] = False
+    if "intent" not in doc:
+        doc["intent"] = "none"
+    if "session_id" not in doc:
+        doc["session_id"] = session_id
+    if "customer_id" not in doc:
+        doc["customer_id"] = ""
+    if "current_phase" not in doc:
+        doc["current_phase"] = "init"
+    if "options" not in doc:
+        doc["options"] = []
+    if "kyc_status" not in doc:
+        doc["kyc_status"] = ""
+    if "fraud_score" not in doc:
+        doc["fraud_score"] = -1.0
+    if "decision" not in doc:
+        doc["decision"] = ""
+    if "risk_level" not in doc:
+        doc["risk_level"] = ""
+    if "is_signed" not in doc:
+        doc["is_signed"] = False
+    if "dti_ratio" not in doc:
+        doc["dti_ratio"] = 0.0
+    
+    return doc
 
 
 def _sanitize_state(state: dict) -> dict:
@@ -168,7 +257,7 @@ async def update_session(session_id: str, updates: dict) -> dict:
 
     # Sanitize before persisting to MongoDB Atlas
     sanitized = _sanitize_state(state)
-    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
@@ -185,7 +274,7 @@ async def advance_phase(session_id: str, phase: str) -> dict:
     })
     
     sanitized = _sanitize_state(state)
-    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
@@ -203,11 +292,11 @@ async def end_session(session_id: str) -> dict:
     })
     
     sanitized = _sanitize_state(state)
-    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
 async def delete_session(session_id: str) -> bool:
     """Remove session from MongoDB."""
-    result = await sessions_collection.delete_one({"_id": session_id})
+    result = sessions_collection.delete_one({"_id": session_id})
     return result.deleted_count > 0
