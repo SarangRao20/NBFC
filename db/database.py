@@ -1,4 +1,4 @@
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
 
@@ -15,11 +15,11 @@ if not MONGO_URI or MONGO_URI == "mock":
     )
     print("🔧 Using mock database for development")
 else:
-    # ── ASYNC CLIENT FOR FASTAPI ────────────────────────────────────────────────
-    client = AsyncIOMotorClient(MONGO_URI)
+    # ── SYNCHRONOUS PYMONGO CLIENT ──────────────────────────────────────────────
+    client = MongoClient(MONGO_URI)
     database = client["nbfc_db"]   # Master Database
 
-    # Async Collections
+    # Synchronous Collections (PyMongo)
     users_collection = database["users"]
     sessions_collection = database["sessions"]
     loan_applications_collection = database["loan_applications"]
@@ -36,17 +36,21 @@ COLLECTION_NAMES = [
 ]
 
 
-async def init_collections():
-    """Initialize collections in MongoDB Atlas or mock database."""
+def init_collections():
+    """Initialize collections and GridFS in MongoDB Atlas."""
     if not MONGO_URI or MONGO_URI == "mock":
         # Mock database already initialized
         return True
     else:
         # MongoDB Atlas initialization
-        existing = await database.list_collection_names()
+        existing = database.list_collection_names()
         for name in COLLECTION_NAMES:
             if name not in existing:
-                await database.create_collection(name)
+                database.create_collection(name)
                 print(f"  📦 Created collection: {name}")
-            else:
-                print(f"  ✅ Collection already exists: {name}")
+        
+        # Initialize GridFS
+        from db.gridfs_service import init_gridfs_sync
+        init_gridfs_sync(database)
+        
+        return True

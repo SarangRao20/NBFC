@@ -87,16 +87,16 @@ async def lifespan(app: FastAPI):
     await startup_db()
     yield
     # Shutdown
-    await client.close()
+    client.close()
 
 # Lifespan event handler
 app.router.lifespan_context = lifespan
 
 async def startup_db():
     try:
-        await client.admin.command("ping")
+        client.admin.command("ping")
         print("✅ MongoDB Atlas connected")
-        await init_collections()
+        init_collections()
         print("✅ All collections initialized")
         
         # Initialize Redis and Email services

@@ -9,22 +9,27 @@ from datetime import datetime
 
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
-from db.database import documents_collection
+from db.database import documents_collection, MONGO_URI
 
 settings = get_settings()
 
+# GridFS is not used due to Motor/pymongo incompatibility
+# All files stored locally in data/uploads/
+USE_GRIDFS = False
+
 
 async def save_document_to_db(session_id: str, document_data: dict) -> str:
-    """Save document record to database."""
+    """Save document record to database (with support for GridFS file IDs)."""
     try:
         document_record = {
             "session_id": session_id,
             "document_type": document_data.get("document_type", "unknown"),
             "file_name": document_data.get("file_name", ""),
-            "file_path": document_data.get("file_path", ""),
+            "file_path": document_data.get("file_path", ""),  # GridFS ID if using MongoDB, local path if local
             "file_size": document_data.get("file_size", 0),
             "mime_type": document_data.get("mime_type", ""),
             "uploaded_at": document_data.get("uploaded_at", ""),
+            "storage_type": document_data.get("storage_type", "gridfs" if USE_GRIDFS else "local"),
             
             # OCR Extracted Data
             "name_extracted": document_data.get("name_extracted", ""),
@@ -47,7 +52,8 @@ async def save_document_to_db(session_id: str, document_data: dict) -> str:
         }
         
         result = await documents_collection.insert_one(document_record)
-        print(f"📄 Document saved to database: {result.inserted_id}")
+        storage_info = "GridFS" if USE_GRIDFS else "local storage"
+        print(f"📄 Document saved to database ({storage_info}): {result.inserted_id}")
         return str(result.inserted_id)
     except Exception as e:
         print(f"❌ Failed to save document to database: {e}")
@@ -94,10 +100,39 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
     mime_map = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
     mime_type = mime_map.get(ext, "image/jpeg")
 
-    # Save audit copy
-    audit_filename = f"audit_{session_id[:8]}_{file_name}"
-    audit_path = os.path.join(settings.UPLOAD_DIR, audit_filename)
-    shutil.copy2(file_path, audit_path)
+    # Upload to MongoDB GridFS or save locally
+    storage_file_path = file_path  # Default to local for now
+    gridfs_file_id = None
+    
+    if USE_GRIDFS:
+        try:
+            # Read file content and upload to GridFS
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            gridfs_file_id = await upload_file_to_gridfs(
+                file_content=file_content,
+                file_name=file_name,
+                session_id=session_id,
+                file_type="document",
+                metadata={
+                    "mime_type": mime_type,
+                    "document_type": "salary_slip"
+                }
+            )
+            print(f"✅ File stored in GridFS: {gridfs_file_id}")
+            storage_file_path = gridfs_file_id
+        except Exception as e:
+            print(f"⚠️ GridFS upload failed, will save reference to local file: {e}")
+            gridfs_file_id = None
+    else:
+        # Save audit copy locally
+        audit_filename = f"audit_{session_id[:8]}_{file_name}"
+        audit_path = os.path.join(settings.UPLOAD_DIR, audit_filename)
+        shutil.copy2(file_path, audit_path)
+        storage_file_path = audit_path
+        
+        print(f"💾 File saved locally: {audit_path}")
 
     # Call document agent for processing
     try:
@@ -105,7 +140,7 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         agent_state = {
             "session_id": session_id,
             "documents": {
-                "salary_slip_path": file_path,
+                "salary_slip_path": file_path,  # Use temp file for agent processing
                 "file_name": file_name
             },
             "customer_data": state.get("customer_data", {}),
@@ -142,10 +177,11 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "session_id": session_id,
         "document_type": extracted.get("document_type", "unknown"),
         "file_name": file_name,
-        "file_path": audit_path,
+        "file_path": storage_file_path,  # GridFS ID or local path
         "file_size": file_size,
         "mime_type": mime_type,
         "uploaded_at": datetime.utcnow().isoformat(),
+        "storage_type": "gridfs" if gridfs_file_id else "local",
         
         # OCR Extracted Data
         "name_extracted": extracted.get("name_extracted", ""),
@@ -174,7 +210,8 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "documents": {
             **state.get("documents", {}),
             **extracted,
-            "file_path": audit_path,
+            "file_path": storage_file_path,
+            "gridfs_file_id": gridfs_file_id,  # Store GridFS ID if available
             "doc_db_id": doc_id,
         }
     })
@@ -185,7 +222,8 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "extracted_data": extracted,
         "confidence": extracted.get("confidence", 0.0),
         "document_id": doc_id,
-        "message": f"Document processed and saved to database. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "gridfs_file_id": gridfs_file_id,
+        "message": f"Document processed and saved to {'GridFS' if gridfs_file_id else 'local storage'}. Confidence: {extracted.get('confidence', 0.0):.2f}"
     }
 
 async def extract_ocr_fallback(session_id: str, file_path: str, file_name: str) -> dict:

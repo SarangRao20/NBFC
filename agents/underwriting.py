@@ -11,20 +11,37 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.messages import AIMessage
 
-def _calculate_max_principal(max_emi, rate_annual, tenure_months):
-    """Helper to back-calculate principal from a target EMI."""
-    r = (rate_annual / 100) / 12
-    n = tenure_months
-    if r > 0:
-        return int(max_emi * ((1 + r)**n - 1) / (r * (1 + r)**n))
-    return int(max_emi * n)
+
+def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_months: int) -> float:
+    """Calculate maximum principal for a given EMI, rate, and tenure.
+    
+    Args:
+        desired_emi: Desired monthly EMI amount
+        annual_rate: Annual interest rate (e.g., 0.10 for 10%)
+        tenure_months: Loan tenure in months
+    
+    Returns:
+        Maximum principal amount achievable with the given constraints
+    """
+    if annual_rate == 0 or tenure_months == 0:
+        return 0
+    
+    monthly_rate = annual_rate / 12
+    if monthly_rate == 0:
+        # Simple division if no interest
+        return desired_emi * tenure_months
+    
+    # EMI formula: EMI = P * r * (1 + r)^n / ((1 + r)^n - 1)
+    # Rearranging for P: P = EMI * ((1 + r)^n - 1) / (r * (1 + r)^n)
+    numerator = (1 + monthly_rate) ** tenure_months - 1
+    denominator = monthly_rate * ((1 + monthly_rate) ** tenure_months)
+    
+    principal = desired_emi * (numerator / denominator)
+    return max(0, principal)  # Ensure non-negative
 
 def underwriting_agent_node(state: dict) -> dict:
     """Deterministic underwriting engine checking NTC and FOIR heuristics."""
     print("⚖️ [UNDERWRITING AGENT] Evaluating advanced eligibility rules...")
-
-    log = list(state.get("action_log") or [])
-    log.append("⚖️ Running eligibility scoring engine...")
 
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
@@ -37,6 +54,8 @@ def underwriting_agent_node(state: dict) -> dict:
     
     principal = terms.get("principal", 0)
     emi = terms.get("emi", 0)
+    rate = terms.get("rate", 0.10)  # Default 10% annual rate
+    tenure = terms.get("tenure", 12)  # Default 12 months
     fraud_score = state.get("fraud_score", 0.0)
     max_affordable_principal = terms.get("max_affordable_principal", 0)
 
@@ -49,18 +68,21 @@ def underwriting_agent_node(state: dict) -> dict:
     total_emi = existing_emi + emi
     dti = round(total_emi / salary, 3) if salary > 0 else 1.0
 
-    # ── DECISION TREE LOGIC ENGINE (Mapped to Diagram) ── #
-    
-    # Pre-check: Fraud Escapement Gate
+    # Rule 5: Risk Classification
+    if score > 0 and (score < 720 or dti > 0.40 or principal > pre_approved):
+        risk_level = "high"
+    elif 720 <= score <= 750 or 0.30 <= dti <= 0.40:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    # Evaluate Logical Gates
     if fraud_score >= 0.7:
         reasons.append(f"Fraud score ({fraud_score}) ≥ 0.7 — Escalated to manual audit.")
         decision = "hard_reject"
-        risk_level = "high"
-        log.append("🔴 CRITICAL: Fraud threshold exceeded.")
 
-    # Pre-check: NTC (New To Credit) Thin-file Detection
+    # NTC (New To Credit) Thin-file Detection
     elif score == 0 or score == -1:
-        log.append("ℹ️ New-to-Credit profile detected.")
         if not docs.get("bank_statement_verified"):
             reasons.append("New-To-Credit Detected. Please upload 6 months' Bank Statement for limit assessment.")
             decision = "pending_docs"
@@ -69,86 +91,60 @@ def underwriting_agent_node(state: dict) -> dict:
             decision = "soft_reject"
             alternative_offer = 50000.0
             
-    # Core Strategy: Standard CIBIL Borrower Execution Tree
+    # Standard CIBIL Borrower
     else:
-        # Branch 1: Credit Score >= 700?
         if score < 700:
-            reasons.append(f"Credit Score ({score}) is below the minimum threshold of 700.")
+            reasons.append(f"Credit score ({score}) is below the minimum threshold of 700.")
             decision = "hard_reject"
-            risk_level = "high"
-            log.append(f"❌ Credit score {score} is below threshold.")
-            
-        # Branch 2: Credit Score IS >= 700 -> Check Loan Limit
-        else:
-            log.append(f"✅ Credit score {score} verified.")
-            # Categorize the Limit
-            if principal <= pre_approved:
-                limit_category = "Low"
-            elif principal > (2 * pre_approved):
-                limit_category = "High"
-            else:
-                limit_category = "Medium"
+        elif principal > 2 * pre_approved:
+            reasons.append(f"Requested loan exceeds maximum permissible exposure (2× limit).")
+            decision = "hard_reject"
+        elif principal > pre_approved and not docs.get("verified"):
+            reasons.append("Loan exceeds pre-approved limit; additional income verification (Salary Slip) required.")
+            decision = "pending_docs"
+        elif dti > 0.50:
+            reasons.append(f"EMI exceeds affordability threshold (Total EMI > 50% of income).")
+            decision = "reject"
 
-            # Route by Limit Category
-            if limit_category == "Low":
-                # Tag: Low Risk -> Approved (Bypasses DTI caps!)
-                risk_level = "low"
-                decision = "approve"
-                log.append("✅ Loan within pre-approved limits.")
-                
-            elif limit_category == "High":
-                # Hard Reject: Exposure Limit
-                reasons.append(f"Requested loan strongly exceeds maximum permissible exposure (2× pre-approved limit).")
-                decision = "hard_reject"
-                risk_level = "high"
-                log.append("❌ Loan exceeds maximum exposure limits.")
-                
-            elif limit_category == "Medium":
-                # Calculate DTI
-                # If they require a Medium limit, we MUST verify their salary slip first.
-                if not docs.get("verified"):
-                    reasons.append("To approve a medium-exposure loan exceeding your basic pre-approved limits, please upload your Salary Slip.")
-                    decision = "pending_docs"
-                    log.append("⏳ Documentation pending for higher limit.")
-                else:
-                    log.append(f"📊 Analyzing DTI ratio ({dti*100:.1f}%)...")
-                    if dti > 0.50:
-                        # High DTI -> Soft Reject
-                        reasons.append(f"EMI pushes DTI to {dti*100:.1f}%, exceeding 50% safety limit.")
-                        decision = "soft_reject"
-                        risk_level = "medium"
-                        log.append("⚠️ DTI safety limit exceeded.")
-                        if max_affordable_principal > 0:
-                            alternative_offer = min(max_affordable_principal, 2 * pre_approved)
-                    else:
-                        # Acceptable DTI -> Approved
-                        decision = "approve"
-                        risk_level = "medium"
-                        log.append("✅ DTI within safe limits.")
+    # Rule 7: Smart Offer Optimization + Soft Reject Classification
+    # Per workflow diagram: DTI-only failures with good credit → "soft_reject" (Persuasion Loop)
+    # Hard rejects (fraud, low credit score, exposure) remain "reject"
+    if decision == "reject" and fraud_score < 0.7 and score >= 700:
+        # Calculate maximum mathematically viable EMI
+        max_viable_emi = (0.50 * salary) - existing_emi
+        if max_viable_emi > 0:
+            alt_p = _calculate_max_principal(max_viable_emi, rate, tenure)
+            # Cap the alternative offer to the absolute maximum exposure limit (2x pre-approved)
+            alt_p = min(alt_p, 2 * pre_approved)
+            alternative_offer = alt_p
+            # Reclassify as soft_reject — eligible for Persuasion Loop negotiation
+            if alt_p > 1000:
+                decision = "soft_reject"
 
     # Rule 9: Explainability Layer Output Generator
     if decision == "approve":
-        msg = f"✅ **LOAN APPROVED**\n\nYour application for ₹{principal:,} has been approved! Your EMI of ₹{emi:,.2f} fits perfectly within your profile."
-        opts = ["Accept & Proceed", "Talk to Specialist", "Exit"]
+        msg = (f"✅ **LOAN APPROVED**\n\n"
+               f"**Decision Reasoning**: Your EMI of ₹{emi:,.2f} accounts for {dti*100:.1f}% of your monthly income, "
+               f"which is comfortably within our safety threshold. Your application has been fully sanctioned under a **{risk_level.title()} Risk** classification.")
     
     elif decision == "pending_docs":
         msg = (f"⏳ **LOAN PENDING (Additional Documents Required)**\n\n"
-               f"**Decision Reasoning**: {' '.join(reasons)}")
-        opts = ["Upload Now", "Ask Arjun for Help", "Exit"]
-        
+               f"**Decision Reasoning**: Your requested loan of ₹{principal:,} exceeds your standard pre-approved limit "
+               f"of ₹{pre_approved:,}. To safely process this, we require additional income verification. "
+               f"Please upload your latest salary slip.")
+
     elif decision == "soft_reject":
         reason_text = "\n".join(f"• {r}" for r in reasons)
-        msg = (f"❌ **LOAN BLOCKED AT CURRENT AMOUNT**\n\n"
-               f"**Cause**:\n{reason_text}\n\n"
-               f"💡 **Smart Re-Optimization Offer**: While we cannot approve ₹{principal:,.0f}, we can instantly approve an optimized alternative "
-               f"loan amount of **₹{alternative_offer:,.0f}** for the exact same tenure based on your verified safety limits.")
-        opts = ["Accept ₹{alternative_offer:,}", "Edit Amount", "Talk to Specialist"]
-               
+        msg = (f"⚠️ **LOAN UNDER REVIEW — Negotiation Available**\n\n"
+               f"**Decision Reasoning**:\n{reason_text}\n\n"
+               f"💡 **Good News**: Your credit profile (Score: {score}) qualifies you for a revised offer.\n"
+               f"We can approve up to **₹{alternative_offer:,.0f}** for the same tenure.\n\n"
+               f"Our Sales Advisor will now help you explore modified terms.")
+
     else:
         reason_text = "\n".join(f"• {r}" for r in reasons)
         msg = (f"❌ **LOAN REJECTED**\n\n"
                f"**Decision Reasoning**:\n{reason_text}")
-        opts = ["View Recovery Plan", "Talk to Specialist", "Exit"]
 
     return {
         "decision": decision,
@@ -156,7 +152,5 @@ def underwriting_agent_node(state: dict) -> dict:
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
-        "messages": [AIMessage(content=msg)],
-        "action_log": log,
-        "options": opts
+        "messages": [AIMessage(content=msg)]
     }

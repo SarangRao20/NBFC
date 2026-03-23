@@ -41,6 +41,24 @@ def normalize_phone(phone: str) -> str:
     return "".join(filter(str.isdigit, phone))[-10:]
 
 
+def _mask_sensitive_display(pan: str | None, aadhaar: str | None) -> str:
+    """Generate masked PII confirmation message for display only.
+    
+    Args:
+        pan: Full PAN number (will be masked to last 4)
+        aadhaar: Full Aadhaar number (will be masked to last 4)
+    
+    Returns:
+        Formatted message with masked values
+    """
+    parts = []
+    if pan and len(pan) >= 4:
+        parts.append(f"🔐 PAN ending in ****{pan[-4:]} securely recorded")
+    if aadhaar and len(aadhaar) >= 4:
+        parts.append(f"🔐 Aadhaar ending in ****{aadhaar[-4:]} securely recorded")
+    return "\n".join(parts)
+
+
 def pull_customer_from_db(phone: str) -> dict | None:
     phone = normalize_phone(phone)
     customer = None
@@ -107,33 +125,208 @@ def pull_customer_from_db(phone: str) -> dict | None:
     return None
 
 
-REGISTRATION_SYSTEM_PROMPT = """You are Arjun, the Identity & Onboarding Specialist at FinServe NBFC. Your sole responsibility is to ensure the customer's identity is verified and their profile is 100% complete for regulatory compliance.
+REGISTRATION_AGENT_PROMPT = """You are the **Identity & Onboarding Specialist** at FinServe NBFC.
+
+SYSTEM ROLE:
+You are responsible for onboarding users, completing their profile for regulatory compliance, and preparing them for transition to the loan journey.
+
+You operate in a **state-driven system (LangGraph)** and must:
+- Collect missing profile data
+- Validate and normalize inputs
+- Maintain data privacy
+- Output structured JSON for backend updates
+
+You are NOT:
+- A sales agent
+- An underwriter
+- A financial advisor
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR CORE RESPONSIBILITIES:
+CRM DATA & SYSTEM STATE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **Welcome & Identity**: Verify the customer's phone number and full name.
-2. **Profile Completeness**: If any mandatory fields are missing (Email, City, Salary, DOB, Occupation), you must ask for them one by one.
-3. **CRM Lookup**: Reference the provided CRM history if available to acknowledge return users.
+
+Known Profile Data:
+{crm_data_json}
+
+Missing Mandatory Fields:
+{missing_fields_list}
+
+Pre-Approved Limit:
+₹{pre_approved_limit}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## 🚫 STRICT BOUNDARIES (ANTI-HALLUCINATION):
+CORE RESPONSIBILITIES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- **NO LOAN ADVICE**: Do NOT discuss loan products, eligibility, interest rates, or EMI calculations. If the user asks about loans, say: "I'll guide you to our Loan Specialist once we've completed your basic profile."
-- **NO SPECULATION**: Do NOT guess or hallucinate any data. Only use what the user provides or what is in the CRM.
-- **NO SYSTEM DISCLOSURE**: Do NOT discuss internal graph nodes or technical details.
+
+1. MULTI-STEP ONBOARDING (PACING)
+- Ask for MAXIMUM 1–2 fields per message
+- Group related fields together:
+  - Email + City
+  - DOB + Salary
+  - PAN + Aadhaar
+- Do NOT ask all fields at once
+
+---
+
+2. SMART CONTEXT USAGE
+- If user is returning:
+  - Greet by name
+  - Acknowledge existing data is already available
+- NEVER ask for fields already present in Known Profile Data
+
+---
+
+3. DATA CAPTURE RULES
+
+Extract ONLY from user input:
+- email
+- city
+- salary (convert to integer)
+- dob (convert to YYYY-MM-DD)
+- pan_number
+- aadhaar_number
+
+If a field is not provided → return null
+
+Do NOT guess or infer missing values
+
+---
+
+4. DATA NORMALIZATION
+
+- Salary → integer (remove commas, ₹)
+- DOB → YYYY-MM-DD
+- Email → lowercase
+- PAN → uppercase
+- Aadhaar → digits only (12 digits)
+
+---
+
+5. SECURE DATA MASKING (CRITICAL)
+
+When user provides:
+- PAN → display only last 4 characters
+- Aadhaar → display only last 4 digits
+
+Example:
+"PAN ending in ****1234 has been securely recorded"
+
+IMPORTANT:
+- NEVER show full PAN or Aadhaar in response
+- ALWAYS store full value in JSON
+
+---
+
+6. PROGRESS TRACKING
+
+- Track remaining missing fields
+- Update:
+  - missing_fields_remaining (integer)
+  - profile_complete (true/false)
+
+---
+
+7. FINAL HANDOFF (CRITICAL)
+
+When ALL required fields are collected:
+
+- Inform user:
+  "Your profile is now complete."
+
+- Reveal:
+  Pre-approved limit ₹{pre_approved_limit}
+
+- Transition:
+  Ask user if they want to proceed to loan exploration
+
+Example:
+"You now have a pre-approved limit of ₹{pre_approved_limit}. Shall I connect you with our Loan Specialist?"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## MANDATORY FIELDS TO CHECK:
+STRICT GUARDRAILS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Needed Fields: {missing_fields_str}
+
+DO NOT:
+- Calculate EMI
+- Discuss interest rates
+- Offer loan recommendations
+- Assume missing data
+- Display sensitive data in full
+
+ALWAYS:
+- Respect data privacy
+- Stay within onboarding scope
+- Keep interaction simple and guided
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## CONVERSATION STYLE:
+RESPONSE FORMAT RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Professional, efficient, and welcoming.
-- Use the customer's name if known.
-- If the profile is complete, say: "Perfect! Your profile is now complete. How can I assist you with our services today?"
+
+Your response MUST have two parts:
+
+1. Conversational message (first)
+- Friendly, professional
+- Short and clear
+- Ask next required fields
+
+2. JSON block (LAST line ONLY)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JSON OUTPUT CONTRACT (STRICT)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+```json
+{
+  "newly_collected_data": {
+    "email": "<string or null>",
+    "city": "<string or null>",
+    "salary": <integer or null>,
+    "dob": "<YYYY-MM-DD or null>",
+    "pan_number": "<raw unmasked value or null>",
+    "aadhaar_number": "<raw unmasked value or null>"
+  },
+  "missing_fields_remaining": <integer>,
+  "profile_complete": <true | false>
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL OUTPUT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+JSON MUST be valid
+JSON MUST be last in response
+NO text after JSON
+Do NOT mask values inside JSON
+Do NOT omit fields
+Use null if not provided
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EDGE CASE HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If user provides multiple fields at once → extract all
+If user gives partial data → update only those fields
+If invalid format:
+Ask for correction
+Do NOT store invalid values
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FINAL BEHAVIOR SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You are:
+
+A structured onboarding assistant
+A secure data collector
+A compliance-focused system agent
+
+You are NOT:
+
+A chatbot for general queries
+A decision maker
+A financial advisor
+
+Act with precision, clarity, and strict adherence to data privacy.
 """
 
 
@@ -157,8 +350,11 @@ async def registration_chat_node(state: dict):
     # Format missing fields for the prompt
     missing_fields_str = ", ".join(missing) if missing else "NONE (All complete)"
     
-    sys_msg = SystemMessage(content=REGISTRATION_SYSTEM_PROMPT.format(
-        missing_fields_str=missing_fields_str
+    sys_msg = SystemMessage(content=REGISTRATION_AGENT_PROMPT.format(
+        missing_fields_str=missing_fields_str,
+        crm_data_json=json.dumps(state.get("customer_data", {}), indent=2),
+        missing_fields_list=missing_fields_str,
+        pre_approved_limit=state.get("customer_data", {}).get("pre_approved_limit", 50000)
     ))
     
     # Include memory of what we last asked
@@ -174,6 +370,24 @@ async def registration_chat_node(state: dict):
         dev_otp = state.get("customer_data", {}).get("dev_otp")
         if dev_otp:
             response.content += f"\n\n📱 **(Dev Mode OTP: {dev_otp})**"
+    
+    # Check if profile complete and append JSON schema
+    is_complete = len(missing) == 0 and otp_verified
+    if is_complete:
+        # Add pre-approved limit revelation if not already shown
+        pre_limit = state.get("customer_data", {}).get("pre_approved_limit", 0)
+        if "Pre-Approved Limit" not in response.content:
+            response.content += f"\n\n**Pre-Approved Limit:** ₹{pre_limit:,}"
+            response.content += f"\nYou're ready to explore our loan products!"
+        
+        # Append JSON schema
+        json_output = {
+            "newly_collected_data": {},
+            "missing_fields_remaining": 0,
+            "profile_complete": True
+        }
+        response.content += f"\n\n```json\n{json.dumps(json_output, indent=2)}\n```"
+        updates["profile_complete"] = True
         
     updates.update({"messages": [response], "current_phase": phase})
     return updates
@@ -303,16 +517,34 @@ async def registration_extraction_node(state: dict):
     elif is_auth:
         # Merge LLM extractions into customer_data
         enriched = False
+        masked_msg = ""
+        
         for k, v in llm_extracted.items():
             if v and not customer_data.get(k):
                 customer_data[k] = v
                 log.append(f"📝 Profile update: {k} = {v}")
                 enriched = True
         
+        # Email extraction
         if email and not customer_data.get("email"):
             customer_data["email"] = email
             log.append(f"📧 Email extracted: {email}")
             enriched = True
+        
+        # PAN & Aadhaar masking (store full, display masked)
+        pan = llm_extracted.get("pan_number")
+        aadhaar = llm_extracted.get("aadhaar_number")
+        if pan or aadhaar:
+            if pan and not customer_data.get("pan_number"):
+                customer_data["pan_number"] = pan
+                enriched = True
+            if aadhaar and not customer_data.get("aadhaar_number"):
+                customer_data["aadhaar_number"] = aadhaar
+                enriched = True
+            
+            # Generate masked display message
+            masked_msg = "\n\n" + _mask_sensitive_display(pan, aadhaar)
+            log.append("✅ Sensitive data masked for display (stored securely)")
             
         if enriched:
             # Sync to DB
@@ -320,16 +552,58 @@ async def registration_extraction_node(state: dict):
                 from db.database import users_collection
                 await users_collection.update_one(
                     {"phone": customer_data["phone"]},
-                    {"$set": {k: v for k, v in customer_data.items() if k in ["name", "email", "city", "salary", "existing_emi_total", "credit_score"]}},
+                    {"$set": {k: v for k, v in customer_data.items() if k in ["name", "email", "city", "salary", "existing_emi_total", "credit_score", "pan_number", "aadhaar_number", "dob"]}},
                     upsert=True
                 )
             except Exception as e:
                 print(f"  ⚠️ DB Update failed: {e}")
-
-    updates["customer_data"] = customer_data
-    updates["action_log"] = log
-    return updates
-
+        
+        # Check if profile is now complete
+        required_fields = ["name", "email", "city", "salary", "dob"]
+        missing = [f for f in required_fields if not customer_data.get(f)]
+        profile_complete = len(missing) == 0
+        
+        # Generate pre-approved limit reveal message if profile complete
+        if profile_complete:
+            pre_limit = customer_data.get("pre_approved_limit", 0)
+            handoff_msg = (
+                f"✅ **Your profile is now complete!**\n\n"
+                f"**Pre-Approved Limit:** ₹{pre_limit:,}\n\n"
+                f"You're now ready to explore our loan products. "
+                f"Shall I connect you with our Loan Specialist?"
+            )
+            
+            if masked_msg:
+                handoff_msg = masked_msg + "\n\n" + handoff_msg
+            
+            updates["messages"] = [AIMessage(content=handoff_msg)]
+            updates["profile_complete"] = True
+            log.append(f"🎉 Profile complete! Pre-approved limit: ₹{pre_limit:,}")
+        elif masked_msg:
+            # Just show the masked message if not complete yet
+            updates["messages"] = [AIMessage(content=masked_msg)]
+        
+        # Build JSON schema output (always append)
+        json_output = {
+            "newly_collected_data": {
+                "email": llm_extracted.get("email"),
+                "city": llm_extracted.get("city"),
+                "salary": llm_extracted.get("salary"),
+                "dob": llm_extracted.get("dob"),
+                "pan_number": llm_extracted.get("pan_number"),
+                "aadhaar_number": llm_extracted.get("aadhaar_number")
+            },
+            "missing_fields_remaining": len(missing),
+            "profile_complete": profile_complete
+        }
+        
+        # Append JSON to response if we had a message
+        if "messages" in updates:
+            updates["messages"][0].content += f"\n\n```json\n{json.dumps(json_output, indent=2)}\n```"
+        else:
+            # Create a message just for the JSON if enriched
+            if enriched:
+                updates["messages"] = [AIMessage(content=f"```json\n{json.dumps(json_output, indent=2)}\n```")]
 
     updates["customer_data"] = customer_data
     updates["action_log"] = log

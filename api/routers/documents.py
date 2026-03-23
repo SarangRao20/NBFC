@@ -3,7 +3,8 @@
 import os
 import shutil
 import tempfile
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
 from api.schemas.documents import (
     RequestDocumentsResponse, OCRExtractionResponse,
     TamperCheckResponse, VerifyIncomeResponse,
@@ -69,3 +70,42 @@ async def verify_income(session_id: str):
     if result is None:
         raise SessionNotFoundError(session_id)
     return result
+
+
+@router.get("/{session_id}/download-document/{gridfs_file_id}",
+            summary="Download Document from MongoDB GridFS")
+async def download_document(session_id: str, gridfs_file_id: str):
+    """Download a document that was stored in MongoDB GridFS.
+    
+    Args:
+        session_id: Session ID
+        gridfs_file_id: MongoDB GridFS file ID (from OCR extraction response)
+    
+    Returns:
+        File stream with appropriate content-type
+    """
+    try:
+        from db.gridfs_service import download_file_from_gridfs
+        
+        # Download file from GridFS
+        file_content, file_info = await download_file_from_gridfs(gridfs_file_id)
+        
+        if not file_content:
+            raise HTTPException(status_code=404, detail="File not found in GridFS")
+        
+        filename = file_info.get("filename", "document")
+        content_type = file_info.get("contentType", "application/octet-stream")
+        
+        # Return as streaming response
+        async def generate():
+            yield file_content
+        
+        return StreamingResponse(
+            generate(),
+            media_type=content_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        print(f"❌ Failed to download document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
