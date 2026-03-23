@@ -10,7 +10,8 @@ fastapi
 uvicorn
 python-dotenv
 python-multipart
-motor
+pymongo
+GridFS
 pydantic[email]
 email-validator
 pydantic-settings
@@ -18,4 +19,4 @@ redis
 langchain-community
 langchain-google-genai
 langchain-groq
-langchain-openai
+langchain-openai
