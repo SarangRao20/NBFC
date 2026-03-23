@@ -1,38 +1,128 @@
-# Environments
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENVIRONMENT VARIABLES
+# ═══════════════════════════════════════════════════════════════════════════════
 .env
+.env.local
+.env.*.local
+.env.*.example
 
-# Virtual Environments
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIRTUAL ENVIRONMENTS
+# ═══════════════════════════════════════════════════════════════════════════════
 venv/
 env/
 .venv/
 ENV/
+env.bak/
+venv.bak/
 
-# Python
+# ═══════════════════════════════════════════════════════════════════════════════
+# PYTHON CACHE & BYTECODE
+# ═══════════════════════════════════════════════════════════════════════════════
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+develop-eggs/
+.installed.cfg
+*.egg-info
+.pytest_cache/
+.coverage
+htmlcov/
 
-# MyPy
+# ═══════════════════════════════════════════════════════════════════════════════
+# TYPE CHECKING & LINTING
+# ═══════════════════════════════════════════════════════════════════════════════
 .mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pylint.d/
+.ruff_cache/
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# ═══════════════════════════════════════════════════════════════════════════════
+# TESTING & TEST FILES
+# ═══════════════════════════════════════════════════════════════════════════════
+.pytest_cache/
+.tox/
+.hypothesis/
+test_*.py
+*_test.py
+tests/__pycache__/
+evals/__pycache__/
+*.coverage
+.coverage.*
 
-# Data (generated at runtime)
-data/uploads/
-data/sanctions/
-data/nbfc.db
-
-# LangGraph Studio
-.langgraph_api/
-
-# Temp files
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEMPORARY & RUNTIME FILES
+# ═══════════════════════════════════════════════════════════════════════════════
 temp_*.jpg
 temp_*.png
-*.pdf
+tmp*.jpg
+tmp*.png
+tmp*.pdf
+audit_*.pdf
+audit_*.jpg
+audit_*.png
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.~*
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA & UPLOADS (RUNTIME GENERATED)
+# ═══════════════════════════════════════════════════════════════════════════════
+data/uploads/*
+data/sanctions/*
+data/nbfc.db
+mock_db.json
+*.db
+*.sqlite
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IDE & EDITOR SPECIFIC
+# ═══════════════════════════════════════════════════════════════════════════════
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+.vs/
+*.code-workspace
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OS GENERATED FILES
+# ═══════════════════════════════════════════════════════════════════════════════
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.directory
+*.lnk
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NODE & FRONTEND
+# ═══════════════════════════════════════════════════════════════════════════════
 node_modules/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DOCUMENTATION & BUILD ARTIFACTS
+# ═══════════════════════════════════════════════════════════════════════════════
+.langgraph_api/
 .agent/
 .gemini/
 .gsd/
@@ -46,4 +136,14 @@ CHANGELOG.md
 LICENSEStep
 FRONTEND_SPEC.md
 
-node_modules/
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENERATED DOCUMENTATION
+# ═══════════════════════════════════════════════════════════════════════════════
+*.md
+!README.md
+!README*.md
+AGENT_*.md
+OPTIONAL_*.md
+*_SUMMARY.md
+*_ANALYSIS.md
+*_FIXES.md
