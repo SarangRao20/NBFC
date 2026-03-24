@@ -5,11 +5,11 @@ from datetime import datetime
 from db.database import sessions_collection, documents_collection
 
 class SessionManager:
-    """Sync PyMongo session persistence layer."""
+    """Async Motor session persistence layer."""
     
     @staticmethod
-    def save_session(session_id: str, state: Dict[str, Any]) -> bool:
-        """Save session state to MongoDB (sync PyMongo)."""
+    async def save_session(session_id: str, state: Dict[str, Any]) -> bool:
+        """Save session state to MongoDB (async Motor)."""
         try:
             session_doc = {
                 "session_id": session_id,
@@ -36,22 +36,43 @@ class SessionManager:
             }
             
             # Upsert (save or update)
-            sessions_collection.update_one(
+            await sessions_collection.update_one(
                 {"session_id": session_id},
                 {"$set": session_doc},
                 upsert=True
             )
-            print(f"✅ Session {session_id} saved to MongoDB")
+            
+            # ── CRM SYNC (Sync back to Users collection if phone exists) ──
+            phone = state.get("customer_data", {}).get("phone")
+            if phone:
+                from db.database import users_collection
+                cust_update = {
+                    "credit_score": state.get("customer_data", {}).get("credit_score"),
+                    "pre_approved_limit": state.get("customer_data", {}).get("pre_approved_limit"),
+                    "city": state.get("customer_data", {}).get("city"),
+                    "salary": state.get("customer_data", {}).get("salary"),
+                    "address": state.get("customer_data", {}).get("address"),
+                    "last_active": datetime.utcnow()
+                }
+                # Remove None values
+                cust_update = {k: v for k, v in cust_update.items() if v is not None}
+                await users_collection.update_one(
+                    {"phone": phone},
+                    {"$set": cust_update},
+                    upsert=True
+                )
+
+            print(f"✅ Session {session_id} saved to MongoDB and CRM synced")
             return True
         except Exception as e:
             print(f"❌ Error saving session: {e}")
             return False
     
     @staticmethod
-    def load_session(session_id: str) -> Optional[Dict[str, Any]]:
-        """Load session state from MongoDB (sync PyMongo). Always returns complete state schema."""
+    async def load_session(session_id: str) -> Optional[Dict[str, Any]]:
+        """Load session state from MongoDB (async Motor). Always returns complete state schema."""
         try:
-            session_doc = sessions_collection.find_one({"session_id": session_id})
+            session_doc = await sessions_collection.find_one({"session_id": session_id})
             if not session_doc:
                 print(f"⚠️ Session {session_id} not found")
                 return None
@@ -114,8 +135,8 @@ class SessionManager:
             return None
     
     @staticmethod
-    def save_document(session_id: str, document_type: str, document_path: str, 
-                     extracted_data: Dict[str, Any], confidence: float = 0.0) -> bool:
+    async def save_document(session_id: str, document_type: str, document_path: str, 
+                      extracted_data: Dict[str, Any], confidence: float = 0.0) -> bool:
         """Save document metadata to MongoDB."""
         try:
             doc_record = {
@@ -128,18 +149,19 @@ class SessionManager:
                 "is_verified": False,
             }
             
-            result = documents_collection.insert_one(doc_record)
-            print(f"✅ Document {document_type} saved: {result.inserted_id}")
+            result = await documents_collection.insert_one(doc_record)
+            print(f"✅ Document {document_type} saved with ID: {result.inserted_id}")
             return True
         except Exception as e:
             print(f"❌ Error saving document: {e}")
             return False
     
     @staticmethod
-    def get_session_documents(session_id: str) -> list:
+    async def get_session_documents(session_id: str) -> list:
         """Retrieve all documents for a session."""
         try:
-            docs = list(documents_collection.find({"session_id": session_id}))
+            cursor = documents_collection.find({"session_id": session_id})
+            docs = await cursor.to_list(length=100)
             for doc in docs:
                 doc.pop("_id", None)
             return docs
@@ -148,11 +170,11 @@ class SessionManager:
             return []
     
     @staticmethod
-    def delete_session(session_id: str) -> bool:
+    async def delete_session(session_id: str) -> bool:
         """Delete a session (after completion/timeout)."""
         try:
-            sessions_collection.delete_one({"session_id": session_id})
-            documents_collection.delete_many({"session_id": session_id})
+            await sessions_collection.delete_one({"session_id": session_id})
+            await documents_collection.delete_many({"session_id": session_id})
             print(f"✅ Session {session_id} deleted from MongoDB")
             return True
         except Exception as e:

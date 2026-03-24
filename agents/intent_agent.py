@@ -127,8 +127,13 @@ async def intent_node(state: dict):
         cust = state.get("customer_data", {}) or {}
         name = cust.get("name", "").strip()
         
-        # Use LLM for a natural greeting if unclear
-        greeting_prompt = f"Greet the user {name if name else ''} warmly. Mention you can help with loans, advice, KYC, or payments. Keep it human and ask what's on their mind. Limit to 2 sentences."
+        # Check if they have past loans to acknowledge
+        past_loans = cust.get("past_loans", [])
+        if past_loans and not state.get("messages"):
+             greeting_prompt = f"Greet the user {name if name else ''} warmly. Acknowledge that they are a valued returning customer. Mention you see their history and can help with new loans, payments, or just advice. Keep it human and warm."
+        else:
+             greeting_prompt = f"Greet the user {name if name else ''} warmly. Mention you can help with loans, advice, KYC, or payments. Keep it human and ask what's on their mind. Limit to 2 sentences."
+        
         res = await llm.ainvoke([SystemMessage(content=greeting_prompt)])
         msg = res.content
 
@@ -137,7 +142,7 @@ async def intent_node(state: dict):
             "messages": [AIMessage(content=msg)],
             "action_log": log,
             "current_phase": "intent_discovery",
-            "options": ["Apply for Loan", "Make a Payment", "Check Credit Score"]
+            "options": ["Apply for Loan", "Check Loan History", "Financial Advice"]
         }
 
     phase_map = {

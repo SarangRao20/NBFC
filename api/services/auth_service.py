@@ -105,7 +105,7 @@ class AuthService:
 
                 try:
                     from db.database import users_collection
-                    users_collection.update_one({"phone": phone}, {"$set": updates})
+                    await users_collection.update_one({"phone": phone}, {"$set": updates})
                 except Exception as db_err:
                     print(f"⚠️ Failed to persist credit score to MongoDB: {db_err}")
 
@@ -221,7 +221,7 @@ class AuthService:
             if not customer_data:
                 # Try to get from database
                 from db.database import users_collection
-                customer_data = users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({"phone": phone})
                 
                 if customer_data:
                     # Cache for future use
@@ -295,7 +295,7 @@ class AuthService:
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({"phone": phone})
                 
                 if customer_data:
                     await self.cache.set_customer(phone, customer_data)
@@ -390,7 +390,7 @@ class AuthService:
             
             # Update in database
             from db.database import users_collection
-            users_collection.update_one(
+            await users_collection.update_one(
                 {"phone": phone},
                 {"$set": updates}
             )
@@ -432,7 +432,8 @@ class AuthService:
             
             # Get from database
             from db.database import loan_applications_collection
-            applications = loan_applications_collection.find({"phone": phone})
+            cursor = loan_applications_collection.find({"phone": phone})
+            applications = await cursor.to_list(length=100)
             
             # Convert to list and sort
             history = []
@@ -540,7 +541,7 @@ class AuthService:
         # Also save to MongoDB users collection
         try:
             from db.database import users_collection
-            users_collection.insert_one({"_id": phone, **new_user})
+            await users_collection.insert_one({"_id": phone, **new_user})
         except Exception as e:
             print(f"⚠️ Failed to save to MongoDB: {e}")
             

@@ -34,6 +34,25 @@ def save_mock_db(data):
 
 mock_db = load_mock_db()
 
+class MockCursor:
+    def __init__(self, data: List[Dict[str, Any]]):
+        self.data = data
+        self.index = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.index >= len(self.data):
+            raise StopAsyncIteration
+        result = self.data[self.index]
+        self.index += 1
+        return result
+
+    async def to_list(self, length: int):
+        return self.data[:length]
+
+
 class MockCollection:
     def __init__(self, collection_name: str):
         self.collection_name = collection_name
@@ -66,9 +85,15 @@ class MockCollection:
         print(f"🔍 Find one in {self.collection_name} by query: Not found")
         return None
     
-    async def find(self):
-        print(f"🔍 Find all in {self.collection_name}: {len(self.data)} documents")
-        return list(self.data.values())
+    def find(self, query: Dict[str, Any] = None):
+        print(f"🔍 Find in {self.collection_name}: {len(self.data)} documents")
+        filtered_data = list(self.data.values())
+        if query:
+            filtered_data = [
+                doc for doc in filtered_data 
+                if all(doc.get(k) == v for k, v in query.items())
+            ]
+        return MockCursor(filtered_data)
     
     async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]):
         # Find the first document that matches the query

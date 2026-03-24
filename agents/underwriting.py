@@ -41,7 +41,7 @@ def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_mont
     principal = desired_emi * (numerator / denominator)
     return max(0, principal)  # Ensure non-negative
 
-def underwriting_agent_node(state: dict) -> dict:
+async def underwriting_agent_node(state: dict) -> dict:
     """Deterministic underwriting engine checking NTC and FOIR heuristics."""
     print("⚖️ [UNDERWRITING AGENT] Executing multi-factor credit risk assessment...")
 
@@ -149,9 +149,18 @@ def underwriting_agent_node(state: dict) -> dict:
              reasons.append("Maximum loan for students is ₹25,000 without a co-signer.")
              decision = "soft_reject"
              alternative_offer = 25000.0
-        elif principal > 2 * pre_approved:
-            reasons.append(f"Requested loan exceeds maximum permissible exposure (2× limit).")
+        elif principal > 3 * pre_approved:
+            reasons.append(f"Requested loan exceeds maximum permissible exposure (3× limit).")
             decision = "hard_reject"
+        elif principal > 1.5 * pre_approved:
+            # If it's between 1.5x and 3x, we offer a soft reject with negotiation or ask for more docs
+            reasons.append(f"Requested loan (₹{principal:,}) is significantly higher than your pre-approved limit (₹{pre_approved:,}).")
+            if score >= 750:
+                decision = "pending_docs" # High score can get more if they show income
+                reasons.append("Since you have an excellent credit score, we can consider this if you provide a verified Salary Slip.")
+            else:
+                decision = "soft_reject"
+                alternative_offer = pre_approved * 1.5
         elif principal > pre_approved and not docs.get("verified"):
             reasons.append("Loan exceeds pre-approved limit; additional income verification (Salary Slip) required.")
             decision = "pending_docs"
@@ -180,29 +189,30 @@ def underwriting_agent_node(state: dict) -> dict:
                 decision = "soft_reject"
 
     # Rule 9: Explainability Layer Output Generator
+    # ── Arjun's Human-Centric Decisioning ──
     if decision == "approve":
-        msg = (f"✅ **LOAN APPROVED**\n\n"
-               f"**Decision Reasoning**: Your EMI of ₹{emi:,.2f} accounts for {dti*100:.1f}% of your monthly income, "
-               f"which is comfortably within our safety threshold. Your application has been fully sanctioned under a **{risk_level.title()} Risk** classification.")
+        msg = (f"🎉 **EXCELLENT NEWS!**\n\n"
+               f"I've personally reviewed your request, and your application for ₹{principal:,} is **FULLY APPROVED**. "
+               f"Your disciplined credit profile and consistent history make you a preferred customer for us. "
+               f"We're offering this at our best rate of {rate*100:.1f}% p.a.")
     
     elif decision == "pending_docs":
-        msg = (f"⏳ **LOAN PENDING (Additional Documents Required)**\n\n"
-               f"**Decision Reasoning**: Your requested loan of ₹{principal:,} exceeds your standard pre-approved limit "
-               f"of ₹{pre_approved:,}. To safely process this, we require additional income verification. "
-               f"Please upload your latest salary slip.")
+        missing = "Salary Slip" if principal > pre_approved else "KYC Documents"
+        msg = (f"⏳ **ALMOST THERE!**\n\n"
+               f"Your application for ₹{principal:,} looks very promising. Since this is above your standard pre-approved limit, "
+               f"I just need one small thing to wrap this up: **your latest {missing}**. "
+               f"Once you upload that, we can push this straight to sanction!")
 
     elif decision == "soft_reject":
-        reason_text = "\n".join(f"• {r}" for r in reasons)
-        msg = (f"⚠️ **LOAN UNDER REVIEW — Negotiation Available**\n\n"
-               f"**Decision Reasoning**:\n{reason_text}\n\n"
-               f"💡 **Good News**: Your credit profile (Score: {score}) qualifies you for a revised offer.\n"
-               f"We can approve up to **₹{alternative_offer:,.0f}** for the same tenure.\n\n"
-               f"Our Sales Advisor will now help you explore modified terms.")
+        msg = (f"🤝 **Let's work something out...**\n\n"
+               f"I see you're aiming for ₹{principal:,}. While our current underwriting rules for student/new profiles "
+               f"are a bit tight, I've managed to secure a revised offer of **₹{alternative_offer:,.0f}** for you instantly.\n\n"
+               f"Would you like to proceed with this amount, or should we discuss a different tenure?")
 
     else:
-        reason_text = "\n".join(f"• {r}" for r in reasons)
-        msg = (f"❌ **LOAN REJECTED**\n\n"
-               f"**Decision Reasoning**:\n{reason_text}")
+        msg = (f"❌ **NOT THIS TIME (But don't give up!)**\n\n"
+               f"I've analyzed the request, and currently, we aren't able to approve a loan due to your credit history/DTI constraints. "
+               f"I recommend waiting for 90 days while maintaining timely payments on other obligations to boost your score.")
 
     # ✅ Calculate EMI dates when approved
     if decision == "approve":
@@ -258,7 +268,7 @@ def underwriting_agent_node(state: dict) -> dict:
     # Save session to MongoDB
     session_id = state.get("session_id", "default")
     try:
-        SessionManager.save_session(session_id, updates)
+        await SessionManager.save_session(session_id, updates)
         print(f"💾 Session {session_id} saved to MongoDB")
     except Exception as e:
         print(f"⚠️ Failed to save session: {e}")

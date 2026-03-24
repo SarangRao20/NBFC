@@ -53,7 +53,7 @@ async def load_session_node(state: MasterState):
     
     try:
         # Try to load from DB
-        saved_state = SessionManager.load_session(session_id)
+        saved_state = await SessionManager.load_session(session_id)
         if saved_state:
             print(f"📂 Resuming session {session_id}")
             # Merge saved state with current state, preferring saved values
@@ -228,7 +228,7 @@ async def advisor_context_node(state: MasterState):
     session_id = state.get("session_id", "default")
     
     # Load all documents uploaded for this session
-    uploaded_docs = SessionManager.get_session_documents(session_id)
+    uploaded_docs = await SessionManager.get_session_documents(session_id)
     
     # Prepare advisor briefing
     advisor_context = {

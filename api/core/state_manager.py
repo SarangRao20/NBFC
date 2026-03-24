@@ -116,13 +116,13 @@ async def create_session() -> dict:
         "timestamp": state["created_at"],
     })
     
-    sessions_collection.insert_one(state)
+    await sessions_collection.insert_one(state)
     return state
 
 
 async def get_session(session_id: str) -> Optional[dict]:
     """Retrieve a session by ID from MongoDB. Returns None if not found, otherwise returns complete state schema."""
-    doc = sessions_collection.find_one({"_id": session_id})
+    doc = await sessions_collection.find_one({"_id": session_id})
     if not doc:
         return None
     
@@ -257,7 +257,7 @@ async def update_session(session_id: str, updates: dict) -> dict:
 
     # Sanitize before persisting to MongoDB Atlas
     sanitized = _sanitize_state(state)
-    sessions_collection.replace_one({"_id": session_id}, sanitized)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
@@ -274,7 +274,7 @@ async def advance_phase(session_id: str, phase: str) -> dict:
     })
     
     sanitized = _sanitize_state(state)
-    sessions_collection.replace_one({"_id": session_id}, sanitized)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
@@ -292,11 +292,11 @@ async def end_session(session_id: str) -> dict:
     })
     
     sanitized = _sanitize_state(state)
-    sessions_collection.replace_one({"_id": session_id}, sanitized)
+    await sessions_collection.replace_one({"_id": session_id}, sanitized)
     return sanitized
 
 
 async def delete_session(session_id: str) -> bool:
     """Remove session from MongoDB."""
-    result = sessions_collection.delete_one({"_id": session_id})
+    result = await sessions_collection.delete_one({"_id": session_id})
     return result.deleted_count > 0

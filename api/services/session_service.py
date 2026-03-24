@@ -89,7 +89,7 @@ async def end_active_session(session_id: str) -> dict:
             
         try:
             # We don't overwrite all past records; we format a clean string
-            users_collection.update_one(
+            await users_collection.update_one(
                 {"phone": customer.get("phone")},
                 {"$set": {
                     "past_records": new_record,
@@ -118,8 +118,9 @@ async def search_sessions_by_phone(phone: str) -> list:
     # if results: return results
     
     # In a real MongoDB this would be a find() query. 
-    # Our MockCollection find() returns all, so we filter.
-    all_sessions = sessions_collection.find()
+    # Use to_list(length=100) for async cursor
+    cursor = sessions_collection.find()
+    all_sessions = await cursor.to_list(length=100)
     
     results = []
     for s in all_sessions:
@@ -168,10 +169,11 @@ async def get_customer_loan_history(phone: str) -> dict:
     print(f"⚡ Loan history cache MISS for {phone}")
     
     # Get customer profile
-    customer = users_collection.find_one({"phone": clean_phone})
+    customer = await users_collection.find_one({"phone": clean_phone})
     
     # Get all loan applications
-    all_applications = loan_applications_collection.find()
+    cursor = loan_applications_collection.find()
+    all_applications = await cursor.to_list(length=100)
     customer_applications = []
     
     for app in all_applications:
@@ -238,7 +240,7 @@ async def get_loan_details_by_session(session_id: str) -> dict:
     
     # Get corresponding loan application record
     from db.database import loan_applications_collection
-    loan_app = loan_applications_collection.find_one({"session_id": session_id})
+    loan_app = await loan_applications_collection.find_one({"session_id": session_id})
     
     result = {
         "session_state": state,
@@ -277,7 +279,7 @@ async def check_existing_customer(phone: str) -> dict:
     
     print(f"⚡ Customer exists cache MISS for {phone}")
     
-    customer = users_collection.find_one({"phone": clean_phone})
+    customer = await users_collection.find_one({"phone": clean_phone})
     
     if customer:
         result = {

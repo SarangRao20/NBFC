@@ -60,7 +60,8 @@ async def global_exception_handler(request, exc):
     print("="*50 + "\n")
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal Server Error. Check terminal logs."}
+        content={"detail": "Internal Server Error. Check terminal logs."},
+        headers={"Access-Control-Allow-Origin": "*"}
     )
 
 # Enable CORS for frontend integration
@@ -121,9 +122,9 @@ app.router.lifespan_context = lifespan
 
 async def startup_db():
     try:
-        client.admin.command("ping")
+        await client.admin.command("ping")
         print("✅ MongoDB Atlas connected")
-        init_collections()
+        await init_collections()
         print("✅ All collections initialized")
         
         # Initialize Redis and Email services
@@ -149,7 +150,7 @@ async def startup_db():
 async def create_user(user: User):
     try:
         user_dict = user.dict()
-        result = users_collection.insert_one(user_dict)
+        result = await users_collection.insert_one(user_dict)
         return {"id": str(result.inserted_id)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
@@ -157,14 +158,15 @@ async def create_user(user: User):
 @app.get("/users", tags=["Users"])
 async def get_users():
     users = []
-    for user in users_collection.find():
+    cursor = users_collection.find()
+    async for user in cursor:
         user["_id"] = str(user["_id"])
         users.append(user)
     return users
 
 @app.get("/users/{user_id}", tags=["Users"])
 async def get_user(user_id: str):
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    user = await users_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user["_id"] = str(user["_id"])
@@ -172,7 +174,7 @@ async def get_user(user_id: str):
 
 @app.put("/users/{user_id}", tags=["Users"])
 async def update_user(user_id: str, user: User):
-    result = users_collection.update_one(
+    result = await users_collection.update_one(
         {"_id": ObjectId(user_id)}, {"$set": user.dict()}
     )
     if result.matched_count == 0:
@@ -181,7 +183,7 @@ async def update_user(user_id: str, user: User):
 
 @app.delete("/users/{user_id}", tags=["Users"])
 async def delete_user(user_id: str):
-    result = users_collection.delete_one({"_id": ObjectId(user_id)})
+    result = await users_collection.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Deleted"}

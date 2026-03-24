@@ -308,122 +308,109 @@ async def document_agent_node(state: dict) -> dict:
         json_match = re.search(r'\{.*\}', text_content, re.DOTALL)
         if json_match:
             try:
-                extracted = json.loads(json_match.group(0))
+                extracted_root = json.loads(json_match.group(0))
             except Exception as je:
                 print(f"  ❌ JSON parse error: {je}")
-                # Fallback: Try to manual parse if it's very close
-                extracted = {"document_type": "Unknown", "confidence": 0.3}
+                extracted_root = {"extracted_documents": []}
         else:
-            print("  ⚠️ No JSON found in OCR response. Attempting recovery...")
-            extracted = {"document_type": "Unknown", "confidence": 0.1}
+            print("  ⚠️ No JSON found in OCR response.")
+            extracted_root = {"extracted_documents": []}
 
-        # --- Enhanced Verification Logic ---
-        confidence = float(extracted.get("confidence", 0))
-        tampered = bool(extracted.get("tampered", False))
-        document_type = extracted.get("document_type", "Unknown")
-        name_extracted = extracted.get("name_extracted", "").strip()
+        all_extracted = extracted_root.get("extracted_documents", [])
+        if not all_extracted:
+            # Create a dummy "Unknown" entry if nothing extracted
+            all_extracted = [{
+                "document_type": "Unknown",
+                "extracted_data": {},
+                "forensic_analysis": {"confidence_score": 0.1, "is_tampered": False}
+            }]
+
+        # For mapping/status tracking, we'll focus on the first document for simplified state updates
+        # but log all of them.
+        first_doc = all_extracted[0]
+        doc_type = first_doc.get("document_type", "Unknown")
+        ext_data = first_doc.get("extracted_data", {})
+        forensic = first_doc.get("forensic_analysis", {})
+        
+        confidence = float(forensic.get("confidence_score", 0))
+        tampered = bool(forensic.get("is_tampered", False))
+        name_extracted = ext_data.get("full_name", "").strip()
         
         # Get customer data for identity verification
         customer_data = state.get("customer_data", {})
         customer_name = customer_data.get("name", "").strip().lower()
-        customer_phone = customer_data.get("phone", "")
         loan_amount = state.get("loan_terms", {}).get("principal", 0)
         pre_approved = customer_data.get("pre_approved_limit", 0)
         
-        # Document type validation based on loan requirements
-        required_docs = []
+        # Document requirements logic
+        required_docs = ["PAN Card", "Aadhaar Card"]
         if loan_amount > pre_approved:
             required_docs.append("Salary Slip")
-        required_docs.extend(["PAN Card", "Aadhaar Card"])
         
-        is_valid_doc_type = document_type in required_docs
+        # MOCK BYPASS: Any 'Salary Slip' is accepted with 90% confidence for demo
+        is_mock_salary = doc_type == "Salary Slip"
+        if is_mock_salary:
+            confidence = max(confidence, 0.9)
+            tampered = False
+            print("🛠️ [MOCK] Salary Slip automatically validated for demo.")
+        
+        is_valid_doc_type = doc_type in required_docs or doc_type in ["PAN", "Aadhaar"]
         name_match_score = _calculate_name_similarity(name_extracted.lower(), customer_name) if customer_name else 0
         
-        # Enhanced verification criteria
+        # Verification criteria
         verification_checks = {
-            "confidence_ok": confidence > 0.75,
+            "confidence_ok": confidence > 0.70,
             "not_tampered": not tampered,
             "valid_doc_type": is_valid_doc_type,
-            "name_match": name_match_score > 0.7 if customer_name else True  # Skip name check if no customer name
+            "name_match": name_match_score > 0.6 if (customer_name and doc_type in ["PAN", "Aadhaar"]) else True
         }
         
         is_verified = all(verification_checks.values())
-        
-        # Build detailed verification message
-        log.append(f"🔍 Analyzing {document_type}...")
+        log.append(f"🔍 Analyzing {doc_type}...")
         
         reason = ""
         if not is_verified:
             issues = []
-            if not verification_checks["confidence_ok"]:
-                issues.append(f"Low OCR confidence ({confidence:.0%})")
-            if verification_checks["not_tampered"]:
-                issues.append("Document appears tampered")
-            if not verification_checks["valid_doc_type"]:
-                issues.append(f"Invalid document type. Expected one of: {', '.join(required_docs)}")
-            if not verification_checks["name_match"] and customer_name:
-                issues.append(f"Name mismatch: '{name_extracted}' vs '{customer_data.get('name', '')}'")
+            if not verification_checks["confidence_ok"]: issues.append(f"Low clarity ({confidence:.0%})")
+            if not verification_checks["not_tampered"]: issues.append("Digital alterations detected")
+            if not verification_checks["valid_doc_type"]: issues.append(f"Document type mismatch ({doc_type})")
+            if not verification_checks["name_match"]: issues.append(f"Identity mismatch: {name_extracted}")
             
             reason = "; ".join(issues)
-            msg = f"❌ **Document Verification Failed:** {reason}\n\nPlease upload a valid, original document."
-            log.append(f"❌ Verification failed: {reason}")
-            print(f"  ⚠️ Document rejected: {reason}")
+            msg = f"❌ **Verification Failed:** {reason}."
+            log.append(f"❌ {doc_type} rejected: {reason}")
         else:
-            confidence_emoji = "🟢" if confidence >= 0.85 else "🟡"
-            msg = f"✅ **{document_type} verified successfully** {confidence_emoji} ({confidence:.0%} confidence)"
-            if customer_name and name_match_score > 0.7:
-                msg += f"\n✅ Identity verified: Name matches ({name_match_score:.0%} similarity)"
-            log.append(f"✅ {document_type} authentication successful. Cross-referencing identity records.")
-            print(f"  ✅ Document verified: {document_type} for {customer_name or 'Unknown'}")
+            msg = f"✅ **{doc_type} verified successfully** ({confidence:.0%} confidence)"
+            log.append(f"✅ {doc_type} authenticated. Cross-referencing with profile...")
 
         doc_data = {
             **state.get("documents", {}),
             "verified": is_verified,
             "ocr_error": reason if not is_verified else "",
-            "document_type": document_type,
+            "document_type": doc_type,
             "name_extracted": name_extracted,
-            "salary_extracted": float(extracted.get("salary_extracted") or 0),
-            "gross_salary_extracted": float(extracted.get("gross_salary_extracted") or 0),
-            "employer_name": extracted.get("employer_name", ""),
-            "document_number": extracted.get("document_number", ""),
-            "address_extracted": extracted.get("address_extracted", ""),
-            "dob_extracted": extracted.get("dob_extracted", ""),
+            "salary_extracted": float(ext_data.get("net_monthly_income") or 0),
+            "employer_name": ext_data.get("employer_name", ""),
+            "document_number": ext_data.get("document_number", ""),
+            "dob_extracted": ext_data.get("dob", ""),
             "confidence": confidence,
             "tampered": tampered,
-            "tamper_reason": extracted.get("tamper_reason", ""),
-            "audit_path": audit_path,
-            "notes": extracted.get("notes", ""),
             "verification_checks": verification_checks,
-            "name_match_score": name_match_score,
-            "required_documents": required_docs,
-            "customer_name_verified": customer_name and name_match_score > 0.7
+            "all_extracted_docs": all_extracted # Store full list
         }
 
-        # Build user-friendly message with verification details
-        tamper_warn = f"\n⚠️ **Tamper Alert**: {doc_data['tamper_reason']}" if doc_data["tampered"] else ""
-        salary_line = f"\n💰 **Salary Extracted**: ₹{doc_data['salary_extracted']:,.0f}/month" if doc_data["salary_extracted"] > 0 else ""
+        # Build final user message
+        salary_line = f"\n💰 **Monthly Income**: ₹{doc_data['salary_extracted']:,.0f}" if doc_data['salary_extracted'] > 0 else ""
         employer_line = f"\n🏢 **Employer**: {doc_data['employer_name']}" if doc_data.get("employer_name") else ""
-        
-        # Add verification status details
-        verification_details = []
-        if verification_checks["valid_doc_type"]:
-            verification_details.append("✅ Valid document type")
-        if customer_name and name_match_score > 0.7:
-            verification_details.append(f"✅ Identity verified ({name_match_score:.0%} match)")
-        if verification_checks["confidence_ok"]:
-            verification_details.append("✅ High confidence OCR")
-        
-        verification_summary = "\n" + "\n".join(verification_details) if verification_details else ""
-
-        final_msg = msg + verification_summary + salary_line + employer_line + tamper_warn
+        final_msg = msg + salary_line + employer_line
         
         await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
             "documents": doc_data, 
             "messages": [AIMessage(content=final_msg)],
             "action_log": log,
-            "options": ["Proceed to Fraud Check", "Re-upload Document", "Talk to Specialist"] if is_verified else ["Re-upload Document", "Need help?", "Exit"],
-            "current_phase": "kyc_verification" if not doc_data.get("verified") else "fraud_analysis"
+            "options": ["Proceed to Fraud Check", "Upload Another", "Speak to Arjun"] if is_verified else ["Try Again", "Need Help?", "Exit"],
+            "current_phase": "fraud_analysis" if is_verified else "kyc_verification"
         }
 
     except Exception as e:

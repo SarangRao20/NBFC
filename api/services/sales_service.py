@@ -28,29 +28,25 @@ def _clean_dict(d):
 
 
 
-def _lookup_customer_by_phone(phone: str) -> dict | None:
-    """CRM lookup by phone number."""
+async def _lookup_customer_by_phone(phone: str) -> dict | None:
+    """CRM lookup by phone number using MongoDB."""
+    from db.database import users_collection
     phone = _normalize_phone(phone)
     try:
-        with open("mock_apis/customers.json", "r") as f:
-            for c in json.load(f):
-                if c["phone"] == phone:
-                    return c
-    except Exception:
-        pass
+        return await users_collection.find_one({"phone": phone})
+    except Exception as e:
+        print(f"⚠️ Phone lookup failed: {e}")
     return None
 
 
-def _lookup_customer_by_email(email: str, password: str) -> dict | None:
-    """CRM lookup by email + password."""
+async def _lookup_customer_by_email(email: str, password: str) -> dict | None:
+    """CRM lookup by email + password using MongoDB."""
+    from db.database import users_collection
     email = email.strip().lower()
     try:
-        with open("mock_apis/customers.json", "r") as f:
-            for c in json.load(f):
-                if c.get("email", "").lower() == email and c.get("password", "") == password:
-                    return c
-    except Exception:
-        pass
+        return await users_collection.find_one({"email": email, "password": password})
+    except Exception as e:
+        print(f"⚠️ Email lookup failed: {e}")
     return None
 
 
@@ -81,11 +77,11 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
 
     # Try phone-based lookup first
     clean_phone = _normalize_phone(phone)
-    customer = _lookup_customer_by_phone(clean_phone)
+    customer = await _lookup_customer_by_phone(clean_phone)
 
     # Fallback to email-based lookup
     if not customer and email and password:
-        customer = _lookup_customer_by_email(email, password)
+        customer = await _lookup_customer_by_email(email, password)
 
     if customer:
         from api.services.session_service import search_sessions_by_phone
@@ -234,18 +230,19 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         state["current_phase"] = "session_started"
         # Insert directly into MongoDB
         from db.database import sessions_collection
-        sessions_collection.insert_one({"_id": session_id, **state})
+        await sessions_collection.insert_one({"_id": session_id, **state})
 
     # Fast-path for EMI reminder queries using stored sanction/loan records.
     lowered = (user_message or "").lower()
-    if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay"]):
+    if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay", "previous loans", "past loans", "my loans", "history"]):
         try:
             from db.database import loan_applications_collection
             phone = state.get("customer_data", {}).get("phone")
             if phone:
-                apps_cursor = loan_applications_collection.find({"phone": phone})
+                cursor = loan_applications_collection.find({"phone": phone})
+                all_apps = await cursor.to_list(length=10)
                 apps = []
-                for app in apps_cursor:
+                for app in all_apps:
                     if app.get("status") in ["Approved", "Signed & Disbursed"]:
                         apps.append(app)
 
@@ -401,7 +398,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                     "status": "Signed & Disbursed",
                     "created_at": datetime.now().isoformat()
                 }
-                loan_applications_collection.insert_one(loan_doc)
+                await loan_applications_collection.insert_one(loan_doc)
                 print(f"✅ [SALES SERVICE] Loan logged for {loan_doc['name']}")
             except Exception as le:
                 print(f"⚠️ [SALES SERVICE] Failed to log loan: {le}")

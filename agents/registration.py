@@ -104,7 +104,7 @@ async def lookup_customer_by_phone(phone: str) -> dict | None:
     try:
         from db.database import users_collection
         # Search for user with matching phone
-        user = users_collection.find_one({"phone": phone})
+        user = await users_collection.find_one({"phone": phone})
         if user:
             print(f"👤 [CRM LOOKUP] Found user by phone: {phone}")
             return {
@@ -129,7 +129,7 @@ async def lookup_customer_by_email(email: str) -> dict | None:
     try:
         from db.database import users_collection
         # Search for user with matching email
-        user = users_collection.find_one({"email": email.lower()})
+        user = await users_collection.find_one({"email": email.lower()})
         if user:
             print(f"👤 [CRM LOOKUP] Found user by email: {email}")
             return {
@@ -508,7 +508,7 @@ async def registration_chat_node(state: dict):
     # Save session to MongoDB
     session_id = state.get("session_id", "default")
     try:
-        SessionManager.save_session(session_id, updates)
+        await SessionManager.save_session(session_id, updates)
         print(f"💾 Session {session_id} saved to MongoDB")
     except Exception as e:
         print(f"⚠️ Failed to save session: {e}")
