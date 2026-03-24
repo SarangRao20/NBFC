@@ -172,6 +172,18 @@ function App() {
     return () => wsClient.disconnect();
   }, [sessionId, isAuthenticated]);
 
+  // Auto-logout on page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isAuthenticated) {
+        handleLogout();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isAuthenticated]);
+
   // WebSocket Listener
   useEffect(() => {
     if (!sessionId) return;
@@ -657,7 +669,6 @@ function App() {
         appState={appState} 
         onLoadSession={loadSession} 
         onNewChat={handleNewChat} 
-        onLogout={handleLogout}
         onPayEmi={handlePayEmi}
         onDeleteSession={handleDeleteSession}
       />

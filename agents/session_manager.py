@@ -120,6 +120,7 @@ class SessionManager:
             }
             default_loan_terms = {
                 "loan_type": "",
+                "requested_amount": 0,  # Original amount user asked for
                 "principal": 0,
                 "rate": 0.0,
                 "tenure": 0,

@@ -125,11 +125,31 @@ async def search_sessions_by_phone(phone: str) -> list:
         s_clean = s.copy()
         if "_id" in s_clean: s_clean["_id"] = str(s_clean["_id"])
         
+        # Extract loan details - use requested_amount if available, otherwise fall back to principal
+        loan_terms = s_clean.get("loan_terms", {})
+        loan_amount = loan_terms.get("requested_amount") or loan_terms.get("principal", 0)
+        loan_type = s_clean.get("loan_type", "Personal")
+        decision = s_clean.get("decision", None)
+        
+        # Determine display status based on decision and phase
+        if decision == "approve":
+            display_status = "approved"
+        elif decision == "soft_reject":
+            display_status = "in_process"
+        elif decision == "hard_reject" or decision == "reject":
+            display_status = "rejected"
+        else:
+            display_status = "in_process"
+        
         results.append({
             "session_id": s_clean["session_id"],
             "created_at": s_clean.get("created_at"),
             "status": s_clean.get("status"),
             "current_phase": s_clean.get("current_phase"),
+            "loan_amount": loan_amount,
+            "loan_type": loan_type,
+            "decision": decision,
+            "display_status": display_status,
             "last_message": s_clean.get("messages", [-1])[-1] if s_clean.get("messages") else None,
             "state": s_clean 
         })

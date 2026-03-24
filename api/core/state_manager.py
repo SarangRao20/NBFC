@@ -43,7 +43,8 @@ def _default_state() -> dict:
         # Loan terms (Phase 1 → Phase 2)
         "loan_terms": {
             "loan_type": "",
-            "principal": 0,
+            "requested_amount": 0,  # Original amount user asked for
+            "principal": 0,  # Final approved/negotiated amount
             "rate": 0.0,
             "tenure": 0,
             "emi": 0.0,

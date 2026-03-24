@@ -1,23 +1,23 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppState } from '../types';
-import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus } from 'lucide-react';
+import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import MetricCard from './MetricCard';
 import EmiDonutChart from './EmiDonutChart';
 import confetti from 'canvas-confetti';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   appState: AppState;
   onLoadSession?: (sessionId: string) => void;
   onNewChat?: () => void;
-  onLogout?: () => void;
   onPayEmi?: () => void;
   onDeleteSession?: (sessionId: string) => void;
 }
 
-export default function DashboardPane({ appState, onLoadSession, onNewChat, onLogout, onPayEmi, onDeleteSession }: Props) {
+export default function DashboardPane({ appState, onLoadSession, onNewChat, onPayEmi, onDeleteSession }: Props) {
   const badgeRef = useRef<HTMLDivElement>(null);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   useEffect(() => {
     if (appState.underwritingStatus === 'Approved' && badgeRef.current) {
@@ -38,20 +38,26 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
     <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col h-screen z-10 overflow-hidden">
       {/* Scrollable Content */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide p-5">
-        {/* Header: User Profile */}
-        <div className="flex items-center space-x-3 mb-6 pt-1.5">
-          <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
-            <User size={18} />
+        {/* Header: User Profile - Clickable */}
+        <button 
+          onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+          className="w-full flex items-center justify-between mb-6 pt-1.5 hover:bg-slate-100 px-2 py-2 rounded-lg transition-colors"
+        >
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner flex-shrink-0">
+              <User size={18} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-800 truncate">{appState.customerName || 'Guest User'}</h2>
+              {appState.customerName && (
+                <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
+                  <BadgeCheck size={10} className="mr-1" /> Existing
+                </div>
+              )}
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-slate-800 truncate">{appState.customerName || 'Guest User'}</h2>
-            {appState.customerName && (
-              <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
-                <BadgeCheck size={10} className="mr-1" /> Existing
-              </div>
-            )}
-          </div>
-        </div>
+          <ChevronDown size={16} className={clsx("text-slate-400 transition-transform flex-shrink-0", showProfileDropdown && "rotate-180")} />
+        </button>
 
         {/* Financial State */}
         <div className="mb-6">
@@ -125,32 +131,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
           </AnimatePresence>
         </div>
 
-        {/* Document Vault */}
-        <div className="mb-6">
-          <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">KYC Documents</h3>
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
-              <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
-                <FileText size={12} className="mr-1 text-slate-400" /> PAN
-              </div>
-              {appState.documents.pan === 'verified' ? (
-                <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-              ) : (
-                <Circle size={14} className="text-slate-200 flex-shrink-0" />
-              )}
-            </div>
-            <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
-              <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
-                <FileText size={12} className="mr-1 text-slate-400" /> Income
-              </div>
-              {appState.documents.bankStatement === 'verified' ? (
-                <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-              ) : (
-                <Circle size={14} className="text-slate-200 flex-shrink-0" />
-              )}
-            </div>
-          </div>
-        </div>
+
 
         {/* Past Sessions */}
         {appState.pastLoans && appState.pastLoans.length > 0 && (
@@ -186,64 +167,105 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
           </div>
         )}
 
-        {/* Recent Chat Sessions */}
-        {appState.pastSessions && appState.pastSessions.length > 0 && (
-          <div className="mt-6 pt-5 border-t border-slate-200">
-            <div className="flex justify-between items-center mb-3.5">
-              <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Chats</h3>
+      </div>
+
+      {/* Profile Dropdown Modal - Previous Chats (Compact) */}
+      <AnimatePresence>
+        {showProfileDropdown && appState.pastSessions && appState.pastSessions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-[90px] left-5 w-56 max-h-96 bg-white rounded-lg border border-slate-200 shadow-lg z-50 overflow-y-auto"
+          >
+            <div className="sticky top-0 bg-white border-b border-slate-100 px-3 py-2 flex justify-between items-center">
+              <h3 className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Previous Chats</h3>
               <button 
                 onClick={onNewChat}
-                className="text-[9px] bg-emerald-600 text-white px-2 py-1 rounded font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center"
+                className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold hover:bg-emerald-700 transition-colors flex items-center"
               >
-                <Plus size={10} className="mr-1" /> New
+                <Plus size={10} className="mr-0.5" /> New
               </button>
             </div>
-            <div className="space-y-2">
-              {appState.pastSessions.slice(0, 5).map((session, i) => (
-                <div key={i} className="flex space-x-1 group">
+            <div className="space-y-1.5 p-2">
+              {appState.pastSessions.map((session, i) => (
+                <div key={i} className="flex space-x-1.5 group">
                   <button 
-                    onClick={() => onLoadSession?.(session.session_id)}
-                    className="flex-1 text-left p-2.5 bg-white hover:bg-emerald-50 rounded-md border border-slate-200/60 transition-colors"
+                    onClick={() => {
+                      onLoadSession?.(session.session_id);
+                      setShowProfileDropdown(false);
+                    }}
+                    className="flex-1 text-left p-2 bg-slate-50 hover:bg-emerald-50 rounded-md border border-slate-150 transition-colors"
                   >
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[10px] font-bold text-slate-700">{new Date(session.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
-                      <span className="text-[8px] text-slate-400 font-mono italic">{session.session_id.slice(0, 8)}</span>
+                    {/* Loan Amount & Type - Compact */}
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[9px] font-bold text-slate-900">
+                        ₹{session.loan_amount ? (session.loan_amount / 100000).toFixed(1) : '0'}L
+                      </span>
+                      <span className="text-[6px] font-bold text-slate-500 uppercase tracking-tight bg-slate-100 px-1 py-0.5 rounded">
+                        {session.loan_type || 'Personal'}
+                      </span>
                     </div>
-                    <div className="text-[9px] text-slate-500 flex justify-between">
-                      <span>Phase: {session.current_phase.replace('_', ' ')}</span>
-                      {session.loan_amount && <span>₹{session.loan_amount / 1000}k</span>}
+                    {/* Status - Compact with new labels */}
+                    <div className="text-[7px]">
+                      <span className={clsx(
+                        "inline-block px-1.5 py-0.5 rounded font-semibold",
+                        session.display_status === 'approved' ? "bg-emerald-100 text-emerald-700" :
+                        session.display_status === 'in_process' ? "bg-blue-100 text-blue-700" :
+                        session.display_status === 'rejected' ? "bg-red-100 text-red-700" :
+                        "bg-slate-100 text-slate-600"
+                      )}>
+                        {session.display_status === 'approved' ? 'Approved' :
+                         session.display_status === 'in_process' ? 'In Process' :
+                         session.display_status === 'rejected' ? 'Rejected' :
+                         'Pending'}
+                      </span>
                     </div>
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm('Are you sure you want to delete this chat history?')) {
+                      if (window.confirm('Delete this chat history?')) {
                         onDeleteSession?.(session.session_id);
                       }
                     }}
-                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all flex items-center justify-center border border-slate-200 hover:border-red-200 bg-white shadow-sm"
+                    className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded transition-all flex items-center justify-center border border-slate-150 bg-slate-50 hover:border-red-200"
                     title="Delete Chat"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               ))}
             </div>
-          </div>
+            {/* KYC Documents in Profile Dropdown */}
+            <div className="border-t border-slate-100 mt-2 pt-2">
+              <h4 className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">KYC Documents</h4>
+              <div className="grid grid-cols-2 gap-1.5 px-2 pb-2">
+                <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded-md border border-slate-150">
+                  <div className="flex items-center text-[9px] font-bold text-slate-600 truncate mr-1">
+                    <FileText size={10} className="mr-1 text-slate-400" /> PAN
+                  </div>
+                  {appState.documents.pan === 'verified' ? (
+                    <CheckCircle2 size={12} className="text-emerald-500 flex-shrink-0" />
+                  ) : (
+                    <Circle size={12} className="text-slate-200 flex-shrink-0" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between p-1.5 bg-slate-50 rounded-md border border-slate-150">
+                  <div className="flex items-center text-[9px] font-bold text-slate-600 truncate mr-1">
+                    <FileText size={10} className="mr-1 text-slate-400" /> Income
+                  </div>
+                  {appState.documents.bankStatement === 'verified' ? (
+                    <CheckCircle2 size={12} className="text-emerald-500 flex-shrink-0" />
+                  ) : (
+                    <Circle size={12} className="text-slate-200 flex-shrink-0" />
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
         )}
-
-        {/* Logout Button - Inside Scrollable Content */}
-        {onLogout && (
-          <div className="mt-8 pt-5 border-t border-slate-200">
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 bg-slate-200 hover:bg-red-50 hover:text-red-600 rounded-lg text-slate-600 text-xs font-bold transition-all border border-transparent hover:border-red-100 group"
-            >
-              <span className="opacity-70 group-hover:opacity-100">Logout Session</span>
-            </button>
-          </div>
-        )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }

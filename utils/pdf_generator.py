@@ -51,17 +51,50 @@ def generate_rejection_letter(customer: dict, terms: dict, reasons: list, cust_i
         c.drawString(50, y, "Decision: Application Declined")
         c.setFillColorRGB(0, 0, 0)
 
-        # Reasons
+        # Loan Details Summary
         y -= 30
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(50, y, "Loan Request Summary")
+        c.setFont("Helvetica", 10)
+        y -= 18
+        c.drawString(70, y, f"Loan Amount Requested: INR {principal:,.2f}")
+        y -= 15
+        loan_rate = terms.get("rate", 0)
+        loan_tenure = terms.get("tenure", 0)
+        if loan_rate and loan_tenure:
+            monthly_emi = (principal * loan_rate / 1200) / (1 - (1 + loan_rate / 1200) ** (-loan_tenure))
+            c.drawString(70, y, f"Proposed Tenure: {loan_tenure} months")
+            y -= 15
+            c.drawString(70, y, f"Proposed Interest Rate: {loan_rate:.2f}% p.a.")
+            y -= 15
+            c.drawString(70, y, f"Estimated Monthly EMI: INR {monthly_emi:,.2f}")
+            y -= 18
         c.setFont("Helvetica", 11)
         c.drawString(50, y, "Dear applicant, after careful review of your application, we are unable to approve")
         y -= 16
         c.drawString(50, y, "your loan at this time due to the following reasons:")
         
         y -= 25
+        c.setFont("Helvetica", 10)
         for idx, reason in enumerate(reasons, 1):
-            c.drawString(70, y, f"{idx}. {reason}")
-            y -= 18
+            # Split long reasons into multiple lines if needed
+            if len(reason) > 90:
+                # Split at word boundary
+                words = reason.split()
+                line = ""
+                for word in words:
+                    if len(line + word) > 90:
+                        c.drawString(70, y, line)
+                        y -= 15
+                        line = word
+                    else:
+                        line += word + " "
+                if line:
+                    c.drawString(70, y, line)
+                    y -= 18
+            else:
+                c.drawString(70, y, f"{idx}. {reason}")
+                y -= 18
 
         # Footer
         y = 100

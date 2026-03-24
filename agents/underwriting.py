@@ -114,7 +114,7 @@ async def underwriting_agent_node(state: dict) -> dict:
         market_value = principal / 0.8  # Assume user needs 80% LTV
         ltv = principal / market_value
         if ltv > 0.85:
-            reasons.append(f"Loan-to-Value ratio ({ltv*100:.0f}%) exceeds the 85% safety cap for asset-backed loans.")
+            reasons.append(f"Loan-to-Value (LTV) ratio is {ltv*100:.1f}%, which exceeds the safe lending limit of 85%. Requested: ₹{principal:,} | Asset Value: ₹{market_value:,.0f}.")
             decision = "soft_reject"
             alternative_offer = 0.80 * market_value
 
@@ -129,7 +129,7 @@ async def underwriting_agent_node(state: dict) -> dict:
             reasons.append("New-To-Credit Detected. Please upload 6 months' Bank Statement for limit assessment.")
             decision = "pending_docs"
         elif principal > 50000:
-            reasons.append("For 'New to Credit' users without a CIBIL score, the maximum introductory loan is strictly ₹50,000.")
+            reasons.append(f"You are classified as 'New To Credit' (no CIBIL score history). Maximum introductory loan limit is ₹50,000. Requested: ₹{principal:,}.")
             decision = "soft_reject"
             alternative_offer = 50000.0
             
@@ -143,18 +143,18 @@ async def underwriting_agent_node(state: dict) -> dict:
             if "fraud" in past_records: decision = "hard_reject"
 
         if score < 700:
-            reasons.append(f"Credit score ({score}) is below the minimum threshold of 700.")
+            reasons.append(f"Credit score ({score}) falls below the minimum qualification threshold of 700. You need a score ≥700 to qualify.")
             decision = "hard_reject"
         elif occupation == "student" and principal > 25000:
-             reasons.append("Maximum loan for students is ₹25,000 without a co-signer.")
+             reasons.append(f"Student applicants are limited to a maximum loan of ₹25,000 without a co-signer. Requested: ₹{principal:,}.")
              decision = "soft_reject"
              alternative_offer = 25000.0
         elif principal > 3 * pre_approved:
-            reasons.append(f"Requested loan exceeds maximum permissible exposure (3× limit).")
+            reasons.append(f"Requested loan exceeds maximum permissible exposure (3× limit of ₹{pre_approved:,} = ₹{3*pre_approved:,}).")
             decision = "hard_reject"
         elif principal > 1.5 * pre_approved:
             # If it's between 1.5x and 3x, we offer a soft reject with negotiation or ask for more docs
-            reasons.append(f"Requested loan (₹{principal:,}) is significantly higher than your pre-approved limit (₹{pre_approved:,}).")
+            reasons.append(f"Requested loan (₹{principal:,}) significantly exceeds your pre-approved limit (₹{pre_approved:,}) by ₹{principal - pre_approved:,.0f}.")
             if score >= 750:
                 decision = "pending_docs" # High score can get more if they show income
                 reasons.append("Since you have an excellent credit score, we can consider this if you provide a verified Salary Slip.")
@@ -168,7 +168,7 @@ async def underwriting_agent_node(state: dict) -> dict:
             reasons.append("Mandatory KYC documents (PAN/Aadhaar) and income proof are required for all loan applications.")
             decision = "pending_docs"
         elif dti > 0.50:
-            reasons.append(f"EMI exceeds affordability threshold (Total EMI > 50% of income).")
+            reasons.append(f"Debt-to-Income (DTI) Ratio: {dti*100:.1f}% exceeds the 50% affordability threshold. Monthly EMI (₹{total_emi:,.0f}) exceeds 50% of your monthly salary (₹{salary:,.0f}).")
             decision = "reject"
 
     # Rule 7: Smart Offer Optimization + Soft Reject Classification

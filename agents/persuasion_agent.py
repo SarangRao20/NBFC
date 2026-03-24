@@ -424,7 +424,8 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
                     **terms,
                     "principal": opt["amount"],
                     "tenure": opt["tenure"],
-                    "emi": new_emi
+                    "emi": new_emi,
+                    "requested_amount": terms.get("requested_amount", opt["amount"])  # Preserve original request
                 },
                 "decision": "", # Reset for re-evaluation
                 "persuasion_status": "accepted",

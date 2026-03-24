@@ -12,6 +12,7 @@ def safe_add_messages(left: Sequence[BaseMessage], right: Sequence[BaseMessage])
     return add_messages(filtered_left, filtered_right)
 
 class LoanTerms(TypedDict, total=False):
+    requested_amount: float     # Original amount user asked for
     principal: float
     rate: float
     tenure: int

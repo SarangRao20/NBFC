@@ -612,6 +612,9 @@ async def _sales_mode(state: dict):
         kw in user_clean for kw in ["lower", "less", "smaller", "different", "another", "reduce"]
     )
     
+    # Preserve requested_amount before resetting principal
+    requested_amount = existing_terms.get("requested_amount", 0)
+    
     if is_renegotiating:
         # Reset loan amount to re-collect from user
         principal = 0
@@ -625,6 +628,7 @@ async def _sales_mode(state: dict):
             "principal": principal,
             "tenure": tenure,
             "rate": rate_pa,
+            "requested_amount": requested_amount,  # Always preserve requested_amount
             "loan_purpose": existing_terms.get("loan_purpose"), # Initialize with existing, will be updated
             "loan_type": existing_terms.get("loan_type", "personal") # Initialize with existing, will be updated
         },
@@ -696,7 +700,12 @@ async def _sales_mode(state: dict):
     if extracted:
         # Update loan terms if LLM extracted new values
         new_terms = {**existing_terms}
-        if extracted.get("loan_amount"): new_terms["principal"] = float(extracted.get("loan_amount"))
+        if extracted.get("loan_amount"): 
+            principal = float(extracted.get("loan_amount"))
+            new_terms["principal"] = principal
+            # Set requested_amount if not already set (preserve original request)
+            if not new_terms.get("requested_amount") or new_terms.get("requested_amount") == 0:
+                new_terms["requested_amount"] = principal
         if extracted.get("tenure"): new_terms["tenure"] = int(extracted.get("tenure"))
         if extracted.get("loan_purpose"): new_terms["loan_purpose"] = extracted.get("loan_purpose")
         if extracted.get("loan_type"): new_terms["loan_type"] = extracted.get("loan_type")
