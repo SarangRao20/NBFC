@@ -12,18 +12,23 @@ from config import get_master_llm
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 
 ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor at FinServe.
+You are the user's ally for financial planning and orientation.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR INTERACTIVE RULES:
+## YOUR ROLE & BOUNDARIES (STRICT):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **BE CONVERSATIONAL**: Write 3-4 natural sentences.
+1. **BRIDGE TO ARJUN**: You NEVER process or discuss loan details (amount, terms). If a user mentions wanting a loan, DO NOT ask "would you like to proceed?". Instead, warmly say you'll bring in Arjun, our Sales Specialist.
+2. **NO DECISIONING**: You never "inform" the user about rejections or approvals during a new application. That is the system's role.
+3. **ORIENTATION**: Your job is to help the user understand the dashboard, their credit score (if available), or generic financial wellness.
+4. **HUMAN-FIRST**: Write like a person. NO "I've checked your profile and unfortunately...". Try "Looking at your goals, I think we can build a great plan together!"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## INTERACTIVE RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **BE CONVERSATIONAL**: Write 2-3 natural sentences.
 2. **ONE QUESTION**: Always end your message with exactly one question to keep the dialogue flowing.
-3. **NO ROBOTS**: Talk like a human specialist. Use phrases like "Looking at your progress..." or "I've got some interesting insights for you...".
+3. **NO ROBOTS**: NO rigid bullet points or technical headers like "CASE: NO ACTIVE LOANS".
 4. **EMPATHY**: Celebrate successes and be supportive during challenges.
-
-CASE: ADVICE ONLY
-- If the user has just corrected a profile detail (like salary or bike value), acknowledge it humanly (e.g., "Oh, my apologies! with ₹1.5 lakh, that changes things...").
-- Give one small tip. Ask if they want to know more about that topic or something else.
 """
 
 
@@ -45,32 +50,35 @@ async def advisor_agent_node(state: dict) -> dict:
     if msgs and isinstance(msgs[-1], HumanMessage):
         last_msg = str(msgs[-1].content).lower()
         
-        # Check if user is asking for a specific amount after rejection
-        if decision in ("hard_reject", "soft_reject"):
-            # Look for explicit amount patterns
-            has_explicit_amount = bool(
-                _re.search(r"\d+\s*k\b", last_msg) or
-                _re.search(r"\d+\s*lakh", last_msg) or
-                _re.search(r"\d+\s*lac\b", last_msg) or
-                _re.search(r"\d+\s*thousand", last_msg) or
-                (_re.search(r"\d{4,9}", last_msg) and ("loan" in last_msg or "amount" in last_msg))
-            )
+        # 🚨 GLOBAL LOAN REDIRECT: If user mentions loan/borrowing/amount, ALWAYS hand off to Arjun
+        loan_keywords = ["loan", "borrow", "apply", "money", "rupees", "lak", "lakh", "k", "amount"]
+        has_loan_intent = any(kw in last_msg for kw in loan_keywords)
+        
+        # Look for explicit amount patterns
+        has_explicit_amount = bool(
+            _re.search(r"\d+\s*k\b", last_msg) or
+            _re.search(r"\d+\s*lakh", last_msg) or
+            _re.search(r"\d+\s*lac\b", last_msg) or
+            _re.search(r"\d+\s*thousand", last_msg) or
+            (_re.search(r"\d{4,9}", last_msg) and ("loan" in last_msg or "amount" in last_msg))
+        )
+        
+        if has_loan_intent or has_explicit_amount:
+            print("🔄 [ADVISOR] Global Loan Redirect triggered - handing off to Arjun (Sales)")
             
-            if has_explicit_amount:
-                print("🔄 [ADVISOR] Detected fresh loan amount request - redirecting to Sales")
-                # Clear the loan decision so sales can re-evaluate
-                # Return state updates that will route to sales on next iteration
-                cleaned_terms = state.get("loan_terms", {}).copy()
-                cleaned_terms["principal"] = 0  # Reset amount so sales re-collects
-                cleaned_terms["tenure"] = 0
+            # Reset loan amount if it was just a raw number (to let sales collect it properly)
+            # or keep it if it was a confirmation.
+            updates = {
+                "next_agent": "sales_agent",
+                "intent": "loan",
+                "action_log": log + ["🔄 Priya handing off loan interest to Arjun"]
+            }
+            
+            # If we're not currently in a decision state, help clear it
+            if decision == "unknown" or decision == "":
+                updates["decision"] = ""
                 
-                return {
-                    "next_agent": "sales_agent",  # Force routing to sales
-                    "intent": "loan",
-                    "decision": "",  # Clear rejection decision
-                    "loan_terms": cleaned_terms,
-                    "action_log": state.get("action_log", []) + ["🔄 Advisor re-routing to Sales for fresh collection"]
-                }
+            return updates
     
     # ─── Normal advisor flow ─────────────────────────────────────────────────────────────
 

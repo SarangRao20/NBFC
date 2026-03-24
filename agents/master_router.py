@@ -108,7 +108,7 @@ def route_next_agent(state: MasterState):
         return "advisor_agent", "Documentation complete. Providing post-sanction orientation."
 
     # GLOBAL FALLBACK
-    if intent == "loan":
-        return "sales_agent", "Fallback: In loan flow but state unclear. Routing to Sales Specialist."
+    if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):
+        return "sales_agent", "Continuing loan conversation with Arjun to ensure human-first support."
     
     return "advisor_agent", "Portfolio management and financial wellness orientation."
