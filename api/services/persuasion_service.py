@@ -13,6 +13,7 @@ from api.config import get_settings
 
 settings = get_settings()
 
+from utils.pdf_generator import generate_rejection_letter
 
 def _calculate_emi(principal: float, rate_pa: float, tenure: int) -> float:
     if principal <= 0 or tenure <= 0 or rate_pa <= 0:
@@ -86,6 +87,18 @@ async def suggest_fix(session_id: str) -> dict:
     principal = terms.get("principal", 0)
     tenure = terms.get("tenure", 12)
 
+    # Guard: if salary not provided or zero, do not attempt division — ask user for income
+    if not salary or salary <= 0:
+        # Prompt user to provide monthly income before suggesting fixes
+        return {
+            "options": [],
+            "max_approvable_amount": 0,
+            "negotiation_round": negotiation_round,
+            "max_rounds": settings.MAX_NEGOTIATION_ROUNDS,
+            "requires_salary": True,
+            "message": "We need your monthly income to propose negotiable options. Please provide your monthly salary to continue."
+        }
+
     max_emi = (settings.MAX_DTI_RATIO * salary) - existing_emi
     negotiation_round = state.get("negotiation_round", 0) + 1
 
@@ -123,6 +136,7 @@ async def suggest_fix(session_id: str) -> dict:
         if ext_tenure <= tenure:
             continue
         ext_emi = _calculate_emi(principal, rate, ext_tenure)
+        # Only evaluate DTI if salary > 0 (we already returned earlier if salary missing)
         if ext_emi > 0 and (existing_emi + ext_emi) / salary <= settings.MAX_DTI_RATIO:
             options.append({
                 "label": f"Full ₹{principal:,.0f} ({ext_tenure} months)",
@@ -133,6 +147,44 @@ async def suggest_fix(session_id: str) -> dict:
 
     max_approvable = max_principal if options else 0
 
+    # If no options could be generated, prepare rejection reasoning and ask user if they want
+    # a formal rejection letter (do not auto-create without user's consent).
+    if not options:
+        reasons = state.get("reasons", []) or []
+        # Add common computed reasons if missing
+        score = customer.get("credit_score", 0)
+        if score < settings.MIN_CREDIT_SCORE and "Credit score too low" not in reasons:
+            reasons.append(f"Credit score ({score}) below minimum threshold of {settings.MIN_CREDIT_SCORE}.")
+
+        # Compute current DTI with principal at requested terms
+        emi_if_full = _calculate_emi(principal, rate, tenure)
+        dti_current = round((existing_emi + emi_if_full) / salary, 3) if salary > 0 else 1.0
+        if dti_current > settings.MAX_DTI_RATIO and f"DTI ({dti_current*100:.1f}%) exceeds threshold" not in reasons:
+            reasons.append(f"DTI ({dti_current*100:.1f}%) exceeds {settings.MAX_DTI_RATIO*100:.0f}% threshold.")
+
+        # Persist decision and reasons
+        await update_session(session_id, {
+            "negotiation_round": negotiation_round,
+            "persuasion_options": [],
+            "decision": "reject",
+            "reasons": reasons,
+        })
+        await advance_phase(session_id, "persuasion_suggested")
+
+        return {
+            "options": [],
+            "max_approvable_amount": 0,
+            "negotiation_round": negotiation_round,
+            "max_rounds": settings.MAX_NEGOTIATION_ROUNDS,
+            "requires_rejection_letter_consent": True,
+            "rejection_reasons": reasons,
+            "message": (
+                f"No negotiable options could be found. Primary reasons: {', '.join(reasons)}. "
+                "Would you like us to generate a formal rejection letter for your records? (yes/no)"
+            )
+        }
+
+    # Normal flow: persist options and continue
     await update_session(session_id, {
         "negotiation_round": negotiation_round,
         "persuasion_options": options,
@@ -157,10 +209,20 @@ async def process_response(session_id: str, action: str, custom_amount: float = 
     from agents.persuasion_agent import process_persuasion_response
     
     # Map API action to a simulated user message for the agent
+    # Special action: generate rejection letter (user consent)
+    if action == "generate_rejection_letter":
+        customer = state.get("customer_data", {})
+        terms = state.get("loan_terms", {})
+        reasons = state.get("reasons", []) or ["Application not approvable under current terms."]
+        cust_id = state.get("customer_id") or state.get("session_id") or "UNKNOWN"
+        path = generate_rejection_letter(customer, terms, reasons, cust_id=cust_id)
+        await update_session(session_id, {"rejection_letter_path": path})
+        return {"action": "generated_rejection_letter", "path": path, "message": f"Rejection letter generated: {path}"}
+
     user_msg = action
     if action == "accept" and custom_amount:
         user_msg = f"I want to accept ₹{custom_amount} for {custom_tenure} months"
-    
+
     agent_result = process_persuasion_response(user_msg, state)
     
     updates = {}

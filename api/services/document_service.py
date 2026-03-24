@@ -52,7 +52,7 @@ async def save_document_to_db(session_id: str, document_data: dict) -> str:
             "agent_processed": document_data.get("agent_processed", False),
         }
         
-        result = documents_collection.insert_one(document_record)
+        result = await documents_collection.insert_one(document_record)
         storage_info = "GridFS" if USE_GRIDFS else "local storage"
         print(f"📄 Document saved to database ({storage_info}): {result.inserted_id}")
         return str(result.inserted_id)
