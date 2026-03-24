@@ -109,34 +109,30 @@ async def end_active_session(session_id: str) -> dict:
 
 
 async def search_sessions_by_phone(phone: str) -> list:
-    """Search for all sessions associated with a phone number (No Cache)."""
+    """Search for all active sessions associated with a phone number (No Cache)."""
     from db.database import sessions_collection
     from api.services.sales_service import _normalize_phone
     
     clean_phone = _normalize_phone(phone)
-    # results = await cache.get(f"sessions_by_phone:{clean_phone}")
-    # if results: return results
     
-    # In a real MongoDB this would be a find() query. 
-    # Use to_list(length=100) for async cursor
-    cursor = sessions_collection.find()
+    # Get all sessions for this phone that are NOT hidden
+    cursor = sessions_collection.find({"customer_data.phone": clean_phone, "hidden_from_user": {"$ne": True}})
     all_sessions = await cursor.to_list(length=100)
     
     results = []
     for s in all_sessions:
-        if s.get("customer_data", {}).get("phone") == clean_phone:
-            # Clean for JSON serialization (remove ObjectId)
-            s_clean = s.copy()
-            if "_id" in s_clean: s_clean["_id"] = str(s_clean["_id"])
-            
-            results.append({
-                "session_id": s_clean["session_id"],
-                "created_at": s_clean.get("created_at"),
-                "status": s_clean.get("status"),
-                "current_phase": s_clean.get("current_phase"),
-                "last_message": s_clean.get("messages", [-1])[-1] if s_clean.get("messages") else None,
-                "state": s_clean 
-            })
+        # Clean for JSON serialization (remove ObjectId)
+        s_clean = s.copy()
+        if "_id" in s_clean: s_clean["_id"] = str(s_clean["_id"])
+        
+        results.append({
+            "session_id": s_clean["session_id"],
+            "created_at": s_clean.get("created_at"),
+            "status": s_clean.get("status"),
+            "current_phase": s_clean.get("current_phase"),
+            "last_message": s_clean.get("messages", [-1])[-1] if s_clean.get("messages") else None,
+            "state": s_clean 
+        })
 
     
     # Sort by created_at descending

@@ -28,7 +28,7 @@ def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_mont
     if annual_rate == 0 or tenure_months == 0:
         return 0
     
-    monthly_rate = annual_rate / 12
+    monthly_rate = (annual_rate / 12) / 100
     if monthly_rate == 0:
         # Simple division if no interest
         return desired_emi * tenure_months
@@ -66,7 +66,7 @@ async def underwriting_agent_node(state: dict) -> dict:
             "current_phase": "sales"
         }
     
-    rate = terms.get("rate", 0.10)  # Default 10% annual rate
+    rate = float(terms.get("rate", 12.0))  # Default 12.0% annual rate
     tenure = terms.get("tenure", 12)  # Default 12 months
     fraud_score = state.get("fraud_score", 0.0)
     max_affordable_principal = terms.get("max_affordable_principal", 0)
@@ -194,7 +194,7 @@ async def underwriting_agent_node(state: dict) -> dict:
         msg = (f"🎉 **EXCELLENT NEWS!**\n\n"
                f"I've personally reviewed your request, and your application for ₹{principal:,} is **FULLY APPROVED**. "
                f"Your disciplined credit profile and consistent history make you a preferred customer for us. "
-               f"We're offering this at our best rate of {rate*100:.1f}% p.a.")
+               f"We're offering this at our best rate of {rate:.1f}% p.a.")
     
     elif decision == "pending_docs":
         missing = "Salary Slip" if principal > pre_approved else "KYC Documents"
@@ -246,6 +246,7 @@ async def underwriting_agent_node(state: dict) -> dict:
         # ✅ Add EMI tracking fields
         "loan_terms": {
             **state.get("loan_terms", {}),
+            "rate": rate,  # Explicitly save the evaluated rate
             "sanction_date": sanction_date,
             "first_emi_date": first_emi_str,
             "next_emi_date": first_emi_str,

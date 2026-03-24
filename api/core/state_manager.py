@@ -303,6 +303,28 @@ async def end_session(session_id: str) -> dict:
 
 
 async def delete_session(session_id: str) -> bool:
-    """Remove session from MongoDB."""
-    result = await sessions_collection.delete_one({"_id": session_id})
-    return result.deleted_count > 0
+    """Mark session as hidden from user view (soft delete)."""
+    from datetime import datetime
+    
+    # Soft delete: mark session as hidden instead of removing from DB
+    result = await sessions_collection.update_one(
+        {"_id": session_id},
+        {"$set": {"hidden_from_user": True, "hidden_at": datetime.utcnow()}}
+    )
+    
+    # Clear the sessions list cache for this user
+    if result.modified_count > 0:
+        session = await sessions_collection.find_one({"_id": session_id})
+        if session:
+            phone = session.get("customer_data", {}).get("phone")
+            if phone:
+                from api.core.redis_cache import get_cache
+                from api.services.sales_service import _normalize_phone
+                
+                cache = await get_cache()
+                clean_phone = _normalize_phone(phone)
+                cache_key = f"sessions_by_phone:{clean_phone}"
+                await cache.delete(cache_key)
+                print(f"✅ Session hidden and cache cleared for {clean_phone}")
+    
+    return result.modified_count > 0
