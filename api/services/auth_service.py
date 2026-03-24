@@ -6,11 +6,12 @@ import random
 import string
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
-from api.core.redis_cache import get_cache
-from api.core.email_service import get_email_service
+from api.core.redis_cache import get_cache, RedisCache
+from api.core.email_service import get_email_service, EmailService
 from api.core.state_manager import get_session, update_session
 from api.config import get_settings
 from mock_apis.otp_service import send_otp as mock_send_otp, verify_otp as mock_verify_otp
+from mock_apis.cibil_api import get_cibil_score as mock_get_cibil_score
 
 settings = get_settings()
 
@@ -31,8 +32,8 @@ class AuthService:
     """Enhanced authentication service with caching and profile management"""
     
     def __init__(self):
-        self.cache = None
-        self.email_service = None
+        self.cache: Optional[RedisCache] = None
+        self.email_service: Optional[EmailService] = None
     
     async def _get_services(self):
         """Initialize services if not already done"""
@@ -40,6 +41,92 @@ class AuthService:
             self.cache = await get_cache()
         if not self.email_service:
             self.email_service = await get_email_service()
+        
+        # Type narrowing for Pylance: guarantee both services are initialized
+        assert self.cache is not None, "Cache initialization failed"
+        assert self.email_service is not None, "Email service initialization failed"
+
+    @staticmethod
+    def _derive_pre_approved_limit(credit_score: int, salary: Optional[float]) -> int:
+        """Derive a simple mock pre-approved limit using score and salary."""
+        monthly_salary = float(salary or 0)
+
+        if credit_score >= 800:
+            multiplier = 6.0
+        elif credit_score >= 750:
+            multiplier = 5.0
+        elif credit_score >= 700:
+            multiplier = 4.0
+        elif credit_score >= 650:
+            multiplier = 3.0
+        else:
+            multiplier = 2.0
+
+        base_limit = int(monthly_salary * multiplier) if monthly_salary > 0 else 100000
+        base_limit = max(base_limit, 100000)
+
+        # Soft caps by risk band for a realistic mock profile.
+        if credit_score < 650:
+            return min(base_limit, 200000)
+        if credit_score < 700:
+            return min(base_limit, 400000)
+        if credit_score < 750:
+            return min(base_limit, 800000)
+        return min(base_limit, 1500000)
+
+    async def fetch_credit_score(
+        self,
+        phone: str,
+        pan: Optional[str] = None,
+        full_name: Optional[str] = None,
+        dob: Optional[str] = None,
+        persist: bool = False,
+    ) -> Dict[str, Any]:
+        """Fetch mock CIBIL/credit score and optionally persist it to customer profile."""
+        await self._get_services()
+
+        try:
+            result = mock_get_cibil_score(phone=phone, pan=pan, full_name=full_name, dob=dob)
+            if not result.get("success"):
+                return result
+
+            score = int(result.get("credit_score", 0))
+
+            if persist:
+                customers = load_mock_customers()
+                customer = next((c for c in customers if c.get("phone") == phone), None)
+
+                updates: Dict[str, Any] = {"credit_score": score}
+                if customer:
+                    derived_limit = self._derive_pre_approved_limit(score, customer.get("salary"))
+                    updates["pre_approved_limit"] = derived_limit
+                    customer.update(updates)
+                    save_mock_customers(customers)
+
+                try:
+                    from db.database import users_collection
+                    users_collection.update_one({"phone": phone}, {"$set": updates})
+                except Exception as db_err:
+                    print(f"⚠️ Failed to persist credit score to MongoDB: {db_err}")
+
+                cached_customer = await self.cache.get_customer(phone)
+                if cached_customer:
+                    cached_customer.update(updates)
+                    await self.cache.set_customer(phone, cached_customer)
+
+                result["persisted"] = True
+                result["profile_updates"] = updates
+            else:
+                result["persisted"] = False
+
+            return result
+        except Exception as e:
+            print(f"❌ Credit score fetch failed: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to fetch credit score: {str(e)}",
+                "phone": phone,
+            }
     
     async def generate_otp(self, phone: str) -> str:
         """Generate 6-digit OTP"""
@@ -63,7 +150,7 @@ class AuthService:
         print(f"🛠️ Development OTP set for {phone}: {dev_otp}")
         return True
     
-    async def send_otp(self, phone: str, email: str = None) -> Dict[str, Any]:
+    async def send_otp(self, phone: str, email: Optional[str] = None) -> Dict[str, Any]:
         """Send OTP using mock_apis/otp_service.py"""
         await self._get_services()
         try:
@@ -221,6 +308,24 @@ class AuthService:
             
             if not customer_data:
                 raise Exception("Customer not found")
+
+            # Ensure credit score is available for underwriting.
+            score_missing = not isinstance(customer_data.get("credit_score"), (int, float)) or customer_data.get("credit_score", 0) <= 0
+            if score_missing:
+                credit_result = await self.fetch_credit_score(
+                    phone=phone,
+                    full_name=customer_data.get("name"),
+                    dob=customer_data.get("dob"),
+                    persist=True,
+                )
+                if credit_result.get("success"):
+                    customer_data["credit_score"] = credit_result.get("credit_score", customer_data.get("credit_score", 700))
+                    profile_updates = credit_result.get("profile_updates", {})
+                    if "pre_approved_limit" in profile_updates:
+                        customer_data["pre_approved_limit"] = profile_updates["pre_approved_limit"]
+                    print(f"✅ Auto-fetched credit score for {phone}: {customer_data.get('credit_score')}")
+                else:
+                    print(f"⚠️ Credit score auto-fetch failed for {phone}: {credit_result.get('message')}")
             
             # Get loan history to enrich profile
             history_result = await self.get_customer_loan_history(phone)
@@ -397,13 +502,33 @@ class AuthService:
         customers = load_mock_customers()
         if any(c.get("phone") == phone for c in customers):
             return {"success": False, "message": "User already exists"}
+
+        # Fetch mock CIBIL score if missing from input.
+        requested_score = user_data.get("credit_score")
+        resolved_credit_score = requested_score if isinstance(requested_score, (int, float)) and requested_score > 0 else None
+        if resolved_credit_score is None:
+            cibil = mock_get_cibil_score(
+                phone=phone,
+                full_name=user_data.get("name"),
+                dob=user_data.get("dob")
+            )
+            resolved_credit_score = cibil.get("credit_score", 700) if cibil.get("success") else 700
+
+        requested_limit = user_data.get("pre_approved_limit")
+        if isinstance(requested_limit, (int, float)) and requested_limit > 0:
+            resolved_pre_approved_limit = int(requested_limit)
+        else:
+            resolved_pre_approved_limit = self._derive_pre_approved_limit(
+                int(resolved_credit_score),
+                user_data.get("salary")
+            )
             
         # Add to mock database
         new_user = {
             "id": f"CUST{len(customers) + 1:03d}",
             **user_data,
-            "credit_score": user_data.get("credit_score", 700),
-            "pre_approved_limit": user_data.get("pre_approved_limit", 100000),
+            "credit_score": int(resolved_credit_score),
+            "pre_approved_limit": resolved_pre_approved_limit,
             "existing_emi_total": user_data.get("existing_emi_total", 0),
             "current_loans": [],
             "risk_flags": [],

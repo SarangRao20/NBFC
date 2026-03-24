@@ -16,6 +16,8 @@ interface UserData {
   password: string;
   city?: string;
   salary?: number;
+  credit_score?: number;
+  pre_approved_limit?: number;
 }
 
 const INITIAL_APP_STATE: AppState = {
@@ -112,8 +114,8 @@ function App() {
       sessionId: newSessionId,
       customerName: userData.name,
       phone: userData.phone,
-      creditScore: userData.salary ? 700 : 650, // Simple credit score logic
-      preApprovedLimit: userData.salary ? userData.salary * 3 : 100000, // Simple limit calculation
+      creditScore: userData.credit_score || prev.creditScore || 0,
+      preApprovedLimit: userData.pre_approved_limit || prev.preApprovedLimit || 0,
       actionLog: []
     }));
     fetchPastSessions(userData.phone);

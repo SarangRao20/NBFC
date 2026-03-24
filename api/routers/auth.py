@@ -1,13 +1,10 @@
 """Authentication Router - Enhanced with OTP bypass and profile completeness check."""
 
-import random
-import string
+from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Form
 from pydantic import BaseModel
-from api.schemas.auth import OTPRequest, OTPVerify, LoginResponse, ProfileCheckResponse
+from api.schemas.auth import OTPVerify, LoginResponse, ProfileCheckResponse
 from api.services.auth_service import auth_service
-from api.core.redis_cache import get_cache
-from api.core.exceptions import SessionNotFoundError
 from api.config import get_settings
 
 settings = get_settings()
@@ -25,7 +22,7 @@ class DevOTPRequest(BaseModel):
              summary="Send OTP with Development Bypass Option")
 async def send_otp(
     phone: str = Form(...),
-    email: str = Form("")
+    email: Optional[str] = Form(None)
 ):
     """Send OTP to customer's email with development bypass option."""
     try:
@@ -129,11 +126,11 @@ async def register(
     email: str = Form(...),
     name: str = Form(...),
     password: str = Form(...),
-    city: str = Form(None),
-    salary: float = Form(None),
-    dob: str = Form(None),
-    profession: str = Form(None),
-    address: str = Form(None)
+    city: Optional[str] = Form(None),
+    salary: Optional[float] = Form(None),
+    dob: Optional[str] = Form(None),
+    profession: Optional[str] = Form(None),
+    address: Optional[str] = Form(None)
 ):
     """Register new customer with OTP verification."""
     try:
@@ -169,6 +166,60 @@ async def register(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
+        )
+
+
+@router.get("/credit-score/{phone}", response_model=dict,
+            summary="Fetch Mock CIBIL/Credit Score")
+async def get_credit_score(phone: str, persist: bool = False):
+    """Fetch credit score for a phone number and optionally persist it to profile."""
+    try:
+        result = await auth_service.fetch_credit_score(phone=phone, persist=persist)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "Failed to fetch credit score")
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Credit score fetch failed: {str(e)}"
+        )
+
+
+@router.post("/fetch-credit-score", response_model=dict,
+             summary="Fetch Mock CIBIL/Credit Score with Identity Inputs")
+async def fetch_credit_score(
+    phone: str = Form(...),
+    pan: Optional[str] = Form(None),
+    full_name: Optional[str] = Form(None),
+    dob: Optional[str] = Form(None),
+    persist: bool = Form(False),
+):
+    """Fetch score using optional PAN/name/DOB and optionally persist to user profile."""
+    try:
+        result = await auth_service.fetch_credit_score(
+            phone=phone,
+            pan=pan,
+            full_name=full_name,
+            dob=dob,
+            persist=persist,
+        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "Failed to fetch credit score")
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Credit score fetch failed: {str(e)}"
         )
 
 
@@ -249,12 +300,12 @@ async def check_profile(phone: str):
 @router.post("/update-profile", summary="Update Missing Profile Fields")
 async def update_profile(
     phone: str,
-    name: str = None,
-    email: str = None,
-    city: str = None,
-    salary: float = None,
-    credit_score: int = None,
-    existing_emi_total: float = None
+    name: Optional[str] = None,
+    email: Optional[str] = None,
+    city: Optional[str] = None,
+    salary: Optional[float] = None,
+    credit_score: Optional[int] = None,
+    existing_emi_total: Optional[float] = None
 ):
     """Update missing profile fields."""
     try:

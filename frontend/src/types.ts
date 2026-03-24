@@ -49,6 +49,8 @@ export interface UserData {
   password: string;
   city?: string;
   salary?: number;
+  credit_score?: number;
+  pre_approved_limit?: number;
 }
 
 export interface AuthState {

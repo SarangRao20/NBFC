@@ -2,8 +2,8 @@
 
 import os
 import random
+import importlib
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 
 _otp_store: dict = {}
 _send_count: dict = {}
@@ -13,7 +13,7 @@ MAX_RESENDS = 5
 OTP_EXPIRY_MINUTES = 5
 
 
-def send_otp(phone: str, otp: str = None) -> dict:
+def send_otp(phone: str, otp: str | None = None) -> dict:
     """Generate or accept a 6-digit OTP, store it, and send (simulated SMS).
 
     If `otp` is provided the function will use that value (useful when
@@ -35,7 +35,11 @@ def send_otp(phone: str, otp: str = None) -> dict:
     _send_count[phone] += 1
 
     # check environment dynamically
-    load_dotenv(override=True)
+    try:
+        dotenv_module = importlib.import_module("dotenv")
+        dotenv_module.load_dotenv(override=True)
+    except Exception:
+        pass
     tw_sid = os.getenv("TWILIO_ACCOUNT_SID")
     tw_auth = os.getenv("TWILIO_AUTH_TOKEN")
     tw_phone = os.getenv("TWILIO_PHONE_NUMBER")
@@ -44,7 +48,8 @@ def send_otp(phone: str, otp: str = None) -> dict:
     twilio_client = None
     if use_twilio:
         try:
-            from twilio.rest import Client
+            twilio_rest = importlib.import_module("twilio.rest")
+            Client = getattr(twilio_rest, "Client")
             twilio_client = Client(tw_sid, tw_auth)
         except Exception:
             use_twilio = False
