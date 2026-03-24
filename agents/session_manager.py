@@ -3,7 +3,10 @@
 from typing import Optional, Dict, Any
 from datetime import datetime
 from db.database import sessions_collection, documents_collection
-
+try:
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+except Exception:
+    AIMessage = HumanMessage = SystemMessage = None
 class SessionManager:
     """Async Motor session persistence layer."""
     
@@ -11,6 +14,29 @@ class SessionManager:
     async def save_session(session_id: str, state: Dict[str, Any]) -> bool:
         """Save session state to MongoDB (async Motor)."""
         try:
+            # Ensure messages are serializable (convert langchain message objects to dicts)
+            raw_messages = state.get("messages", [])
+            serializable_messages = []
+            for m in raw_messages:
+                # already a dict (serialized elsewhere)
+                if isinstance(m, dict):
+                    serializable_messages.append(m)
+                    continue
+
+                # langchain message objects have a `content` attribute
+                if hasattr(m, "content"):
+                    if HumanMessage is not None and isinstance(m, HumanMessage):
+                        role = "user"
+                    elif SystemMessage is not None and isinstance(m, SystemMessage):
+                        role = "system"
+                    else:
+                        role = "assistant"
+                    serializable_messages.append({"role": role, "content": getattr(m, "content", "")})
+                    continue
+
+                # fallback to string representation
+                serializable_messages.append({"role": "system", "content": str(m)})
+
             session_doc = {
                 "session_id": session_id,
                 "customer_id": state.get("customer_id", ""),
@@ -28,8 +54,8 @@ class SessionManager:
                 "dti_ratio": state.get("dti_ratio", 0.0),
                 "risk_level": state.get("risk_level", ""),
                 "sanction_pdf": state.get("sanction_pdf", ""),
-                "messages_count": len(state.get("messages", [])),
-                "messages": state.get("messages", []),
+                "messages_count": len(serializable_messages),
+                "messages": serializable_messages,
                 "action_log": state.get("action_log", []),
                 "last_updated": datetime.utcnow(),
                 "is_signed": state.get("is_signed", False),
