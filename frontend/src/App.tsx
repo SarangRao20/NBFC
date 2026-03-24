@@ -41,7 +41,8 @@ const INITIAL_APP_STATE: AppState = {
   actionLog: [],
   options: [],
   loan_terms: undefined,
-  phone: undefined
+  phone: undefined,
+  salary: 0
 };
 
 const INITIAL_CHAT_HISTORY: ChatMessage[] = [];
@@ -74,8 +75,8 @@ function App() {
             setSessionId(savedSessionId);
             setIsAuthenticated(true);
             // Load full state (history, terms etc)
-            await loadSession(savedSessionId);
-            console.log("🔄 Session resumed successfully:", savedSessionId);
+            if (savedSessionId) await loadSession(savedSessionId);
+            console.log("Session resumed successfully:", savedSessionId);
           } else {
             localStorage.removeItem('nbfc_session_id');
             localStorage.removeItem('nbfc_customer_name');
@@ -116,6 +117,7 @@ function App() {
       phone: userData.phone,
       creditScore: userData.credit_score || prev.creditScore || 0,
       preApprovedLimit: userData.pre_approved_limit || prev.preApprovedLimit || 0,
+      salary: userData.salary || prev.salary || 0,
       actionLog: []
     }));
     fetchPastSessions(userData.phone);
@@ -410,6 +412,7 @@ function App() {
             bankStatement: state.documents?.verified ? 'verified' : 'pending',
           },
           pastLoans: state.customer_data?.past_loans,
+          salary: state.customer_data?.salary || 0,
         };
         setAppState(sData);
         if (state.customer_data?.phone) {
@@ -447,8 +450,6 @@ function App() {
       const resp = await apiClient.startSession();
       if (resp && resp.session_id) {
         setSessionId(resp.session_id);
-        const user = { name: appState.customerName, phone: '', email: '', dob: '', profession: '', address: '', password: '' };
-        // We keep the customerName but reset everything else
         setAppState({
           ...INITIAL_APP_STATE,
           sessionId: resp.session_id,
@@ -566,6 +567,7 @@ function App() {
             pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
             loan_terms: fullState.loan_terms || prev.loan_terms,
+            salary: fullState.customer_data?.salary || prev.salary,
           }));
         }
       } catch (err) {

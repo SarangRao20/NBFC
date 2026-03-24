@@ -8,6 +8,7 @@ export interface AppState {
   creditScore: number;
   preApprovedLimit: number;
   phone?: string;
+  salary: number;
   underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved' | 'Reject';
   activeAgent: string | null;
   thinkingAgents: string[];

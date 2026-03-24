@@ -37,7 +37,7 @@ class SessionManager:
             
             # Upsert (save or update)
             sessions_collection.update_one(
-                {"session_id": session_id},
+                {"_id": session_id},
                 {"$set": session_doc},
                 upsert=True
             )
@@ -51,7 +51,7 @@ class SessionManager:
     def load_session(session_id: str) -> Optional[Dict[str, Any]]:
         """Load session state from MongoDB (sync PyMongo). Always returns complete state schema."""
         try:
-            session_doc = sessions_collection.find_one({"session_id": session_id})
+            session_doc = sessions_collection.find_one({"_id": session_id})
             if not session_doc:
                 print(f"⚠️ Session {session_id} not found")
                 return None
@@ -151,10 +151,10 @@ class SessionManager:
     def delete_session(session_id: str) -> bool:
         """Delete a session (after completion/timeout)."""
         try:
-            sessions_collection.delete_one({"session_id": session_id})
+            sessions_collection.delete_one({"_id": session_id})
             documents_collection.delete_many({"session_id": session_id})
-            print(f"✅ Session {session_id} deleted from MongoDB")
+            print(f"Session {session_id} deleted from MongoDB")
             return True
         except Exception as e:
-            print(f"❌ Error deleting session: {e}")
+            print(f"Error deleting session: {e}")
             return False

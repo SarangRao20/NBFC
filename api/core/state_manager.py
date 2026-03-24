@@ -243,17 +243,23 @@ def _sanitize_state(state: dict) -> dict:
     return new_state
 
 
+def _deep_merge(base: dict, update: dict) -> dict:
+    """Recursively merges two dictionaries."""
+    for key, value in update.items():
+        if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
 async def update_session(session_id: str, updates: dict) -> dict:
     """Merge updates into session state and persist to MongoDB. Returns updated state."""
     state = await get_session(session_id)
     if not state:
         raise KeyError(f"Session {session_id} not found")
 
-    for key, value in updates.items():
-        if isinstance(value, dict) and isinstance(state.get(key), dict):
-            state[key].update(value)
-        else:
-            state[key] = value
+    # Use deep merge to ensure nested objects are preserved
+    _deep_merge(state, updates)
 
     # Sanitize before persisting to MongoDB Atlas
     sanitized = _sanitize_state(state)

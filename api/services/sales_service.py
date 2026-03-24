@@ -73,6 +73,7 @@ def _get_rate_for_product(loan_type: str) -> float:
 
 async def identify_customer(session_id: str, phone: str, email: str = None, password: str = None) -> dict:
     """Step 2: Identify Existing vs New User via DB lookup."""
+    from api.core.state_manager import get_session
     state = await get_session(session_id)
     if not state:
         return None
@@ -117,7 +118,7 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "phone": clean_phone,
                 "email": customer.get("email", ""),
                 "city": customer.get("city", ""),
-                "salary": customer.get("salary", 0),
+                "salary": customer.get("salary") or state.get("customer_data", {}).get("salary") or 0,
                 "credit_score": customer.get("credit_score", 0),
                 "pre_approved_limit": customer.get("pre_approved_limit", 0),
                 "existing_emi_total": customer.get("existing_emi_total", 0),
@@ -161,7 +162,7 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
                 "phone": clean_phone,
                 "email": email or "",
                 "city": "",
-                "salary": 0,
+                "salary": state.get("customer_data", {}).get("salary") or 0,
                 "credit_score": 700,
                 "pre_approved_limit": 25000,
                 "existing_emi_total": 0,
