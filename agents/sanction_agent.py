@@ -1,9 +1,8 @@
 """Sanction Letter Generator Agent — produces a professional PDF sanction letter."""
 
-import os, sys
+import os, sys, datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import datetime
 from langchain_core.messages import AIMessage
 from agents.session_manager import SessionManager
 
@@ -14,35 +13,62 @@ os.makedirs("data/sanctions", exist_ok=True)
 async def sanction_agent_node(state: dict):
     """
     Generates a formal Sanction Letter PDF string based on confirmed loan details.
+    Includes Address Gathering and E-sign workflow.
     """
+    session_id = state.get("session_id", "default")
+    customer = state.get("customer_data", {}) or {}
+    terms = state.get("loan_terms", {}) or {}
+    decision = state.get("decision", "approve")
+
+    # 1. ADDRESS GATHERING (If approved but no address)
+    if decision == "approve" and not customer.get("address"):
+        print("📜 [SANCTION] Missing address. Requesting from user...")
+        return {
+            "messages": [AIMessage(content=(
+                "🎊 **Just one last thing before I release your funds!**\n\n"
+                "To finalize the legal agreement, I'll need your **current residential address**. "
+                "Please type it out below, and I'll generate your official Sanction Letter instantly."
+            ))],
+            "current_phase": "sanction_address",
+            "options": ["Skip for now", "Talk to Arjun"]
+        }
+
+    # 2. CAPTURE ADDRESS FROM LAST MESSAGE (If in sanction_address phase)
+    if state.get("current_phase") == "sanction_address" and not customer.get("address"):
+        last_msg = ""
+        for m in reversed(state.get("messages", [])):
+            from langchain_core.messages import HumanMessage
+            if isinstance(m, HumanMessage):
+                last_msg = m.content
+                break
+        
+        if last_msg and len(last_msg) > 5:
+            customer["address"] = last_msg
+            print(f"🏠 [SANCTION] Captured address: {last_msg}")
+        else:
+             return {
+                "messages": [AIMessage(content="I need a valid address to prepare your legal documents. Could you please provide your full residential address?")],
+                "current_phase": "sanction_address"
+             }
+
     print("📜 [SANCTION AGENT] Generating final sanction letter...")
     
     log = list(state.get("action_log") or [])
     log.append("📜 Drafting legally-compliant Sanction Letter and Loan Agreement...")
 
-    import datetime
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
-    terms = state.get("loan_terms", {})
-    customer = state.get("customer_data", {})
-
     principal = terms.get("principal", 0)
-    rate = terms.get("rate", 0)
-    tenure = terms.get("tenure", 0)
+    rate = terms.get("rate", 0.10)
+    tenure = terms.get("tenure", 12)
     emi = terms.get("emi", 0)
     cust_name = customer.get("name", "Applicant")
     cust_phone = customer.get("phone", "N/A")
     cust_id = state.get("customer_id", "UNKNOWN")
+    cust_addr = customer.get("address", "Not provided")
 
-    dti = state.get("dti_ratio", 0)
-    score = customer.get("credit_score", 0)
-
-    # Determine letter type (approved or rejected)
-    status = state.get("decision", "approve").strip().lower()
-    is_approved = status != "reject" and status != "hard_reject"
+    is_approved = decision != "hard_reject" and decision != "reject"
     status_text = "Approved" if is_approved else "Rejected"
-
-    rejection_reason = state.get("rejection_reason", "Not specified")
     letter_label = "Sanction" if is_approved else "Rejection"
     
     log.append(f"✍️ Drafting {letter_label} Letter for {cust_name}...")
@@ -51,114 +77,72 @@ async def sanction_agent_node(state: dict):
     filepath = os.path.join("data", "sanctions", filename)
 
     try:
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib import colors
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.pagesizes import letter
 
-        doc = SimpleDocTemplate(
-            filepath,
-            pagesize=letter,
-            rightMargin=50,
-            leftMargin=50,
-            topMargin=50,
-            bottomMargin=50,
-        )
+        doc = SimpleDocTemplate(filepath, pagesize=letter)
         styles = getSampleStyleSheet()
-
         elements = []
 
-        # ================= HEADER =================
+        # Header
         elements.append(Paragraph("<b>FinServe NBFC Ltd.</b>", styles["Title"]))
-        elements.append(Paragraph("Registered Office: Financial District, Mumbai", styles["Normal"]))
+        elements.append(Paragraph(f"<b>{letter_label.upper()} LETTER</b>", styles["Heading2"]))
+        elements.append(Paragraph(f"Date: {current_date}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-        letter_title = "LOAN SANCTION LETTER" if is_approved else "LOAN REJECTION LETTER"
-        elements.append(Paragraph(f"<b>{letter_title}</b>", styles["Heading2"]))
-        elements.append(Spacer(1, 10))
-
-        elements.append(Paragraph(f"<b>Date:</b> {current_date}", styles["Normal"]))
-        elements.append(Spacer(1, 14))
-
-        # ================= APPLICANT DETAILS =================
-        elements.append(Paragraph("<b>Applicant Details</b>", styles["Heading3"]))
-        elements.append(Spacer(1, 6))
-
+        # Applicant Table
         app_data = [
             ["Name", cust_name],
+            ["Address", Paragraph(cust_addr, styles["Normal"])],
             ["Phone", cust_phone],
-            ["Customer ID", cust_id],
             ["Status", status_text],
         ]
-        if not is_approved:
-            app_data.append(["Reason", rejection_reason])
-
-        table = Table(app_data, colWidths=[150, 300])
-        table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-        ]))
+        table = Table(app_data, colWidths=[120, 330])
+        table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey)]))
         elements.append(table)
-        elements.append(Spacer(1, 14))
+        elements.append(Spacer(1, 12))
 
-        # ================= LOAN DETAILS (only if approved) =================
+        # Loan Table
         if is_approved:
-            elements.append(Paragraph("<b>Loan Details</b>", styles["Heading3"]))
-            elements.append(Spacer(1, 6))
             loan_data = [
-                ["Sanctioned Amount", f"INR {principal:,.2f}"],
-                ["Interest Rate", f"{rate}% p.a."],
-                ["Tenure", f"{tenure} months"],
+                ["Amount", f"INR {principal:,.0f}"],
+                ["Rate", f"{rate*100 if rate < 1 else rate}% p.a."],
+                ["Tenure", f"{tenure} mos"],
                 ["EMI", f"INR {emi:,.2f}"],
             ]
-            loan_table = Table(loan_data, colWidths=[200, 250])
-            loan_table.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
-            ]))
+            loan_table = Table(loan_data, colWidths=[120, 330])
+            loan_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey), ("BACKGROUND", (0,0), (0,-1), colors.whitesmoke)]))
             elements.append(loan_table)
-            elements.append(Spacer(1, 14))
-
+        
         doc.build(elements)
-        log.append(f"✅ Generated PDF file: {filename}")
+        log.append(f"✅ Generated PDF: {filename}")
     except Exception as e:
         print(f"Error generating PDF: {e}")
-        log.append(f"⚠️ PDF generation failed, creating text fallback.")
         filepath = filepath.replace(".pdf", ".txt")
-        with open(filepath, "w") as f:
-            f.write(f"{letter_label.upper()} LETTER\nName: {cust_name}\nStatus: {status_text}")
+        with open(filepath, "w") as f: f.write(f"Sanction Letter\nName: {cust_name}\nAmount: {principal}")
 
-    msg = f"📜 **{letter_label} Letter Generated!**\n\nYour official document is ready for download: `{filename}`\n\nPlease review the terms and click 'Complete' to finalize your session."
+    msg = (f"📜 **Your Sanction Letter is Ready!**\n\n"
+           f"I've generated your official agreement (ID: {filename}).\n\n"
+           f"**NEXT STEP**: Please click the button below to **E-sign** and authorize the disbursement of ₹{principal:,} to your linked account.")
     
-    log.append(f"📫 Document dispatched to user.")
-
     updates = {
         "sanction_pdf": filepath, 
         "messages": [AIMessage(content=msg)],
         "action_log": log,
-        "options": ["Download Letter", "Complete Session"],
-        "current_phase": "sanction"
+        "options": ["✍️ E-sign & Disburse", "📄 View Letter", "Talk to Arjun"],
+        "current_phase": "sanction_esign",
+        "customer_data": customer
     }
     
-    # Save document to MongoDB
-    session_id = state.get("session_id", "default")
+    # Save to DB
     try:
-        SessionManager.save_document(
-            session_id,
-            "sanction_letter",
-            filepath,
-            {"letter_type": letter_label},
-            1.0  # 100% confidence for system-generated document
-        )
-        print(f"📋 Sanction letter saved for session {session_id}")
-    except Exception as e:
-        print(f"⚠️ Failed to save document: {e}")
+        await SessionManager.save_document(session_id, "sanction_letter", filepath, {"type": letter_label}, 1.0)
+    except: pass
     
-    # Save session to MongoDB
     try:
-        SessionManager.save_session(session_id, updates)
-        print(f"💾 Session {session_id} saved to MongoDB")
-    except Exception as e:
-        print(f"⚠️ Failed to save session: {e}")
+        await SessionManager.save_session(session_id, updates)
+    except: pass
     
     return updates

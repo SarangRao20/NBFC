@@ -106,16 +106,16 @@ async def emi_engine_node(state: dict) -> dict:
         new_score = min(old_score + 10, 850) # Increase by 10 for on-time payment
         customer["credit_score"] = new_score
         
-        log.append(f"💳 EMI Payment successful. Total payments: {payments_made}")
+        log.append(f"💳 EMI Payment successful. Total payments: {new_payments_made}")
         log.append(f"📈 Credit Score increased to {new_score}!")
         
         # ── SYNC TO DATABASE ────────────────────────────────────────────────
         try:
             from db.database import loan_applications_collection
-            loan_applications_collection.update_one(
+            await loan_applications_collection.update_one(
                 {"session_id": session_id},
                 {"$set": {
-                    "payments_made": payments_made,
+                    "payments_made": new_payments_made,
                     "remaining_balance": terms.get("remaining_balance"),
                     "next_emi_date": terms["next_emi_date"],
                     "last_payment_date": terms["last_payment_date"]
@@ -136,14 +136,33 @@ async def emi_engine_node(state: dict) -> dict:
     if terms.get("payments_made") == terms.get("tenure") and terms.get("tenure", 0) > 0:
         if not terms.get("is_closed"):
             terms["is_closed"] = True
-            customer["credit_score"] = min(customer.get("credit_score", 700) + 50, 900)
-            log.append("🏆 Loan fully repaid! Credit Score boosted by 50 points.")
-            updates["messages"] = [AIMessage(content="🎉 **Congratulations!** Your loan has been fully repaid. Your credit score has received a significant boost!")]
+            
+            # Dynamic Credit Score & Limit Increase
+            old_score = customer.get("credit_score", 700)
+            score_boost = 50
+            new_score = min(old_score + score_boost, 900)
+            customer["credit_score"] = new_score
+            
+            old_limit = customer.get("pre_approved_limit", 25000)
+            # Increase limit by 50% upon successful repayment
+            limit_boost = int(old_limit * 0.5)
+            new_limit = old_limit + limit_boost
+            customer["pre_approved_limit"] = new_limit
+            
+            log.append(f"🏆 Loan fully repaid! Credit Score boosted to {new_score} and Limit increased to ₹{new_limit:,}.")
+            
+            updates["messages"] = [AIMessage(content=(
+                f"🎉 **Congratulations!** Your loan has been fully repaid.\n\n"
+                f"Because of your consistent repayment:\n"
+                f"- Your Credit Score increased to **{new_score}** (↑ {score_boost})\n"
+                f"- Your Pre-approved Limit is now **₹{new_limit:,}** (↑ ₹{limit_boost:,})\n\n"
+                f"We're excited to support your next big goal!"
+            ))]
             
             # ── SYNC CLOSURE TO DATABASE ────────────────────────────────────
             try:
                 from db.database import loan_applications_collection
-                loan_applications_collection.update_one(
+                await loan_applications_collection.update_one(
                     {"session_id": session_id},
                     {"$set": {
                         "status": "Closed",

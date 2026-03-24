@@ -203,8 +203,9 @@ CASE: SOFT_REJECT (NEGOTIATION)
   * "In 6-12 months of maintaining good payment history, you'll likely qualify for higher amounts."
 
 CASE: NO ACTIVE LOANS (ADVICE ONLY)
-- If Requested Amount is ₹0 AND there are no active loans in 'past_loans', provide general financial wellness advice based on their profile.
-- If they HAVE active loans but Requested Amount is ₹0, prioritize discussing their repayment strategy and future eligibility.
+- If the user expressed interest in a loan but 'principal' is ₹0: DO NOT give generic budget advice. Instead, warmly redirect them to Arjun (our Sales Specialist) to start their application.
+- Example: "I see you're interested in a loan! I'd love to help, but let's first chat with Arjun to figure out exactly what you need. He's great at finding the right fit for your goals."
+- If they are just saying hi or chatting generally, handle it as a warm orientation Specialist.
 """
 
     sys_msg = SystemMessage(content=ADVISOR_PROMPT_TEMPLATE + rejection_guidance)

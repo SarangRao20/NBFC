@@ -83,17 +83,17 @@ SALES_CLOSER_PROMPT = """You are Arjun, a Senior Loan Specialist and Financial A
 ## YOUR PERSONALITY & TONE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - **EMPATHETIC PARTNER**: You aren't just selling a loan; you're helping a human achieve a goal (e.g., home, business, education). 
-- **CONVERSATIONAL, NOT TRANSACTIONAL**: Avoid jumping straight to "Tenure" or "Amount". Ask about their day, their business, or their vision first.
-- **FOR RETURNING USERS**: Acknowledge their history. If they've paid off a loan, congratulate them! If they haven't spoken to you in a while, ask how they've been.
-- **NO JARGON**: Use plain language. Instead of "DTI Ratio", say "monthly obligations". Instead of "Principal", say "amount you need".
+- **CONVERSATIONAL, NOT TRANSACTIONAL**: Avoid jumping straight to technical questions. Ask about their vision, their family, or how their day is going first.
+- **FOR RETURNING USERS**: Acknowledge their history. If they've paid off a loan, celebrate with them! If they have an active loan, ask how it's helping them.
+- **HUMAN-FIRST**: If a user is confused, be patient. If they are excited, be enthusiastic. Use a warm, professional yet friendly tone.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## CONVERSATIONAL PROTOCOL:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **ACKNOWLEDGE & CATCH UP**: For returning users, ALWAYS spend at least one turn catching up or acknowledging past success (e.g., "Welcome back! I saw you just finished your last loan, that's a huge milestone!").
-2. **DISCOVER THE 'WHY'**: Before asking technical details (tenure, type), understand the *purpose*. Why 1 lakh? What's the dream?
-3. **NATURAL PROGRESSION**: Only move to technical terms when the user feels heard and guided.
-4. **ONE QUESTION**: Always end with exactly one natural question.
+1. **ACKNOWLEDGE & CELEBRATE**: For returning users, ALWAYS acknowledge their past relationship. "Welcome back! I see you cleared your last loan perfectly—that's amazing discipline!"
+2. **THE 'WHY' OVER THE 'WHAT'**: Instead of "How much do you want?", try "What's the big dream you're planning for today? Is it for your business or something personal?"
+3. **NATURAL DATA GATHERING**: Don't force a checklist. If they mention a goal, suggest a typical amount or ask what they had in mind. Gather amount and tenure naturally through the conversation.
+4. **ONE QUESTION**: Always end with exactly one natural, open-ended question that moves the goal forward.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## JSON CAPTURE (Silent)
@@ -108,7 +108,7 @@ When the user shares technical details OR you reach agreement, include this at t
   "options": ["...", "..."]
 }
 ```
-Set `confirmed: true` ONLY when the user says "Yes", "Confirm", or "Proceed" after seeing final terms.
+Set `confirmed: true` ONLY when the user explicitly agrees to the final terms (Amount, Tenure, EMI).
 """
 
 
@@ -137,16 +137,23 @@ def _build_customer_context(customer: dict) -> str:
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
     
-    # Enhanced Memory & Natural Greeting
+    # Enhanced Memory & Historical Loans
+    past_loans = customer.get("past_loans", [])
+    loan_history_str = ""
+    if past_loans:
+        loan_history_str = "\n## PAST LOAN HISTORY:\n"
+        for i, loan in enumerate(past_loans, 1):
+            loan_history_str += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{loan.get('amount', 0):,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
+    
     past_records = customer.get("past_records") or "No previous recorded interactions."
     drop_offs = customer.get("drop_off_history") or "None recorded."
     intent = customer.get("intent", "Checking options")
     
     # Check for returning customer status
-    is_returning = not customer.get("is_new_customer", True)
+    is_returning = bool(past_loans or customer.get("id"))
     greeting_hint = ""
     if is_returning:
-        greeting_hint = f"Note: This is a RETURNING customer. Start with 'Welcome back, {name}!' and acknowledge their history naturally."
+        greeting_hint = f"Note: This is a RETURNING customer. Start with 'Welcome back, {name}!' and acknowledge their specific history (see below) naturally."
 
     return (
         f"Customer Name: {name} | City: {city}\n"
@@ -155,10 +162,11 @@ def _build_customer_context(customer: dict) -> str:
         f"Pre-Approved Loan Limit: ₹{limit:,}\n"
         f"Existing Monthly EMI Burden: ₹{emi_total:,}/month\n"
         f"Active Loans: {', '.join(loans) if loans else 'None'}\n"
-        f"Past Interactions/Sanctions: {past_records}\n"
+        f"Internal Records: {past_records}\n"
         f"Previous Drop-off Points: {drop_offs}\n"
         f"Current Session Intent: {intent}\n"
-        f"{greeting_hint}"
+        f"{greeting_hint}\n"
+        f"{loan_history_str}"
     )
 
 
@@ -332,7 +340,7 @@ async def sales_agent_node(state: dict):
     
     # Save session to MongoDB
     try:
-        SessionManager.save_session(session_id, updates)
+        await SessionManager.save_session(session_id, updates)
         print(f"💾 Session {session_id} saved to MongoDB")
     except Exception as e:
         print(f"⚠️ Failed to save session: {e}")

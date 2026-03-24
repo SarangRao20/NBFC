@@ -14,7 +14,7 @@ ACCEPTED_DOCS = {
     "high_risk": ["itr", "gst certificate", "property document", "income certificate"]
 }
 
-def document_query_agent_node(state: dict) -> dict:
+async def document_query_agent_node(state: dict) -> dict:
     """
     Extracts doc type from an uploaded file and tells user if it's acceptable.
     State keys:
