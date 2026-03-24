@@ -137,7 +137,9 @@ Set `confirmed: true` ONLY when the user explicitly agrees to the final terms (A
 # Response constraints to avoid hallucination and excessive/irrelevant questions
 SALES_RESPONSE_CONSTRAINTS = """
 Respond in a human, concise manner (max 3 short sentences).
-Do NOT invent facts or numbers not in the provided context.
+Do NOT invent facts, numbers, or loan history not in the provided context.
+- If the CUSTOMER PROFILE says no past loans, you MUST state "You don't have any past loans on record."
+- NEVER mention specific banks (like HDFC) or loan types (like Gold Loan) unless they appear in the CUSTOMER PROFILE context.
 If you need a clarification, ask exactly one focused question (amount or tenure only).
 Avoid unrelated follow-up questions and long bullet lists.
 Only emit the small JSON capture block when the user explicitly confirms terms.
@@ -425,9 +427,9 @@ CASE: NO ACTIVE LOANS (ADVICE ONLY)
     sys_msg = SystemMessage(content=ADVISOR_PROMPT_TEMPLATE + rejection_guidance)
     
     context_msgs = [
-        SystemMessage(content=f"### CUSTOMER PROFILE\n{profile_context}"),
+        SystemMessage(content=f"### CUSTOMER PROFILE\n{_build_customer_context(customer)}"),
         SystemMessage(content=f"### LOAN APPLICATION RESULT\n{loan_context}"),
-        SystemMessage(content=f"### DOCUMENTS & PAST HISTORY\n{memories_context}"),
+        SystemMessage(content=f"### ADDITIONAL MEMORIES\n{docs_text}"),
         SystemMessage(content=f"### ALTERNATIVE OFFER\nSuggested Amount: ₹{suggested_amount:,}\nSuggested EMI: ₹{suggested_emi:,}")
     ]
 

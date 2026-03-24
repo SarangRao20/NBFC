@@ -210,7 +210,7 @@ async def generate_sanction(session_id: str) -> dict:
         "pdf_path": filepath,
         "email_sent": email_sent
     }
-    loan_applications_collection.insert_one(loan_record)
+    await loan_applications_collection.insert_one(loan_record)
     status_emoji = "✅" if is_approved else "❌"
     print(f"📊 Loan application persisted: {cust_name} ({loan_record['status']}) - {decision}")
 

@@ -144,5 +144,60 @@ async def sanction_agent_node(state: dict):
     try:
         await SessionManager.save_session(session_id, updates)
     except: pass
-    
+
+    # ── PERSIST LOAN TO loan_applications_collection ──────────────────────────
+    try:
+        from db.database import loan_applications_collection
+        from datetime import timedelta
+
+        disbursed_at = datetime.datetime.utcnow()
+        first_emi_day = 5
+        if disbursed_at.day > first_emi_day:
+            # Next month
+            if disbursed_at.month == 12:
+                first_emi_due = disbursed_at.replace(year=disbursed_at.year + 1, month=1, day=first_emi_day)
+            else:
+                first_emi_due = disbursed_at.replace(month=disbursed_at.month + 1, day=first_emi_day)
+        else:
+            first_emi_due = disbursed_at.replace(day=first_emi_day)
+
+        loan_record = {
+            "session_id": session_id,
+            "phone": cust_phone,
+            "name": cust_name,
+            "amount": principal,
+            "loan_type": terms.get("loan_type", "Personal"),
+            "interest_rate": rate,
+            "tenure": tenure,
+            "emi": emi,
+            "status": "Approved" if is_approved else "Rejected",
+            "decision": decision,
+            "created_at": disbursed_at.isoformat(),
+            "first_emi_due_date": first_emi_due.strftime("%Y-%m-%d"),
+            "next_emi_date": first_emi_due.strftime("%Y-%m-%d"),
+            "payments_made": 0,
+            "remaining_balance": round(principal, 2),
+            "pdf_path": filepath,
+        }
+        await loan_applications_collection.insert_one(loan_record)
+        print(f"📊 [SANCTION AGENT] Loan persisted: {cust_name} — {'Approved' if is_approved else 'Rejected'} — ₹{principal:,}")
+
+        # Also update the customer's existing_emi_total in mock customers JSON
+        if is_approved and emi > 0:
+            try:
+                from api.services.auth_service import load_mock_customers, save_mock_customers
+                customers = load_mock_customers()
+                for c in customers:
+                    if c.get("phone") == cust_phone:
+                        old_emi = c.get("existing_emi_total", 0) or 0
+                        c["existing_emi_total"] = old_emi + emi
+                        print(f"💰 [SANCTION AGENT] Updated existing_emi_total for {cust_phone}: ₹{old_emi} → ₹{c['existing_emi_total']:.2f}")
+                        break
+                save_mock_customers(customers)
+            except Exception as emi_err:
+                print(f"⚠️ [SANCTION AGENT] Failed to update existing_emi_total: {emi_err}")
+
+    except Exception as persist_err:
+        print(f"⚠️ [SANCTION AGENT] Failed to persist loan record: {persist_err}")
+
     return updates
