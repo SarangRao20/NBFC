@@ -41,6 +41,8 @@ async def advisor_agent_node(state: dict) -> dict:
     
     print("💡 [ADVISOR AGENT] Generating personalized advice...")
     
+    log = list(state.get("action_log") or [])
+    
     # ─── DETECT RE-NEGOTIATION: User asking for explicit amount when already rejected ─────
     from langchain_core.messages import HumanMessage
     import re as _re
@@ -164,7 +166,6 @@ async def advisor_agent_node(state: dict) -> dict:
     loan_end_str = loan_end_date.strftime("%d %B %Y")
 
     intent = state.get("intent", "none")
-    log = list(state.get("action_log") or [])
     
     profile_context = f"""Name: {customer.get("name", "Customer")}
 City: {customer.get("city", "N/A")}

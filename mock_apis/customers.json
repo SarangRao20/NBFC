@@ -114,5 +114,23 @@
         "current_loans": [],
         "risk_flags": [],
         "created_at": "2026-03-24T13:33:49.432718"
+    },
+    {
+        "id": "CUST008",
+        "phone": "8412001925",
+        "email": "kashisharya@example.com",
+        "name": "Kashish Dhanraj Arya",
+        "password": "kashi123",
+        "city": null,
+        "salary": 30000.0,
+        "dob": "2008-10-04",
+        "profession": "Employee",
+        "address": "Jalgaon, Maharashtra",
+        "credit_score": 794,
+        "pre_approved_limit": 150000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-24T14:20:28.904005"
     }
 ]

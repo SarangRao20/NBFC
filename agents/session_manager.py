@@ -36,7 +36,7 @@ class SessionManager:
             }
             
             # Upsert (save or update)
-            sessions_collection.update_one(
+            await sessions_collection.update_one(
                 {"_id": session_id},
                 {"$set": session_doc},
                 upsert=True
@@ -72,7 +72,7 @@ class SessionManager:
     async def load_session(session_id: str) -> Optional[Dict[str, Any]]:
         """Load session state from MongoDB (async Motor). Always returns complete state schema."""
         try:
-            session_doc = sessions_collection.find_one({"_id": session_id})
+            session_doc = await sessions_collection.find_one({"_id": session_id})
             if not session_doc:
                 print(f"⚠️ Session {session_id} not found")
                 return None
@@ -173,8 +173,8 @@ class SessionManager:
     async def delete_session(session_id: str) -> bool:
         """Delete a session (after completion/timeout)."""
         try:
-            sessions_collection.delete_one({"_id": session_id})
-            documents_collection.delete_many({"session_id": session_id})
+            await sessions_collection.delete_one({"_id": session_id})
+            await documents_collection.delete_many({"session_id": session_id})
             print(f"Session {session_id} deleted from MongoDB")
             return True
         except Exception as e:
