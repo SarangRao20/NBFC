@@ -16,10 +16,10 @@ ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## YOUR INTERACTIVE RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **BE CONCISE**: Never write more than 2 short sentences.
-2. **ONE QUESTION**: Always end your message with exactly one question to the user.
-3. **NO ROBOTS**: Talk like a human specialist. Use "I've been looking at your profile..." instead of "Based on the data...".
-4. **EMPATHY**: If they are in debt, be supportive. If they are doing well, celebrate it.
+1. **BE CONVERSATIONAL**: Write 3-4 natural sentences.
+2. **ONE QUESTION**: Always end your message with exactly one question to keep the dialogue flowing.
+3. **NO ROBOTS**: Talk like a human specialist. Use phrases like "Looking at your progress..." or "I've got some interesting insights for you...".
+4. **EMPATHY**: Celebrate successes and be supportive during challenges.
 
 CASE: ADVICE ONLY
 - If the user has just corrected a profile detail (like salary or bike value), acknowledge it humanly (e.g., "Oh, my apologies! with ₹1.5 lakh, that changes things...").
@@ -35,6 +35,44 @@ async def advisor_agent_node(state: dict) -> dict:
     await manager.broadcast_thinking(session_id, "Priya (Advisor)", True)
     
     print("💡 [ADVISOR AGENT] Generating personalized advice...")
+    
+    # ─── DETECT RE-NEGOTIATION: User asking for explicit amount when already rejected ─────
+    from langchain_core.messages import HumanMessage
+    import re as _re
+    msgs = state.get("messages", [])
+    decision = state.get("decision", "")
+    
+    if msgs and isinstance(msgs[-1], HumanMessage):
+        last_msg = str(msgs[-1].content).lower()
+        
+        # Check if user is asking for a specific amount after rejection
+        if decision in ("hard_reject", "soft_reject"):
+            # Look for explicit amount patterns
+            has_explicit_amount = bool(
+                _re.search(r"\d+\s*k\b", last_msg) or
+                _re.search(r"\d+\s*lakh", last_msg) or
+                _re.search(r"\d+\s*lac\b", last_msg) or
+                _re.search(r"\d+\s*thousand", last_msg) or
+                (_re.search(r"\d{4,9}", last_msg) and ("loan" in last_msg or "amount" in last_msg))
+            )
+            
+            if has_explicit_amount:
+                print("🔄 [ADVISOR] Detected fresh loan amount request - redirecting to Sales")
+                # Clear the loan decision so sales can re-evaluate
+                # Return state updates that will route to sales on next iteration
+                cleaned_terms = state.get("loan_terms", {}).copy()
+                cleaned_terms["principal"] = 0  # Reset amount so sales re-collects
+                cleaned_terms["tenure"] = 0
+                
+                return {
+                    "next_agent": "sales_agent",  # Force routing to sales
+                    "intent": "loan",
+                    "decision": "",  # Clear rejection decision
+                    "loan_terms": cleaned_terms,
+                    "action_log": state.get("action_log", []) + ["🔄 Advisor re-routing to Sales for fresh collection"]
+                }
+    
+    # ─── Normal advisor flow ─────────────────────────────────────────────────────────────
 
     llm = get_master_llm()
     customer = state.get("customer_data", {})
@@ -84,10 +122,10 @@ async def advisor_agent_node(state: dict) -> dict:
         target_emi = salary * 0.45 - existing_emi
         rate_monthly = (terms.get("rate") or 12) / 100 / 12
         n = tenure or 24
-        if rate_monthly > 0:
+        if rate_monthly > 0 and target_emi > 0:
             suggested_amount = int(target_emi * ((1 + rate_monthly) ** n - 1) / (rate_monthly * (1 + rate_monthly) ** n))
             suggested_emi = int(target_emi)
-        else:
+        elif target_emi > 0:
             suggested_amount = int(target_emi * n)
             suggested_emi = int(target_emi)
 
@@ -154,13 +192,19 @@ CASE: HARD_REJECT
 - Deliver the news firmly but respectfully.
 - EXPLAIN the specific reason.
 - If credit score is the issue, suggest building credit behavior.
+- If DTI is too high, suggest debt restructuring or paying down existing EMIs first.
 
 CASE: SOFT_REJECT (NEGOTIATION)
 - Acknowledge the original request was rejected, but they are eligible for a restructured offer.
-- Mention Suggested Amount: ₹{suggested_amount:,} with EMI of ₹{suggested_emi:,}.
+- If Suggested Amount is ₹{suggested_amount:,} and is > 500: Mention it explicitly: "You can apply for ₹{suggested_amount:,} instead."
+- If Suggested Amount is too low (< ₹50000) or zero: Suggest alternatives like:
+  * "Your current EMI burden is high. Paying down existing loans could free up more capacity."
+  * "Consider restructuring your current loans to improve eligibility."
+  * "In 6-12 months of maintaining good payment history, you'll likely qualify for higher amounts."
 
 CASE: NO ACTIVE LOANS (ADVICE ONLY)
-- If Requested Amount is ₹0, provide general financial wellness advice based on their profile.
+- If Requested Amount is ₹0 AND there are no active loans in 'past_loans', provide general financial wellness advice based on their profile.
+- If they HAVE active loans but Requested Amount is ₹0, prioritize discussing their repayment strategy and future eligibility.
 """
 
     sys_msg = SystemMessage(content=ADVISOR_PROMPT_TEMPLATE + rejection_guidance)

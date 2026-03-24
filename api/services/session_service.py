@@ -1,6 +1,6 @@
 """Session Service — manages session lifecycle (Steps 1, 4, 18)."""
 
-from api.core.state_manager import create_session, get_session, end_session, advance_phase
+from api.core.state_manager import create_session, get_session, end_session, advance_phase, delete_session as db_delete_session
 from api.core.redis_cache import get_cache
 
 
@@ -296,3 +296,8 @@ async def check_existing_customer(phone: str) -> dict:
     await cache.set(cache_key, result, ttl=7200)
     
     return result
+async def delete_session(session_id: str) -> bool:
+    """Delete session from database and cache."""
+    cache = await get_cache()
+    await cache.delete_session(session_id)
+    return await db_delete_session(session_id)

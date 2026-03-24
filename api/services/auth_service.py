@@ -228,8 +228,9 @@ class AuthService:
             customer_data["past_loans"] = past_loans
             customer_data["is_new_customer"] = len(past_loans) == 0
             
-            # Aggregate active EMI from historical loans
-            active_emi = sum(loan.get("emi", 0) for loan in past_loans if loan.get("status") == "Approved")
+            # Aggregate active EMI from historical loans (Exclude Closed/Rejected)
+            active_emi = sum(loan.get("emi", 0) for loan in past_loans 
+                            if loan.get("status") == "Approved" and not loan.get("is_closed"))
             customer_data["existing_emi_total"] = active_emi
             print(f"💰 Aggregated active EMI for {phone}: ₹{active_emi:,.2f}")
             

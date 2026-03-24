@@ -315,7 +315,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         print(f"📊 [DEBUG] State keys before graph invocation: {list(clean_state.keys())}")
         print(f"📊 [DEBUG] customer_data keys: {list(clean_state.get('customer_data', {}).keys())}")
         print(f"📊 [DEBUG] Messages count before graph: {len(clean_state['messages'])}")
-        final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 25})
+        final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 100})
         print("✅ [SALES SERVICE] Graph run complete.")
 
         # CRITICAL: Filter out ALL dict messages from final_state - only allow LangChain message objects

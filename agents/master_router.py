@@ -15,16 +15,48 @@ def route_next_agent(state: MasterState):
     current_phase = state.get("current_phase", "registration")
     pending_q = state.get("pending_question")
     
-    # ─── PHASE 0: FORCE RE-EVALUATION ──────────────────────────
+    # ─── PHASE 0: SMART RE-EVALUATION (avoid loops) ────────────────────────
     from langchain_core.messages import HumanMessage
+    import re as _re
     msgs = state.get("messages", [])
     if msgs and isinstance(msgs[-1], HumanMessage):
-        # We look at the last few log entries for Arjun's signature
-        log = state.get("action_log", [])
-        # If the last 3 entries don't mention Intent Agent, we MUST re-evaluate
-        recent_logs = "".join(str(e) for e in log[-3:])
-        if "Intent Agent" not in recent_logs and "✅ Intent" not in recent_logs:
-            return "intent_agent", "New human message detected. Re-evaluating intent."
+        last_msg = str(msgs[-1].content).lower()
+        
+        # ─── HANDLE REQUEST FOR REVISED AMOUNT ────────────────────────────────
+        # When user asks for "lower amount", "different amount", "less loan", etc.
+        # OR when they mention explicit amounts like "75k", "50000", "1.4 lakh"
+        # during rejection phase: clear decision and route back to sales
+        
+        # Check for keyword-based requests
+        has_reduction_keyword = any(keyword in last_msg for keyword in 
+            ["lower", "less", "smaller", "different", "another", "reduce", "different amount", "lower loan"])
+        
+        # Check for explicit amount mentions (k, lakh, rupees, ₹, etc.)
+        has_explicit_amount = bool(
+            _re.search(r"\d+\s*k\b", last_msg) or         # 75k
+            _re.search(r"\d+\s*lakh", last_msg) or        # 1.4 lakh
+            _re.search(r"\d+\s*lac\b", last_msg) or       # 1.4 lac
+            _re.search(r"\d+\s*thousand", last_msg) or    # 75 thousand
+            _re.search(r"₹\s*\d+", last_msg) or           # ₹75000
+            (_re.search(r"\d{5,}", last_msg) and (       # 75000 (5+ digits)
+                "rupee" in last_msg or "loan" in last_msg or "amount" in last_msg))
+        )
+        
+        # Route to sales if rejection + (keyword OR explicit amount)
+        if decision in ("hard_reject", "soft_reject") and (has_reduction_keyword or has_explicit_amount):
+            return "sales_agent", "User requesting revised loan amount. Reopening with Arjun for new collection."
+        
+        # Skip re-evaluation if:
+        # 1. Already in decision/advisory phase
+        # 2. Already processing a loan (in sales/document/verification/underwriting phase)
+        # 3. Intent was just set in the last message
+        if decision not in ("approve", "soft_reject", "hard_reject") and current_phase not in ("sales", "document", "verification", "fraud_check", "underwriting", "sanction"):
+            log = state.get("action_log", [])
+            recent_logs = "".join(str(e) for e in log[-5:])  # Check last 5 entries
+            
+            # Only re-evaluate if Intent Agent explicitly hasn't run recently AND intent was not just set
+            if "Intent Agent" not in recent_logs and "✅ Intent" not in recent_logs and intent == "none":
+                return "intent_agent", "New human message detected. Re-evaluating vague/unclear intent."
 
     # ─── PHASE 3: ADVICE ONLY (Parallel/Side Branch) ─────────────────────────
     if intent == "advice":
@@ -33,25 +65,26 @@ def route_next_agent(state: MasterState):
     if intent == "kyc" and not state.get("documents_uploaded"):
         return "document_query_agent", "User asking about documents/KYC rules."
 
+    if intent == "payment":
+        return "repayment_agent", "Routing to loan repayment portal."
+
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
-        # If we are in sales phase and have a pending question (e.g., confirmation or tenure), Sales Agent must handle it
-        if current_phase == "sales" and pending_q:
-            return "sales_agent", "Arjun handling pending discovery question."
-
-        # 4a. Basic term collection
-        if not terms.get("principal") or not terms.get("tenure"):
-            return "sales_agent", "Collecting loan requirements with Arjun."
+        # Always prioritize Arjun (Sales) for a human conversation unless terms are fully confirmed
+        if not state.get("loan_confirmed"):
+            return "sales_agent", "Arjun must engage in goal-discovery and verify terms with the user."
         
-        # 4b. EMI Visualization & Confirmation
-        if current_phase == "sales" and not state.get("loan_confirmed"):
-            return "emi_agent", "Show rich EMI visualization/slider before confirmation."
+        # 4b. EMI Visualization & Confirmation (Only after Arjun has talked)
+        # We can still show the slider if Arjun explicitly moved us here, but usually Arjun handles it.
 
-    # ─── PHASE 5: DOCUMENT UPLOAD (Document Agent) ───────────────────────────
+    # ─── PHASE 5: DOCUMENT UPLOAD (KYC & Income) ───────────────────────────
     if intent == "loan":
-        # Skip document agent if e-sign is already completed (post-sanction phase)
-        if not state.get("esign_completed") and (not state.get("documents_uploaded") or not state.get("document_paths")):
-            return "document_agent", "Terms confirmed. Collecting documents."
+        # Always require KYC documents (PAN/Aadhaar) even for small loans
+        docs_missing = not state.get("documents_uploaded") or not state.get("document_paths")
+        kyc_not_verified = kyc == "pending"
+        
+        if not state.get("esign_completed") and (docs_missing or kyc_not_verified):
+            return "document_agent", "Mandatory KYC verification required for regulatory compliance."
 
     # ─── PHASE 6: KYC & FRAUD (Parallel Verification) ────────────────────────
     if intent == "loan":
@@ -71,11 +104,11 @@ def route_next_agent(state: MasterState):
     # ─── PHASE 8: SANCTION & ADVICE (Priya - Closing) ────────────────────────
     if decision in ("approve", "soft_reject", "hard_reject"):
         if not state.get("sanction_pdf"):
-            return "sanction_agent", "Generating official sanction/rejection letter."
-        return "advisor_agent", "Letter ready. Priya providing closing guidance."
+            return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
+        return "advisor_agent", "Documentation complete. Providing post-sanction orientation."
 
     # GLOBAL FALLBACK
     if intent == "loan":
         return "sales_agent", "Fallback: In loan flow but state unclear. Routing to Sales Specialist."
     
-    return "advisor_agent", "Fallback to wellness specialist."
+    return "advisor_agent", "Portfolio management and financial wellness orientation."

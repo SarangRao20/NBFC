@@ -28,7 +28,7 @@ async def emi_engine_node(state: dict) -> dict:
     # and hasn't paid in the last 30 days.
     
     next_emi_str = terms.get("next_emi_date")
-    if next_emi_str:
+    if next_emi_str and isinstance(next_emi_str, str):
         next_emi_date = datetime.strptime(next_emi_str, "%Y-%m-%d")
         today = datetime.now()
         
@@ -73,18 +73,33 @@ async def emi_engine_node(state: dict) -> dict:
             user_msg = m.content.lower()
             break
             
-    if "pay" in user_msg and "emi" in user_msg and terms.get("emi", 0) > 0:
+    is_pay_request = ("pay" in user_msg and "emi" in user_msg) or ("confirm" in user_msg and "payment" in user_msg)
+    if is_pay_request and terms.get("emi", 0) > 0:
         print("  💳 [PAYMENT] Simulating EMI payment...")
         
         # Update Terms
-        payments_made = terms.get("payments_made", 0) + 1
-        terms["payments_made"] = payments_made
-        terms["last_payment_date"] = datetime.now().strftime("%Y-%m-%d")
+        new_payments_made = terms.get("payments_made", 0) + 1
+        tenure = terms.get("tenure", 0)
+        emi = terms.get("emi", 0)
         
-        # Calculate Next EMI Date (plus 30 days)
-        last_due = datetime.strptime(terms.get("next_emi_date"), "%Y-%m-%d")
-        next_due = last_due + timedelta(days=30)
-        terms["next_emi_date"] = next_due.strftime("%Y-%m-%d")
+        terms["payments_made"] = new_payments_made
+        terms["last_payment_date"] = datetime.now().strftime("%Y-%m-%d")
+        terms["remaining_balance"] = round(max(0, (tenure - new_payments_made) * emi), 2)
+        
+        # Calculate Next EMI Date (same day next month logic)
+        next_emi_str = terms.get("next_emi_date")
+        if next_emi_str and isinstance(next_emi_str, str):
+            try:
+                curr_date = datetime.strptime(next_emi_str, "%Y-%m-%d")
+                if curr_date.month == 12:
+                    next_date = curr_date.replace(year=curr_date.year + 1, month=1)
+                else:
+                    next_date = curr_date.replace(month=curr_date.month + 1)
+                terms["next_emi_date"] = next_date.strftime("%Y-%m-%d")
+            except:
+                terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        else:
+            terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
         
         # Dynamic Credit Score Increase
         old_score = customer.get("credit_score", 700)
@@ -93,6 +108,21 @@ async def emi_engine_node(state: dict) -> dict:
         
         log.append(f"💳 EMI Payment successful. Total payments: {payments_made}")
         log.append(f"📈 Credit Score increased to {new_score}!")
+        
+        # ── SYNC TO DATABASE ────────────────────────────────────────────────
+        try:
+            from db.database import loan_applications_collection
+            loan_applications_collection.update_one(
+                {"session_id": session_id},
+                {"$set": {
+                    "payments_made": payments_made,
+                    "remaining_balance": terms.get("remaining_balance"),
+                    "next_emi_date": terms["next_emi_date"],
+                    "last_payment_date": terms["last_payment_date"]
+                }}
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to sync payment to DB: {e}")
         
         updates["messages"] = [AIMessage(content=(
             f"✅ **Payment Successful!**\n\n"
@@ -109,6 +139,21 @@ async def emi_engine_node(state: dict) -> dict:
             customer["credit_score"] = min(customer.get("credit_score", 700) + 50, 900)
             log.append("🏆 Loan fully repaid! Credit Score boosted by 50 points.")
             updates["messages"] = [AIMessage(content="🎉 **Congratulations!** Your loan has been fully repaid. Your credit score has received a significant boost!")]
+            
+            # ── SYNC CLOSURE TO DATABASE ────────────────────────────────────
+            try:
+                from db.database import loan_applications_collection
+                loan_applications_collection.update_one(
+                    {"session_id": session_id},
+                    {"$set": {
+                        "status": "Closed",
+                        "is_closed": True,
+                        "closed_at": datetime.now().isoformat()
+                    }}
+                )
+                print(f"🔒 Loan in session {session_id} marked as Closed in DB")
+            except Exception as e:
+                print(f"⚠️ Failed to sync loan closure to DB: {e}")
 
     return {
         "customer_data": customer,

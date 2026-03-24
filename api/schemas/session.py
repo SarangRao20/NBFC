@@ -32,6 +32,9 @@ class LoanTermsOut(BaseModel):
     rate: Optional[float] = 0.0
     tenure: Optional[int] = 0
     emi: Optional[float] = 0.0
+    payments_made: Optional[int] = 0
+    remaining_balance: Optional[float] = 0.0
+    next_emi_date: Optional[str] = ""
 
 class DocumentsOut(BaseModel):
     verified: Optional[bool] = False

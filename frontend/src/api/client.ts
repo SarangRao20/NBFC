@@ -160,6 +160,16 @@ export const apiClient = {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/download-letter`);
     if (!res.ok) throw new Error('Failed to download sanction letter');
     return res.blob();
+  },
+
+  async payEmi(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/pay-emi`, { method: 'POST' });
+    return checkResponse(res, `/session/${sessionId}/pay-emi`);
+  },
+
+  async deleteSession(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' });
+    return checkResponse(res, `/session/${sessionId}`);
   }
 };
 

@@ -37,7 +37,9 @@ const INITIAL_APP_STATE: AppState = {
     bankStatement: 'pending',
   },
   actionLog: [],
-  options: []
+  options: [],
+  loan_terms: undefined,
+  phone: undefined
 };
 
 const INITIAL_CHAT_HISTORY: ChatMessage[] = [];
@@ -103,11 +105,13 @@ function App() {
     // Persist to localStorage
     localStorage.setItem('nbfc_session_id', newSessionId);
     localStorage.setItem('nbfc_customer_name', userData.name);
+    localStorage.setItem('nbfc_customer_phone', userData.phone);
 
     setAppState(prev => ({ 
       ...prev, 
       sessionId: newSessionId,
       customerName: userData.name,
+      phone: userData.phone,
       creditScore: userData.salary ? 700 : 650, // Simple credit score logic
       preApprovedLimit: userData.salary ? userData.salary * 3 : 100000, // Simple limit calculation
       actionLog: []
@@ -218,6 +222,7 @@ function App() {
               creditScore: fullState.customer_data?.credit_score || prev.creditScore,
               preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
               underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+              loan_terms: fullState.loan_terms || prev.loan_terms,
             }));
           }
         });
@@ -380,9 +385,11 @@ function App() {
       const history = await apiClient.getHistory(sid);
 
       if (state) {
-        setAppState(prev => ({
-          ...prev,
+        const sData: AppState = {
+          ...INITIAL_APP_STATE,
+          sessionId: sid,
           customerName: state.customer_data?.name || '',
+          phone: state.customer_data?.phone || '',
           requestedAmount: state.loan_terms?.principal || 0,
           tenure: state.loan_terms?.tenure || 0,
           roi: state.loan_terms?.rate || 0,
@@ -393,6 +400,7 @@ function App() {
           activeAgent: state.current_phase,
           actionLog: state.action_log || [],
           options: state.options || [],
+          loan_terms: state.loan_terms || undefined,
           needsDocument: state.current_phase === 'kyc_agent',
           requiredDocuments: state.current_phase === 'document' ? ["Identity (PAN or Aadhaar)"] : [],
           documents: {
@@ -400,8 +408,11 @@ function App() {
             bankStatement: state.documents?.verified ? 'verified' : 'pending',
           },
           pastLoans: state.customer_data?.past_loans,
-          pastRecords: state.customer_data?.past_records,
-        }));
+        };
+        setAppState(sData);
+        if (state.customer_data?.phone) {
+          localStorage.setItem('nbfc_customer_phone', state.customer_data.phone);
+        }
         await fetchPastSessions(state.customer_data?.phone);
       }
 
@@ -552,6 +563,7 @@ function App() {
             underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
             pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
+            loan_terms: fullState.loan_terms || prev.loan_terms,
           }));
         }
       } catch (err) {
@@ -595,6 +607,51 @@ function App() {
 
   };
 
+  const handlePayEmi = async () => {
+    if (!sessionId) return;
+    try {
+      const res = await apiClient.payEmi(sessionId);
+      if (res.success) {
+        pushAgentMessage(`✅ ${res.message}`, 'text');
+        // State will sync via the PHASE_UPDATE broadcast, but let's force a sync here too
+        const fullState = await apiClient.getSession(sessionId);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            loan_terms: fullState.loan_terms
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Payment failed:", err);
+      pushAgentMessage("❌ Payment failed. Please try again.", 'text');
+    }
+  };
+
+  const handleDeleteSession = async (sessionIdToDelete: string) => {
+    if (!sessionIdToDelete) return;
+    try {
+      console.log("🗑️ Attempting to delete session:", sessionIdToDelete);
+      await apiClient.deleteSession(sessionIdToDelete);
+      
+      // Refresh past sessions using phone from appState or localStorage
+      const phone = appState.phone || localStorage.getItem('nbfc_customer_phone');
+      if (phone) {
+        console.log("🔄 Refreshing sessions for phone:", phone);
+        const sessions = await apiClient.getSessionsByPhone(phone);
+        setAppState(prev => ({ ...prev, pastSessions: sessions }));
+      }
+      
+      // If we deleted the current session, start a new one
+      if (sessionIdToDelete === sessionId) {
+        handleNewChat();
+      }
+    } catch (err) {
+      console.error("❌ Failed to delete session:", err);
+      pushAgentMessage("Error: Failed to delete the chat session.");
+    }
+  };
+
   // Show AuthWrapper if not authenticated, otherwise show main app
   if (!isAuthenticated) {
     return <AuthWrapper onAuthComplete={handleAuthComplete} />;
@@ -607,6 +664,8 @@ function App() {
         onLoadSession={loadSession} 
         onNewChat={handleNewChat} 
         onLogout={handleLogout}
+        onPayEmi={handlePayEmi}
+        onDeleteSession={handleDeleteSession}
       />
       <ChatPane 
         appState={appState} 

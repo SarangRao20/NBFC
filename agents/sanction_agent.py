@@ -18,7 +18,7 @@ async def sanction_agent_node(state: dict):
     print("📜 [SANCTION AGENT] Generating final sanction letter...")
     
     log = list(state.get("action_log") or [])
-    log.append("📜 Arjun: Constructing final Sanction Letter PDF...")
+    log.append("📜 Drafting legally-compliant Sanction Letter and Loan Agreement...")
 
     import datetime
     current_date = datetime.datetime.now().strftime("%B %d, %Y")

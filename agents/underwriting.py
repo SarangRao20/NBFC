@@ -43,7 +43,7 @@ def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_mont
 
 def underwriting_agent_node(state: dict) -> dict:
     """Deterministic underwriting engine checking NTC and FOIR heuristics."""
-    print("⚖️ [UNDERWRITING AGENT] Evaluating advanced eligibility rules...")
+    print("⚖️ [UNDERWRITING AGENT] Executing multi-factor credit risk assessment...")
 
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
@@ -154,6 +154,9 @@ def underwriting_agent_node(state: dict) -> dict:
             decision = "hard_reject"
         elif principal > pre_approved and not docs.get("verified"):
             reasons.append("Loan exceeds pre-approved limit; additional income verification (Salary Slip) required.")
+            decision = "pending_docs"
+        elif not state.get("documents_uploaded"):
+            reasons.append("Mandatory KYC documents (PAN/Aadhaar) and income proof are required for all loan applications.")
             decision = "pending_docs"
         elif dti > 0.50:
             reasons.append(f"EMI exceeds affordability threshold (Total EMI > 50% of income).")

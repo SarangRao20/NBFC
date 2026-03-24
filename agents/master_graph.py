@@ -34,6 +34,7 @@ from agents.persuasion_agent import persuasion_agent_node
 from agents.emi_agent import emi_agent_node
 from agents.document_query_agent import document_query_agent_node
 from agents.emi_engine import emi_engine_node
+from agents.repayment_agent import repayment_agent_node
 from agents.master_state import MasterState
 from agents.master_router import route_next_agent
 from agents.session_manager import SessionManager
@@ -207,6 +208,7 @@ def supervisor_router(state: MasterState):
         "emi_agent": "emi_agent",
         "document_query_agent": "document_query_agent",
         "emi_engine": "emi_engine",
+        "repayment_agent": "repayment_agent",
     }
     
     target = mapping.get(next_agent, "advisor_agent")
@@ -280,6 +282,7 @@ def compile_master_graph():
     workflow.add_node("emi_agent",              emi_agent_node)
     workflow.add_node("document_query_agent",   document_query_agent_node)
     workflow.add_node("emi_engine",             emi_engine_node)
+    workflow.add_node("repayment_agent",        repayment_agent_node)
 
     # ── Entry: Load session first, then engine, then supervisor ──────────────
     workflow.add_edge(START, "load_session")
@@ -303,6 +306,7 @@ def compile_master_graph():
             "emi_agent": "emi_agent",
             "document_query_agent": "document_query_agent",
             "emi_engine": "emi_engine",
+            "repayment_agent": "repayment_agent",
         }
     )
 
@@ -311,7 +315,8 @@ def compile_master_graph():
     workflow.add_edge("sales_agent",        END)
     workflow.add_edge("persuasion_agent",   END)
     workflow.add_edge("document_query_agent", END)
-    workflow.add_edge("emi_agent",          END) # Stop and wait for user after showing EMI
+    workflow.add_edge("emi_agent",          END) 
+    workflow.add_edge("repayment_agent",    END)
 
     # ── AUTOMATIC processor nodes — Chain back to supervisor to continue ─────
     workflow.add_edge("document_agent",     END) 

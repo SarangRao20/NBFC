@@ -77,22 +77,38 @@ def _calc_emi(principal: float, rate_pa: float, tenure: int) -> float:
     return round(emi, 2)
 
 
-SALES_CLOSER_PROMPT = """You are Arjun, a Senior Loan Specialist at FinServe.
+SALES_CLOSER_PROMPT = """You are Arjun, a Senior Loan Specialist and Financial Advisor at FinServe.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## YOUR CONVERSATIONAL PROTOCOL:
+## YOUR PERSONALITY & TONE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. **ACKNOWLEDGE**: Start by acknowledging the user's specific detail. (e.g., "A loan for a car sounds like a great plan!")
-2. **BE CONCISE**: Limit your response to **2 short sentences**.
-3. **ONE QUESTION**: Always end with exactly one question to keep the discovery moving.
-4. **HUMAN TONE**: Avoid "As a loan specialist..." or robotic phrases. Be a helpful expert.
+- **EMPATHETIC PARTNER**: You aren't just selling a loan; you're helping a human achieve a goal (e.g., home, business, education). 
+- **CONVERSATIONAL, NOT TRANSACTIONAL**: Avoid jumping straight to "Tenure" or "Amount". Ask about their day, their business, or their vision first.
+- **FOR RETURNING USERS**: Acknowledge their history. If they've paid off a loan, congratulate them! If they haven't spoken to you in a while, ask how they've been.
+- **NO JARGON**: Use plain language. Instead of "DTI Ratio", say "monthly obligations". Instead of "Principal", say "amount you need".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## JSON CAPTURE (Mandatory)
-When final terms are agreed:
+## CONVERSATIONAL PROTOCOL:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. **ACKNOWLEDGE & CATCH UP**: For returning users, ALWAYS spend at least one turn catching up or acknowledging past success (e.g., "Welcome back! I saw you just finished your last loan, that's a huge milestone!").
+2. **DISCOVER THE 'WHY'**: Before asking technical details (tenure, type), understand the *purpose*. Why 1 lakh? What's the dream?
+3. **NATURAL PROGRESSION**: Only move to technical terms when the user feels heard and guided.
+4. **ONE QUESTION**: Always end with exactly one natural question.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## JSON CAPTURE (Silent)
+When the user shares technical details OR you reach agreement, include this at the end:
 ```json
-{ "loan_purpose": "...", "loan_type": "fixed/reducing", "loan_amount": 0, "tenure": 0, "confirmed": true }
+{ 
+  "loan_purpose": "...", 
+  "loan_type": "fixed/reducing", 
+  "loan_amount": 0, 
+  "tenure": 12, 
+  "confirmed": false,
+  "options": ["...", "..."]
+}
 ```
+Set `confirmed: true` ONLY when the user says "Yes", "Confirm", or "Proceed" after seeing final terms.
 """
 
 
@@ -194,8 +210,10 @@ async def sales_agent_node(state: dict):
     import re as _re
     print("🗣️ [SALES AGENT] Processing turn...")
     
+    print("🗣️ [SALES AGENT] Processing turn...")
+    
     log = list(state.get("action_log") or [])
-    log.append("📡 Analyzing financial intent...")
+    log.append("📡 Initiating financial intent analysis...")
     
     history = []
     for m in state.get("messages", []):
@@ -224,6 +242,18 @@ async def sales_agent_node(state: dict):
     pending_q = state.get("pending_question")
     user_clean = (user_msg or "").strip().lower()
     
+    # ─── DETECT RE-NEGOTIATION (User asking for lower amount after rejection) ────
+    decision = state.get("decision", "")
+    is_renegotiating = decision in ("hard_reject", "soft_reject") and any(
+        kw in user_clean for kw in ["lower", "less", "smaller", "different", "another", "reduce"]
+    )
+    
+    if is_renegotiating:
+        # Reset loan amount to re-collect from user
+        principal = 0
+        tenure = 0
+        log.append("🔄 Re-assessment triggered. Adjusting application parameters for optimal fit.")
+    
     # Accumulate updates
     final_updates = {
         "loan_terms": {
@@ -235,187 +265,26 @@ async def sales_agent_node(state: dict):
             "loan_type": existing_terms.get("loan_type", "personal") # Initialize with existing, will be updated
         },
         "customer_data": customer_context,
-        "current_phase": "sales"
+        "current_phase": "sales",
+        "decision": "" if is_renegotiating else decision  # Clear decision when re-negotiating
     }
 
-    # Deterministic multi-turn loan capture flow:
-    # 1) capture amount -> 2) capture tenure -> 3) capture purpose -> 4) capture type -> 5) confirm -> 6) move.
-    amount_from_msg = _parse_amount_inr(user_msg)
-    tenure_from_msg = _parse_tenure_months(user_msg)
-    
-    if amount_from_msg and principal <= 0:
-        principal = amount_from_msg
-        ack_text = f"I see you're looking for a loan of **₹{principal:,.0f}**. I'd be happy to help you with that! "
-        final_updates["loan_terms"]["principal"] = principal
-        final_updates.update({
-            "pending_question": "ask_tenure",
-            "options": ["12 months", "24 months", "36 months", "48 months", "60 months"],
-            "messages": [AIMessage(content=f"{ack_text}Please share your preferred tenure in months.")]
-        })
-        await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-        return final_updates
-
-    if principal > 0 and tenure <= 0:
-        if tenure_from_msg:
-            tenure = tenure_from_msg
-            final_updates["loan_terms"]["tenure"] = tenure
-        else:
-            final_updates.update({
-                "pending_question": "ask_tenure",
-                "options": ["12 months", "24 months", "36 months", "48 months", "60 months"],
-                "messages": [AIMessage(content="Please share the tenure for your loan. For example: **24 months**.")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-
-    # Capture occupation if not set
-    occupation = customer_context.get("occupation")
-    if principal > 0 and tenure > 0 and not occupation:
-        # Check if in msg
-        for occ in ["salaried", "self-employed", "business", "student", "professional"]:
-            if occ in user_clean:
-                occupation = occ
-                break
-        
-        if not occupation:
-            final_updates.update({
-                "pending_question": "ask_occupation",
-                "options": ["Salaried", "Self-Employed", "Business Owner", "Freelancer"],
-                "messages": [AIMessage(content="Before we proceed, could you tell me a bit about your professional profile? Are you **Salaried**, **Self-Employed**, or a **Business Owner**?")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-        else:
-            customer_context["occupation"] = occupation
-            final_updates["customer_data"] = customer_context
-
-    # Capture employer if salaried
-    employer = customer_context.get("employer_name")
-    if principal > 0 and tenure > 0 and occupation == "salaried" and not employer:
-        if len(user_clean) > 2 and user_clean not in ["i am", "i'm"]:
-            employer = user_msg
-            customer_context["employer_name"] = employer
-            final_updates["customer_data"] = customer_context
-        else:
-            final_updates.update({
-                "pending_question": "ask_employer",
-                "messages": [AIMessage(content="Got it. Which company or organization do you currently work for?")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-
-    # Capture purpose if not set
-    purpose = existing_terms.get("loan_purpose")
-    if principal > 0 and tenure > 0 and occupation and not purpose:
-        # Simple extraction from msg
-        for p in ["home", "car", "business", "education", "personal", "travel"]:
-            if p in user_clean:
-                purpose = p
-                break
-        
-        if not purpose:
-            final_updates.update({
-                "pending_question": "ask_purpose",
-                "options": ["Personal", "Home", "Car", "Business", "Education"],
-                "messages": [AIMessage(content="And what would you like to use this loan for? (e.g., Car purchase, Home renovation, Education)")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-        else:
-            final_updates["loan_terms"]["loan_purpose"] = purpose
-
-    # Capture loan type if not set
-    loan_type = existing_terms.get("loan_type")
-    if principal > 0 and tenure > 0 and purpose and (not loan_type or loan_type == "personal"):
-        if "fixed" in user_clean: loan_type = "fixed"
-        elif "reducing" in user_clean: loan_type = "reducing"
-        
-        if loan_type == "personal" or not loan_type:
-            final_updates.update({
-                "pending_question": "ask_loan_type",
-                "options": ["Fixed Rate", "Reducing Balance"],
-                "messages": [AIMessage(content="Great. Last detail—would you prefer a **Fixed Rate** (same percentage throughout) or a **Reducing Balance** loan?")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-        else:
-            final_updates["loan_terms"]["loan_type"] = loan_type
-
-    if principal > 0 and tenure > 0 and purpose and loan_type:
-        rate_pa = float(rate_pa)
-        emi = _calc_emi(principal, rate_pa, tenure)
-        total_interest = round((emi * tenure) - principal, 2)
-        
-        # Ensure strings for capitalize
-        purpose_str = str(purpose).capitalize()
-        loan_type_str = str(loan_type).capitalize()
-
-        # Update final_updates with calculation results
-        final_updates["loan_terms"].update({
-            "emi": emi,
-            "loan_purpose": purpose,
-            "loan_type": loan_type
-        })
-
-        if pending_q == "confirm_loan_terms" and (detect_apply_intent(user_clean) or any(w in user_clean for w in YES_WORDS)):
-            final_updates.update({
-                "intent": "loan",
-                "pending_question": None,
-                "current_phase": "kyc_verification",
-                "loan_confirmed": True,
-                "options": ["Upload PAN/Aadhaar", "Upload Salary Slip", "Need help with documents"],
-                "messages": [AIMessage(content=(
-                    f"Great. Your loan request is confirmed.\n\n"
-                    f"- Purpose: **{purpose_str}**\n"
-                    f"- Type: **{loan_type_str}**\n"
-                    f"- Amount: **INR {principal:,.0f}**\n"
-                    f"- Tenure: **{tenure} months**\n"
-                    f"- Estimated EMI: **INR {emi:,.2f}**\n"
-                    f"- Total interest: **INR {total_interest:,.2f}**\n\n"
-                    f"Please upload your KYC document to continue."
-                ))]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-            
-        if pending_q == "confirm_loan_terms" and any(w in user_clean for w in NO_WORDS):
-            final_updates.update({
-                "pending_question": "ask_tenure",
-                "options": ["12 months", "24 months", "36 months", "48 months", "60 months"],
-                "messages": [AIMessage(content="No problem. Please share the revised tenure or amount you want to change.")]
-            })
-            await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-            return final_updates
-
-        # Default: confirmation prompt
-        final_updates.update({
-            "pending_question": "confirm_loan_terms",
-            "options": ["Yes, Proceed", "No, Change Details"],
-            "messages": [AIMessage(content=(
-                f"I've calculated your loan details:\n\n"
-                f"- Requested: **INR {principal:,.0f}**\n"
-                f"- Tenure: **{tenure} months**\n"
-                f"- EMI: **INR {emi:,.2f}**\n"
-                f"- Purpose: **{purpose_str}**\n\n"
-                f"Does this look correct? Should we proceed to KYC?"
-            ))]
-        })
-        await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
-        return final_updates
-
-    # Fallback to LLM if no deterministic flow matched (or as a safety)
+    # Always call LLM to ensure human conversation
     llm = get_master_llm()
     messages = [
         SystemMessage(content=SALES_CLOSER_PROMPT + (ocr_context if ocr_context else "")),
         SystemMessage(content=f"## CUSTOMER PROFILE\n{_build_customer_context(customer_context)}"),
         SystemMessage(content=f"## LOAN PRODUCTS\n{_build_products_info()}")
     ]
-    for msg in history[:-1]:
+    
+    # Add recent history for context
+    for msg in history[-5:]: # Last 5 turns for focus
         role = HumanMessage if msg["role"] == "user" else AIMessage
         messages.append(role(content=msg["content"]))
+    
     messages.append(HumanMessage(content=user_msg))
-
-    log.append("🧠 अर्जुन (Arjun) is calculating EMI scenarios...")
+    
+    log.append("🧠 Conversing with customer...")
     response = await llm.ainvoke(messages)
     reply = response.content
     extracted = _extract_json_from_response(reply)
@@ -424,50 +293,36 @@ async def sales_agent_node(state: dict):
     visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", reply, flags=_re.DOTALL).strip()
     
     updates = {
-        "next_agent": extracted.get("next_agent", "supervisor") if extracted else "supervisor",
         "action_log": log,
-        "options": extracted.get("options", ["Yes, proceed", "No, change details", "Ask a question"]) if extracted and extracted.get("intent") in ("loan", "loan_confirmed") else ["Tell me more", "Apply for Loan", "Exit"]
+        "current_phase": "sales",
+        "decision": decision
     }
     
-    if extracted and extracted.get("loan_amount"):
-        amount = float(extracted.get("loan_amount", 0))
-        tenure = int(extracted.get("tenure", 24))
-        rate_pa = float(extracted.get("interest_rate", 12.0))
+    if extracted:
+        # Update loan terms if LLM extracted new values
+        new_terms = {**existing_terms}
+        if extracted.get("loan_amount"): new_terms["principal"] = float(extracted.get("loan_amount"))
+        if extracted.get("tenure"): new_terms["tenure"] = int(extracted.get("tenure"))
+        if extracted.get("loan_purpose"): new_terms["loan_purpose"] = extracted.get("loan_purpose")
+        if extracted.get("loan_type"): new_terms["loan_type"] = extracted.get("loan_type")
         
-        updates["loan_terms"] = {
-            "principal": amount,
-            "rate":      rate_pa,
-            "tenure":    tenure,
-            "loan_purpose": extracted.get("loan_purpose", "personal"),
-            "loan_type": extracted.get("loan_type", "reducing"),
-        }
-        log.append(f"📊 Calculated Scenario: ₹{amount:,.0f} for {tenure} months ({extracted.get('loan_purpose')})")
-
-        if extracted.get("confirmed"):
-            # Calculate EMI for the slider
-            monthly_rate = (rate_pa / 12) / 100
-            emi = amount * monthly_rate * ((1 + monthly_rate) ** tenure) / (((1 + monthly_rate) ** tenure) - 1)
-            emi = round(emi, 2)
-            total_interest = round((emi * tenure) - amount, 2)
-            
-            updates["loan_terms"]["emi"] = emi
-            
-            slider_msg = (
-                f"\n\n📊 **Confirmed EMI Breakdown:**\n"
-                f"- Monthly EMI: **₹{emi:,.2f}**\n"
-                f"- Total Interest: ₹{total_interest:,.2f}\n"
-                f"- Tenure: {tenure} months @ {rate_pa}% p.a."
-            )
-            
-            updates["messages"] = [AIMessage(content=visible_reply + slider_msg)]
-            
+        # Calculate EMI if we have principal and tenure
+        if new_terms.get("principal") and new_terms.get("tenure"):
+            rate = float(new_terms.get("rate", 12.0))
+            new_terms["emi"] = _calc_emi(new_terms["principal"], rate, new_terms["tenure"])
+        
+        updates["loan_terms"] = new_terms
+        updates["options"] = extracted.get("options", ["Apply now", "Tell me more", "Exit"])
+        
+        if extracted.get("confirmed") is True:
             updates["intent"] = "loan"
             updates["current_phase"] = "kyc_verification"
-            log.append("✅ Terms confirmed. Moving to KYC.")
-        else:
-            updates["messages"] = [AIMessage(content=visible_reply)]
+            updates["loan_confirmed"] = True
+            log.append(f"✅ Terms confirmed: ₹{new_terms.get('principal'):,.0f} for {new_terms.get('tenure')} months.")
     else:
-        updates["messages"] = [AIMessage(content=visible_reply)]
+        updates["options"] = ["I'm interested", "Tell me more", "Exit"]
+
+    updates["messages"] = [AIMessage(content=visible_reply)]
 
     await manager.broadcast_thinking(session_id, "Arjun (Sales)", False)
     

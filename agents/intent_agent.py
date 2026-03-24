@@ -22,7 +22,8 @@ INTENT_SYSTEM_PROMPT = """You are Arjun, the Senior Strategy Dispatcher at FinSe
 2. **'advice'**: The user is asking "Should I take a loan?", "Is this a good investment?", "How can I improve my CIBIL?", "What is my DTI?", or looking for advisor guidance.
 3. **'kyc'**: The user is uploading or asking about PAN, Aadhaar, Salary Slips, or "how to upload documents".
 4. **'sign'**: The user says "I am ready to sign", "e-sign", "accept the offer", or "confirm the loan".
-5. **'none'**: General greetings ("Hi", "Hello") or completely unrelated chat.
+5. **'payment'**: The user wants to make an EMI payment, check their **loan status**, see **remaining balance**, or track **repayment progress**. (e.g., "how much is left?", "pay my emi", "status of my loan").
+6. **'none'**: General greetings ("Hi", "Hello") or completely unrelated chat.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## DISPATCH RULES (ANTI-HALLUCINATION):
@@ -116,28 +117,36 @@ async def intent_node(state: dict):
             elif "advice" in lower: intent = "advice"
             elif "kyc" in lower: intent = "kyc"
             elif "sign" in lower: intent = "sign"
+            elif "pay" in lower or "payment" in lower or "repay" in lower: intent = "payment"
             
     except Exception as e:
         print(f"  ⚠️ Intent Error: {e}")
         intent = "unclear"
 
-    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign']:
+    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign', 'payment']:
         cust = state.get("customer_data", {}) or {}
         name = cust.get("name", "").strip()
-        greet = f"Welcome back, {name}. " if name else "Welcome to FinServe! "
-        msg = (
-            f"{greet}I can assist you with a **new loan**, provide **financial advice**, "
-            f"or help with **KYC documents**. What would you like to do first?"
-        )
+        
+        # Use LLM for a natural greeting if unclear
+        greeting_prompt = f"Greet the user {name if name else ''} warmly. Mention you can help with loans, advice, KYC, or payments. Keep it human and ask what's on their mind. Limit to 2 sentences."
+        res = await llm.ainvoke([SystemMessage(content=greeting_prompt)])
+        msg = res.content
+
         return {
             "intent": "unclear",
             "messages": [AIMessage(content=msg)],
             "action_log": log,
             "current_phase": "intent_discovery",
-            "options": ["Apply for Loan", "Check Credit Score", "Exit"]
+            "options": ["Apply for Loan", "Make a Payment", "Check Credit Score"]
         }
 
-    phase_map = {"loan": "loan_application", "advice": "advice", "kyc": "kyc_verification", "sign": "loan_approval"}
+    phase_map = {
+        "loan": "loan_application", 
+        "advice": "advice", 
+        "kyc": "kyc_verification", 
+        "sign": "loan_approval",
+        "payment": "payment"
+    }
     updates = {"intent": intent, "action_log": log, "current_phase": phase_map.get(intent)}
     
     # ─── Data Sync — Update profile if salary extracted ───

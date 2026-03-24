@@ -59,3 +59,13 @@ async def get_loan_details(session_id: str):
     if not result:
         raise SessionNotFoundError(session_id)
     return result
+@router.delete("/{session_id}", summary="Delete Session")
+async def delete_session(session_id: str):
+    """Deletes the specified session from the database."""
+    print(f"🗑️ [BACKEND] DELETE request received for session: {session_id}")
+    success = await session_service.delete_session(session_id)
+    if not success:
+        print(f"❌ [BACKEND] Deletion failed for session: {session_id} (Not Found in DB)")
+        raise SessionNotFoundError(session_id)
+    print(f"✅ [BACKEND] Session {session_id} deleted successfully")
+    return {"success": True, "message": f"Session {session_id} deleted."}

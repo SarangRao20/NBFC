@@ -252,7 +252,7 @@ async def document_agent_node(state: dict) -> dict:
 
     print("📄 [DOCUMENT AGENT] Processing uploaded document...")
     log = list(state.get("action_log") or [])
-    log.append("📄 Reading uploaded document...")
+    log.append("🔍 Initiating high-fidelity OCR and forensic document analysis...")
 
     # ENHANCEMENT: Check for multi-document array (future support)
     doc_paths = state.get("documents", {}).get("document_paths", None)
@@ -373,7 +373,7 @@ async def document_agent_node(state: dict) -> dict:
             msg = f"✅ **{document_type} verified successfully** {confidence_emoji} ({confidence:.0%} confidence)"
             if customer_name and name_match_score > 0.7:
                 msg += f"\n✅ Identity verified: Name matches ({name_match_score:.0%} similarity)"
-            log.append(f"✅ {document_type} verified successfully.")
+            log.append(f"✅ {document_type} authentication successful. Cross-referencing identity records.")
             print(f"  ✅ Document verified: {document_type} for {customer_name or 'Unknown'}")
 
         doc_data = {

@@ -13,7 +13,7 @@ from db.database import users_collection, client, init_collections
 from api.config import get_settings
 from api.routers import (
     session, sales, documents, kyc, fraud,
-    underwriting, persuasion, sanction, advisory
+    underwriting, persuasion, sanction, advisory, payment
 )
 from api.routers.auth import router as auth_router
 
@@ -69,6 +69,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://0.0.0.0:5173",
@@ -193,6 +197,7 @@ app.include_router(underwriting.router)  # Step 11
 app.include_router(persuasion.router)    # Steps 12, 13, 14, 15
 app.include_router(sanction.router)      # Step 16
 app.include_router(advisory.router)      # Step 17
+app.include_router(payment.router)       # EMI Payments
 app.include_router(auth_router)          # Authentication & Profile Management
 
 @app.get("/", tags=["Root"])

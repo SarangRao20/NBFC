@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppState } from '../types';
-import { User, CheckCircle2, Circle, FileText, BadgeCheck } from 'lucide-react';
+import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import MetricCard from './MetricCard';
 import EmiDonutChart from './EmiDonutChart';
@@ -12,9 +12,11 @@ interface Props {
   onLoadSession?: (sessionId: string) => void;
   onNewChat?: () => void;
   onLogout?: () => void;
+  onPayEmi?: () => void;
+  onDeleteSession?: (sessionId: string) => void;
 }
 
-export default function DashboardPane({ appState, onLoadSession, onNewChat, onLogout }: Props) {
+export default function DashboardPane({ appState, onLoadSession, onNewChat, onLogout, onPayEmi, onDeleteSession }: Props) {
   const badgeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,181 +35,215 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
   }, [appState.underwritingStatus]);
 
   return (
-    <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col p-5 overflow-y-auto z-10 scrollbar-hide">
-      {/* Header: User Profile */}
-      <div className="flex items-center space-x-3 mb-6 pt-1.5">
-        <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
-          <User size={18} />
+    <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col h-screen z-10 overflow-hidden">
+      {/* Scrollable Content */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide p-5">
+        {/* Header: User Profile */}
+        <div className="flex items-center space-x-3 mb-6 pt-1.5">
+          <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
+            <User size={18} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-800 truncate">{appState.customerName || 'Guest User'}</h2>
+            {appState.customerName && (
+              <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
+                <BadgeCheck size={10} className="mr-1" /> Existing
+              </div>
+            )}
+          </div>
         </div>
-        <div className="min-w-0">
-          <h2 className="text-sm font-bold text-slate-800 truncate">{appState.customerName || 'Guest User'}</h2>
-          {appState.customerName && (
-            <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
-              <BadgeCheck size={10} className="mr-1" /> Existing
+
+        {/* Financial State */}
+        <div className="mb-6">
+          <div className="grid grid-cols-2 gap-2.5 mb-4">
+            <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
+            <MetricCard label="Int. Rate" value={appState.roi} decimals={1} suffix="%" />
+            <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
+            <MetricCard label="Monthly EMI" value={appState.emi} prefix="₹" />
+          </div>
+          
+          {appState.creditScore > 0 && (
+            <div className="grid grid-cols-2 gap-2.5 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
+              <div className="text-center border-r border-slate-100">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Credit Score</div>
+                <div className="text-lg font-bold text-emerald-600">{appState.creditScore}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Pre-approved</div>
+                <div className="text-lg font-bold text-slate-700">₹{(appState.preApprovedLimit / 100000).toFixed(1)}L</div>
+              </div>
+            </div>
+          )}
+
+          <EmiDonutChart principal={appState.requestedAmount} emi={appState.emi} tenure={appState.tenure} />
+          
+          {/* Payment CTA */}
+          {appState.underwritingStatus === 'Approved' && appState.emi > 0 && (
+            <div className="mt-4 p-3 bg-emerald-50 rounded-lg border border-emerald-100">
+               <div className="flex justify-between items-center mb-2">
+                 <span className="text-[10px] font-bold text-emerald-800 uppercase">Active Repayment</span>
+                 <span className="text-[10px] font-bold text-emerald-600">
+                   {appState.loan_terms?.payments_made || 0} / {appState.tenure} Paid
+                 </span>
+               </div>
+               <button 
+                 onClick={onPayEmi}
+                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold flex items-center justify-center transition-all shadow-sm"
+               >
+                 <CreditCard size={14} className="mr-2" /> Pay Next EMI
+               </button>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Financial State */}
-      <div className="mb-6">
-        <div className="grid grid-cols-2 gap-2.5 mb-4">
-          <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
-          <MetricCard label="Int. Rate" value={appState.roi} decimals={1} suffix="%" />
-          <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
-          <MetricCard label="Monthly EMI" value={appState.emi} prefix="₹" />
+        {/* Underwriting Status */}
+        <div className="mb-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={appState.underwritingStatus}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+            >
+              <div
+                ref={badgeRef}
+                className={clsx(
+                  "px-2 py-1 rounded-md border flex items-center font-bold text-[10px] transition-colors shadow-sm",
+                  {
+                    'bg-amber-50 border-amber-200 text-amber-700': appState.underwritingStatus === 'Pending Evaluation',
+                    'bg-emerald-50 border-emerald-400 text-emerald-700 shadow-emerald-900/10': appState.underwritingStatus === 'Approved',
+                    'bg-red-50 border-red-200 text-red-700': appState.underwritingStatus === 'Soft-Rejected',
+                  }
+                )}
+              >
+                {appState.underwritingStatus === 'Pending Evaluation' && <Circle size={14} className="mr-1.5 animate-pulse" />}
+                {appState.underwritingStatus === 'Approved' && <CheckCircle2 size={14} className="mr-1.5" />}
+                {(appState.underwritingStatus === 'Soft-Rejected') && <Circle size={14} className="mr-1.5" />}
+                {appState.underwritingStatus === 'Approved' ? 'High Approval Probability' : appState.underwritingStatus}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
-        
-        {appState.creditScore > 0 && (
-          <div className="grid grid-cols-2 gap-2.5 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-            <div className="text-center border-r border-slate-100">
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Credit Score</div>
-              <div className="text-lg font-bold text-emerald-600">{appState.creditScore}</div>
+
+        {/* Document Vault */}
+        <div className="mb-6">
+          <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">KYC Documents</h3>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
+              <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
+                <FileText size={12} className="mr-1 text-slate-400" /> PAN
+              </div>
+              {appState.documents.pan === 'verified' ? (
+                <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+              ) : (
+                <Circle size={14} className="text-slate-200 flex-shrink-0" />
+              )}
             </div>
-            <div className="text-center">
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Pre-approved</div>
-              <div className="text-lg font-bold text-slate-700">₹{(appState.preApprovedLimit / 100000).toFixed(1)}L</div>
+            <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
+              <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
+                <FileText size={12} className="mr-1 text-slate-400" /> Income
+              </div>
+              {appState.documents.bankStatement === 'verified' ? (
+                <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+              ) : (
+                <Circle size={14} className="text-slate-200 flex-shrink-0" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Past Sessions */}
+        {appState.pastLoans && appState.pastLoans.length > 0 && (
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-3">Past Loan History</h3>
+            <div className="space-y-2.5">
+              {appState.pastLoans.slice(0, 2).map((loan, i) => (
+                <div key={i} className="p-2.5 bg-slate-100/50 rounded-md border border-slate-200/60">
+                  <div className="flex justify-between items-start mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-700">₹{loan.amount?.toLocaleString()} ({loan.type})</span>
+                    <span className={clsx(
+                      "text-[8px] px-1 py-0.5 rounded font-bold uppercase",
+                      loan.decision === 'approve' ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                    )}>
+                      {loan.decision}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-slate-500 flex justify-between">
+                    <span>{new Date(loan.date).toLocaleDateString()}</span>
+                    {loan.sanction_letter && (
+                      <a href={loan.sanction_letter} target="_blank" className="text-emerald-600 font-bold hover:underline">View</a>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        <EmiDonutChart principal={appState.requestedAmount} emi={appState.emi} tenure={appState.tenure} />
-      </div>
-
-      {/* Underwriting Status */}
-      <div className="mb-6">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={appState.underwritingStatus}
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-          >
-            <div
-              ref={badgeRef}
-              className={clsx(
-                "px-2 py-1 rounded-md border flex items-center font-bold text-[10px] transition-colors shadow-sm",
-                {
-                  'bg-amber-50 border-amber-200 text-amber-700': appState.underwritingStatus === 'Pending Evaluation',
-                  'bg-emerald-50 border-emerald-400 text-emerald-700 shadow-emerald-900/10': appState.underwritingStatus === 'Approved',
-                  'bg-red-50 border-red-200 text-red-700': appState.underwritingStatus === 'Soft-Rejected',
-                }
-              )}
-            >
-              {appState.underwritingStatus === 'Pending Evaluation' && <Circle size={14} className="mr-1.5 animate-pulse" />}
-              {appState.underwritingStatus === 'Approved' && <CheckCircle2 size={14} className="mr-1.5" />}
-              {(appState.underwritingStatus === 'Soft-Rejected') && <Circle size={14} className="mr-1.5" />}
-              {appState.underwritingStatus === 'Approved' ? 'High Approval Probability' : appState.underwritingStatus}
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* Document Vault */}
-      <div className="mb-6">
-        <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">KYC Documents</h3>
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
-            <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
-              <FileText size={12} className="mr-1 text-slate-400" /> PAN
-            </div>
-            {appState.documents.pan === 'verified' ? (
-              <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-            ) : (
-              <Circle size={14} className="text-slate-200 flex-shrink-0" />
-            )}
+        {appState.pastRecords && (
+          <div className="px-3 py-2 bg-amber-50/50 rounded-lg border border-amber-100/50 italic text-[10px] text-amber-800 mb-3">
+            <strong>Note:</strong> {appState.pastRecords}
           </div>
-          <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
-            <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
-              <FileText size={12} className="mr-1 text-slate-400" /> Income
-            </div>
-            {appState.documents.bankStatement === 'verified' ? (
-              <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-            ) : (
-              <Circle size={14} className="text-slate-200 flex-shrink-0" />
-            )}
-          </div>
-        </div>
-      </div>
+        )}
 
-      {/* Past Sessions */}
-      {appState.pastLoans && appState.pastLoans.length > 0 && (
-        <div className="mt-6 pt-5 border-t border-slate-200">
-          <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-3">Past Loan History</h3>
-          <div className="space-y-2.5">
-            {appState.pastLoans.slice(0, 2).map((loan, i) => (
-              <div key={i} className="p-2.5 bg-slate-100/50 rounded-md border border-slate-200/60">
-                <div className="flex justify-between items-start mb-1.5">
-                  <span className="text-[10px] font-bold text-slate-700">₹{loan.amount?.toLocaleString()} ({loan.type})</span>
-                  <span className={clsx(
-                    "text-[8px] px-1 py-0.5 rounded font-bold uppercase",
-                    loan.decision === 'approve' ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                  )}>
-                    {loan.decision}
-                  </span>
+        {/* Recent Chat Sessions */}
+        {appState.pastSessions && appState.pastSessions.length > 0 && (
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <div className="flex justify-between items-center mb-3.5">
+              <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Chats</h3>
+              <button 
+                onClick={onNewChat}
+                className="text-[9px] bg-emerald-600 text-white px-2 py-1 rounded font-bold hover:bg-emerald-700 transition-colors shadow-sm flex items-center"
+              >
+                <Plus size={10} className="mr-1" /> New
+              </button>
+            </div>
+            <div className="space-y-2">
+              {appState.pastSessions.slice(0, 5).map((session, i) => (
+                <div key={i} className="flex space-x-1 group">
+                  <button 
+                    onClick={() => onLoadSession?.(session.session_id)}
+                    className="flex-1 text-left p-2.5 bg-white hover:bg-emerald-50 rounded-md border border-slate-200/60 transition-colors"
+                  >
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-[10px] font-bold text-slate-700">{new Date(session.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
+                      <span className="text-[8px] text-slate-400 font-mono italic">{session.session_id.slice(0, 8)}</span>
+                    </div>
+                    <div className="text-[9px] text-slate-500 flex justify-between">
+                      <span>Phase: {session.current_phase.replace('_', ' ')}</span>
+                      {session.loan_amount && <span>₹{session.loan_amount / 1000}k</span>}
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Are you sure you want to delete this chat history?')) {
+                        onDeleteSession?.(session.session_id);
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all flex items-center justify-center border border-slate-200 hover:border-red-200 bg-white shadow-sm"
+                    title="Delete Chat"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <div className="text-[9px] text-slate-500 flex justify-between">
-                  <span>{new Date(loan.date).toLocaleDateString()}</span>
-                  {loan.sanction_letter && (
-                    <a href={loan.sanction_letter} target="_blank" className="text-emerald-600 font-bold hover:underline">View</a>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {appState.pastRecords && (
-        <div className="px-3 py-2 bg-amber-50/50 rounded-lg border border-amber-100/50 italic text-[10px] text-amber-800 mb-3">
-          <strong>Note:</strong> {appState.pastRecords}
-        </div>
-      )}
-
-      {/* Recent Chat Sessions */}
-      {appState.pastSessions && appState.pastSessions.length > 0 && (
-        <div className="flex-1 flex flex-col min-h-0 mt-6 pt-5 border-t border-slate-200">
-          <div className="flex justify-between items-center mb-3.5">
-            <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Chats</h3>
-            <button 
-              onClick={onNewChat}
-              className="text-[9px] bg-emerald-600 text-white px-2 py-1 rounded font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+        {/* Logout Button - Inside Scrollable Content */}
+        {onLogout && (
+          <div className="mt-8 pt-5 border-t border-slate-200">
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 bg-slate-200 hover:bg-red-50 hover:text-red-600 rounded-lg text-slate-600 text-xs font-bold transition-all border border-transparent hover:border-red-100 group"
             >
-              + New Chat
+              <span className="opacity-70 group-hover:opacity-100">Logout Session</span>
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
-            {appState.pastSessions.slice(0, 5).map((session, i) => (
-              <button 
-                key={i} 
-                onClick={() => onLoadSession?.(session.session_id)}
-                className="w-full text-left p-2.5 bg-white hover:bg-emerald-50 rounded-md border border-slate-200/60 transition-colors group"
-              >
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[10px] font-bold text-slate-700 group-hover:text-emerald-700">{new Date(session.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
-                  <span className="text-[8px] text-slate-400 font-mono">{session.session_id.slice(0, 8)}</span>
-                </div>
-                <div className="text-[9px] text-slate-500 flex justify-between">
-                  <span>Phase: {session.current_phase.replace('_', ' ')}</span>
-                  {session.loan_amount && <span>₹{session.loan_amount / 1000}k</span>}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Logout Button */}
-      {onLogout && (
-        <div className="mt-auto pt-4 pb-2">
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center justify-center space-x-2 py-2 px-4 bg-slate-200 hover:bg-red-50 hover:text-red-600 rounded-lg text-slate-600 text-xs font-bold transition-all border border-transparent hover:border-red-100 group"
-          >
-            <span className="opacity-70 group-hover:opacity-100">Logout Session</span>
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ export interface AppState {
   emi: number;
   creditScore: number;
   preApprovedLimit: number;
+  phone?: string;
   underwritingStatus: 'Pending Evaluation' | 'Soft-Rejected' | 'Approved' | 'Reject';
   activeAgent: string | null;
   thinkingAgents: string[];
@@ -18,6 +19,15 @@ export interface AppState {
   };
   actionLog: string[];
   options: string[];
+  loan_terms?: {
+    principal: number;
+    tenure: number;
+    rate: number;
+    emi: number;
+    payments_made?: number;
+    remaining_balance?: number;
+    next_emi_date?: string;
+  };
   pastLoans?: Array<{
     amount: number;
     type: string;
