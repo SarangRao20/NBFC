@@ -74,6 +74,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
   const [input, setInput] = useState('');
   const [isSigning, setIsSigning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto scroll
   useEffect(() => {
@@ -85,6 +86,19 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
     if (!input.trim()) return;
     onSendMessage(input.trim());
     setInput('');
+  };
+
+  const handleFileClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onFileUpload(file);
+      // Reset input so the same file can be picked again
+      e.target.value = '';
+    }
   };
 
   return (
@@ -372,7 +386,18 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
         className="w-full bg-transparent p-4 pb-12 outline-none resize-none min-h-[80px] text-[15px] font-medium placeholder:text-slate-400"
       />
       <div className="absolute bottom-3 right-3 left-3 flex justify-between items-center">
-        <button type="button" className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-xl transition-colors">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png"
+        />
+        <button 
+          type="button" 
+          onClick={handleFileClick}
+          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/70 rounded-xl transition-colors"
+        >
           <Paperclip size={20} />
         </button>
         <button 

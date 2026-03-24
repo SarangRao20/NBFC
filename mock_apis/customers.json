@@ -78,5 +78,41 @@
         "current_loans": [],
         "risk_flags": [],
         "created_at": "2026-03-24T12:37:01.217659"
+    },
+    {
+        "id": "CUST006",
+        "phone": "9876543210",
+        "email": "test@example.com",
+        "name": "John Doe",
+        "password": "Password123!",
+        "city": null,
+        "salary": null,
+        "dob": "1990-01-01",
+        "profession": "Software Engineer",
+        "address": "123 Main St, New York, NY 10001",
+        "credit_score": 785,
+        "pre_approved_limit": 100000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-24T13:23:20.026567"
+    },
+    {
+        "id": "CUST007",
+        "phone": "9999999999",
+        "email": "newuser@example.com",
+        "name": "Test User",
+        "password": "password123",
+        "city": null,
+        "salary": 85000.0,
+        "dob": "1990-01-01",
+        "profession": "Engineer",
+        "address": "123 Street",
+        "credit_score": 864,
+        "pre_approved_limit": 510000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-24T13:33:49.432718"
     }
 ]

@@ -2,7 +2,7 @@
 
 from typing import Optional, Dict, Any
 from datetime import datetime
-from db.database import chat_sessions_collection, documents_collection
+from db.database import sessions_collection, documents_collection
 
 class SessionManager:
     """Sync PyMongo session persistence layer."""
@@ -36,7 +36,7 @@ class SessionManager:
             }
             
             # Upsert (save or update)
-            chat_sessions_collection.update_one(
+            sessions_collection.update_one(
                 {"session_id": session_id},
                 {"$set": session_doc},
                 upsert=True
@@ -51,7 +51,7 @@ class SessionManager:
     def load_session(session_id: str) -> Optional[Dict[str, Any]]:
         """Load session state from MongoDB (sync PyMongo). Always returns complete state schema."""
         try:
-            session_doc = chat_sessions_collection.find_one({"session_id": session_id})
+            session_doc = sessions_collection.find_one({"session_id": session_id})
             if not session_doc:
                 print(f"⚠️ Session {session_id} not found")
                 return None
@@ -151,7 +151,7 @@ class SessionManager:
     def delete_session(session_id: str) -> bool:
         """Delete a session (after completion/timeout)."""
         try:
-            chat_sessions_collection.delete_one({"session_id": session_id})
+            sessions_collection.delete_one({"session_id": session_id})
             documents_collection.delete_many({"session_id": session_id})
             print(f"✅ Session {session_id} deleted from MongoDB")
             return True

@@ -151,7 +151,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
   };
 
   const handleCompleteRegistration = async () => {
-    if (!userData.name || !userData.dob || !userData.profession || !userData.address || !userData.password) {
+    if (!userData.name || !userData.dob || !userData.profession || !userData.address || !userData.salary || !userData.password) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -466,6 +466,17 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
           className="w-full px-4 py-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
         />
 
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+          <input
+            type="number"
+            placeholder="Monthly Salary"
+            value={userData.salary || ''}
+            onChange={(e) => updateUserData('salary', e.target.value)}
+            className="w-full pl-8 pr-4 py-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          />
+        </div>
+
         <textarea
           placeholder="Complete Address"
           value={userData.address || ''}
@@ -484,7 +495,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
           </button>
           <button
             onClick={() => setCurrentStep('password')}
-            disabled={!userData.name || !userData.dob || !userData.profession || !userData.address}
+            disabled={!userData.name || !userData.dob || !userData.profession || !userData.address || !userData.salary}
             className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-semibold hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
           >
             <span>Continue</span>

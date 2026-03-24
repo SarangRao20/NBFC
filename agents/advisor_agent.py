@@ -78,12 +78,12 @@ async def advisor_agent_node(state: dict) -> dict:
     customer = state.get("customer_data", {})
     decision = state.get("decision", "unknown")
     is_signed = state.get("is_signed", False)
-    dti = state.get("dti_ratio", 0)
+    dti = state.get("dti_ratio") or 0  # Handle None values
     terms = state.get("loan_terms", {})
     fraud = state.get("fraud_score", 0.0)
     reasons = state.get("reasons", [])
 
-    salary = customer.get("salary", 0)
+    salary = customer.get("salary") or 0  # Handle None values
     principal = terms.get("principal", 0)
     emi = terms.get("emi", 0)
     tenure = terms.get("tenure", 0)
