@@ -29,7 +29,6 @@ from agents.kyc_agent import verification_agent_node
 from agents.fraud_agent import fraud_agent_node
 from agents.underwriting import underwriting_agent_node
 from agents.sanction_agent import sanction_agent_node
-from agents.advisor_agent import advisor_agent_node
 from agents.persuasion_agent import persuasion_agent_node
 from agents.emi_agent import emi_agent_node
 from agents.document_query_agent import document_query_agent_node
@@ -177,7 +176,7 @@ async def supervisor_node(state: MasterState):
 # ─── Supervisor Router (Agent Name → Graph Node) ────────────────────────────
 def supervisor_router(state: MasterState):
     """Map agent name to graph node."""
-    next_agent = state.get("next_agent", "advisor_agent")
+    next_agent = state.get("next_agent", "sales_agent")
     
     # Parallel optimization: KYC + Fraud together if both pending
     documents_verified = state.get("documents", {}).get("verified", False)
@@ -204,14 +203,13 @@ def supervisor_router(state: MasterState):
         "underwriting_agent": "underwriting_agent",
         "persuasion_agent": "persuasion_agent",
         "sanction_agent": "sanction_agent",
-        "advisor_agent": "advisor_agent",
         "emi_agent": "emi_agent",
         "document_query_agent": "document_query_agent",
         "emi_engine": "emi_engine",
         "repayment_agent": "repayment_agent",
     }
     
-    target = mapping.get(next_agent, "advisor_agent")
+    target = mapping.get(next_agent, "sales_agent")
     print(f"🔀 [ROUTER] Routing to: {target}")
     return target
 
@@ -221,39 +219,6 @@ def join_verification_node(state: MasterState):
     """Aggregate results from parallel KYC and Fraud checks."""
     print("🤝 [JOIN NODE] Merging verification results...")
     return {"action_log": ["🤝 Parallel checks completed and merged."]}
-
-# ─── Advisor Context Node (prepare full context before advisor) ─────────────
-async def advisor_context_node(state: MasterState):
-    """Prepare comprehensive context for advisor agent."""
-    session_id = state.get("session_id", "default")
-    
-    # Load all documents uploaded for this session
-    uploaded_docs = await SessionManager.get_session_documents(session_id)
-    
-    # Prepare advisor briefing
-    advisor_context = {
-        "current_phase": state.get("current_phase", "unknown"),
-        "customer_data": state.get("customer_data", {}),
-        "loan_terms": state.get("loan_terms", {}),
-        "kyc_status": state.get("kyc_status", "pending"),
-        "fraud_score": state.get("fraud_score", -1),
-        "decision": state.get("decision", ""),
-        "risk_level": state.get("risk_level", "unknown"),
-        "documents_uploaded": uploaded_docs,
-        "action_log": state.get("action_log", []),
-        "message_count": len(state.get("messages", [])),
-    }
-    
-    print(f"📋 [ADVISOR CONTEXT] Session {session_id}:")
-    print(f"   Phase: {advisor_context['current_phase']}")
-    print(f"   Decision: {advisor_context['decision'] or 'PENDING'}")
-    print(f"   Documents: {len(uploaded_docs)} uploaded")
-    print(f"   Actions: {len(advisor_context['action_log'])} events logged")
-    
-    return {
-        "advisor_context": advisor_context,
-        "action_log": ["📋 Advisor context loaded with full session history"]
-    }
 
 def route_after_intent(state: MasterState) -> str:
     # If the intent is unclear, we stop and wait for the user to answer the clarification text.
@@ -276,8 +241,6 @@ def compile_master_graph():
     workflow.add_node("join_verification",      join_verification_node)
     workflow.add_node("underwriting_agent",     underwriting_agent_node)
     workflow.add_node("sanction_agent",         sanction_agent_node)
-    workflow.add_node("advisor_context",        advisor_context_node)
-    workflow.add_node("advisor_agent",          advisor_agent_node)
     workflow.add_node("persuasion_agent",       persuasion_agent_node)
     workflow.add_node("emi_agent",              emi_agent_node)
     workflow.add_node("document_query_agent",   document_query_agent_node)
@@ -300,7 +263,6 @@ def compile_master_graph():
             "verification_agent": "verification_agent",
             "fraud_agent": "fraud_agent",
             "underwriting_agent": "underwriting_agent",
-            "advisor_agent": "advisor_context",
             "sanction_agent": "sanction_agent",
             "persuasion_agent": "persuasion_agent",
             "emi_agent": "emi_agent",
@@ -328,12 +290,8 @@ def compile_master_graph():
 
     workflow.add_edge("underwriting_agent", "supervisor")
     
-    # ── Advisor context → advisor agent → end ──────────────────────────────
-    workflow.add_edge("advisor_context",    "advisor_agent")
-    workflow.add_edge("advisor_agent",      END)
-
-    # ── Sanction chains into advisor context for final message ───────────────
-    workflow.add_edge("sanction_agent",     "advisor_context")
+    # ── Sanction chains directly to END (advisor is now integrated into sales_agent) ──
+    workflow.add_edge("sanction_agent",     END)
 
     return workflow.compile()
 

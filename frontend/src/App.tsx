@@ -182,18 +182,12 @@ function App() {
       
       if (data.type === 'AGENT_STEP') {
         const steps = data.action_log || data.steps || [];
-        const options = data.options || [];
         setAppState(prev => ({ 
           ...prev, 
           actionLog: Array.isArray(steps) ? steps : [steps], 
-          options: options,
+          // options removed to disable button UI
           activeAgent: Array.isArray(steps) && steps.length > 0 ? `🔍 ${steps[steps.length - 1]}...` : prev.activeAgent 
         }));
-        
-        // If we have options, push them to chat as well for accessibility
-        if (options && options.length > 0) {
-          pushAgentMessage('I have prepared some options for you:', 'text', `msg-opt-${Date.now()}-${Math.random()}`, options);
-        }
       }
       
       if (data.type === 'AGENT_THINKING') {
@@ -236,18 +230,14 @@ function App() {
     return () => { unsubscribe(); };
   }, [sessionId]);
 
-  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}-${Math.random()}`, options?: string[]) => {
-    const autoOptions = options && options.length > 0
-      ? options
-      : (/\b(yes|no)\b/i.test(text) && (/\?/g.test(text) || /confirm|proceed|accept|decline/i.test(text))
-        ? ['Yes', 'No']
-        : undefined);
+  const pushAgentMessage = (text: string, type: MessageType = 'text', id = `msg-${Date.now()}-${Math.random()}`) => {
+    // Buttons/options intentionally disabled in chat UI — keep messages concise
     setChatHistory(prev => [...prev, {
       id,
       sender: 'agent',
       type,
       content: text,
-      options: autoOptions,
+      options: [],
       timestamp: new Date(),
     }]);
     return id;

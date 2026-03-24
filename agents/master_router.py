@@ -58,9 +58,9 @@ def route_next_agent(state: MasterState):
             if "Intent Agent" not in recent_logs and "✅ Intent" not in recent_logs and intent == "none":
                 return "intent_agent", "New human message detected. Re-evaluating vague/unclear intent."
 
-    # ─── PHASE 3: ADVICE ONLY (Parallel/Side Branch) ─────────────────────────
+    # ─── PHASE 3: ADVICE ONLY (Now handled by Sales Agent in advisor mode) ────
     if intent == "advice":
-        return "advisor_agent", "Direct route to financial advisory."
+        return "sales_agent", "Routing to Sales Agent for financial advisory mode."
         
     if intent == "kyc" and not state.get("documents_uploaded"):
         return "document_query_agent", "User asking about documents/KYC rules."
@@ -101,14 +101,14 @@ def route_next_agent(state: MasterState):
             else:
                 return "verification_agent", "Awaiting KYC completion before underwriting."
 
-    # ─── PHASE 8: SANCTION & ADVICE (Priya - Closing) ────────────────────────
+    # ─── PHASE 8: SANCTION & ADVICE (Priya - Now via Sales Agent advisor mode) ──
     if decision in ("approve", "soft_reject", "hard_reject"):
         if not state.get("sanction_pdf"):
             return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
-        return "advisor_agent", "Documentation complete. Providing post-sanction orientation."
+        return "sales_agent", "Documentation complete. Providing post-sanction orientation via advisor mode."
 
     # GLOBAL FALLBACK
     if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):
         return "sales_agent", "Continuing loan conversation with Arjun to ensure human-first support."
     
-    return "advisor_agent", "Portfolio management and financial wellness orientation."
+    return "sales_agent", "Portfolio management and financial wellness orientation via advisor mode."

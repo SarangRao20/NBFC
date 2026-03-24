@@ -258,8 +258,8 @@ async def process_esign_acceptance(session_id: str) -> dict:
             f"Thank you for considering FinServe NBFC! 🙏"
         )
     
-    # Route to advisory agent
-    from agents.advisor_agent import advisor_agent_node
+    # Route to sales agent for advisory mode (post-sanction guidance)
+    from agents.sales_agent import sales_agent_node
     advisory_state = {
         "customer_data": customer,
         "loan_terms": terms,
@@ -268,7 +268,7 @@ async def process_esign_acceptance(session_id: str) -> dict:
         "post_sanction": True
     }
     
-    advisory_result = await advisor_agent_node(advisory_state)
+    advisory_result = await sales_agent_node(advisory_state)
     msg_obj = advisory_result.get("messages", [None])[0]
     advisory_message = ""
     if msg_obj:

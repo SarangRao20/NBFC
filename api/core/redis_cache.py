@@ -197,6 +197,18 @@ class RedisCache:
         except Exception as e:
             return {"error": str(e)}
 
+    async def flush_all(self) -> bool:
+        """Flush the current Redis database."""
+        if not self.connected:
+            return False
+        try:
+            await self.redis_client.flushdb()
+            print("🧹 Redis DB flushed")
+            return True
+        except Exception as e:
+            print(f"❌ Redis FLUSH error: {e}")
+            return False
+
 # Global cache instance
 cache = RedisCache()
 

@@ -259,7 +259,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                     return _clean_dict({
                         "reply": reply,
                         "all_replies": [{"type": "text", "content": reply}],
-                        "next_agent": "advisor_agent",
+                        "next_agent": "sales_agent",
                         "intent": state.get("intent", "advice"),
                         "is_authenticated": state.get("is_authenticated", True),
                         "loan_terms": state.get("loan_terms", {}),
@@ -358,10 +358,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             # }
             # new_ai.insert(0, step_msg)
 
-        # Attach options to the last AI message for frontend rendering
-        if final_state.get("options") and new_ai:
-            if isinstance(new_ai[-1], dict):
-                new_ai[-1]["options"] = final_state.get("options")
+        # NOTE: frontend buttons/options disabled for cleaner chat UI
 
         # For the legacy string reply, concat just the text bits
         texts = [m["content"] for m in new_ai if isinstance(m, dict) and m.get("type") == "text"]
@@ -411,7 +408,6 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             "is_authenticated": final_state.get("is_authenticated", False),
             "loan_terms": final_state.get("loan_terms", {}),
             "customer_data": final_state.get("customer_data", {}),
-            "options": final_state.get("options"),
         })
 
         
