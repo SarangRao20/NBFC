@@ -13,13 +13,20 @@ MAX_RESENDS = 5
 OTP_EXPIRY_MINUTES = 5
 
 
-def send_otp(phone: str) -> dict:
-    """Generate 6-digit OTP, print to console (simulated SMS)."""
+def send_otp(phone: str, otp: str = None) -> dict:
+    """Generate or accept a 6-digit OTP, store it, and send (simulated SMS).
+
+    If `otp` is provided the function will use that value (useful when
+    the caller generates and stores the OTP centrally so both SMS and email
+    use the same code).
+    """
     _send_count.setdefault(phone, 0)
     if _send_count[phone] >= MAX_RESENDS:
         return {"sent": False, "message": f"Max OTP limit reached ({MAX_RESENDS})."}
 
-    otp = str(random.randint(100000, 999999))
+    if otp is None:
+        otp = str(random.randint(100000, 999999))
+
     _otp_store[phone] = {
         "otp": otp,
         "expires_at": datetime.now() + timedelta(minutes=OTP_EXPIRY_MINUTES),

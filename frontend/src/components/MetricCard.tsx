@@ -25,7 +25,7 @@ export default function MetricCard({ label, value, prefix = '', suffix = '', dec
 
   return (
     <motion.div 
-      className={`bg-white p-2 rounded-lg border shadow-sm flex flex-col justify-center items-start overflow-hidden transition-all duration-300 ${
+      className={`bg-white p-3 rounded-lg border shadow-sm flex flex-col justify-center items-start overflow-hidden transition-all duration-300 ${
         isAnimating ? 'border-emerald-400 ring-2 ring-emerald-400/50' : 'border-slate-100'
       }`}
     >

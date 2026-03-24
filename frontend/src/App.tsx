@@ -137,6 +137,24 @@ function App() {
           pushAgentMessage(res.reply, 'text', undefined, res.options);
         }
 
+        // Fetch and display advisory message if user has past loans
+        try {
+          const state = await apiClient.getState(sessionId!);
+          const phone = state?.customer_data?.phone;
+          
+          if (phone) {
+            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            if (advisoryRes.ok) {
+              const advisoryData = await advisoryRes.json();
+              if (advisoryData.message) {
+                pushAgentMessage(advisoryData.message, 'text');
+              }
+            }
+          }
+        } catch (err) {
+          // Silent fail - advisory message is optional
+        }
+
       } catch (error) {
         console.error('Failed to initialize backend:', error);
       }
@@ -427,6 +445,27 @@ function App() {
         setChatHistory([]);
         setChatPhase('init');
         greetingStarted.current = false;
+        
+        // Fetch advisory message if user has past loans
+        try {
+          // Get customer info to retrieve phone
+          const state = await apiClient.getState(resp.session_id);
+          const phone = state?.customer_data?.phone;
+          
+          if (phone) {
+            // Try to fetch advisory message
+            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            if (advisoryRes.ok) {
+              const advisoryData = await advisoryRes.json();
+              if (advisoryData.message) {
+                pushAgentMessage(advisoryData.message, 'text');
+              }
+            }
+          }
+        } catch (err) {
+          console.log("No advisory message available for new chat");
+        }
+        
         console.log("🆕 New session started:", resp.session_id);
       }
     } catch (err) {

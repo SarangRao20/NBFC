@@ -66,17 +66,33 @@ class AuthService:
     async def send_otp(self, phone: str, email: str = None) -> Dict[str, Any]:
         """Send OTP using mock_apis/otp_service.py"""
         await self._get_services()
-        
         try:
-            result = mock_send_otp(phone)
+            # Generate and cache OTP centrally so both SMS and email use same code
+            otp = await self.generate_otp(phone)
+
+            # Send SMS (mock or real via Twilio)
+            sms_result = mock_send_otp(phone, otp)
+
+            # Send email OTP if email provided and email service available
+            email_sent = False
+            if email:
+                try:
+                    # try to get customer's name for personalization
+                    customer = await self.cache.get_customer(phone) or {}
+                    customer_name = customer.get("name", "Customer")
+                    email_sent = await self.email_service.send_otp_email(email, customer_name, otp)
+                except Exception as ie:
+                    print(f"❌ Email send failed: {ie}")
+
             return {
-                "success": result.get("sent", False),
-                "message": result.get("message", "OTP process finished"),
+                "success": sms_result.get("sent", False) or email_sent,
+                "message": "OTP sent via SMS and/or Email",
                 "phone": phone,
                 "email": email,
-                "otp_sent": result.get("sent", False),
-                "dev_mode": "otp" in result,
-                "dev_otp": result.get("otp")
+                "otp_sent": sms_result.get("sent", False),
+                "email_sent": email_sent,
+                "dev_mode": "otp" in sms_result,
+                "dev_otp": sms_result.get("otp")
             }
         except Exception as e:
             print(f"❌ OTP send failed: {e}")
@@ -84,7 +100,8 @@ class AuthService:
                 "success": False,
                 "message": f"Failed to send OTP: {str(e)}",
                 "phone": phone,
-                "otp_sent": False
+                "otp_sent": False,
+                "email_sent": False
             }
     
     async def verify_otp(self, phone: str, otp: str) -> Dict[str, Any]:

@@ -49,7 +49,8 @@ def route_next_agent(state: MasterState):
 
     # ─── PHASE 5: DOCUMENT UPLOAD (Document Agent) ───────────────────────────
     if intent == "loan":
-        if not state.get("documents_uploaded") or not state.get("document_paths"):
+        # Skip document agent if e-sign is already completed (post-sanction phase)
+        if not state.get("esign_completed") and (not state.get("documents_uploaded") or not state.get("document_paths")):
             return "document_agent", "Terms confirmed. Collecting documents."
 
     # ─── PHASE 6: KYC & FRAUD (Parallel Verification) ────────────────────────

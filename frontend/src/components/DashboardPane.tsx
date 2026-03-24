@@ -33,9 +33,9 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
   }, [appState.underwritingStatus]);
 
   return (
-    <div className="w-[22%] min-w-[240px] max-w-[280px] border-r border-slate-200 bg-slate-50 flex flex-col p-2 overflow-y-auto z-10 scrollbar-hide">
+    <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col p-5 overflow-y-auto z-10 scrollbar-hide">
       {/* Header: User Profile */}
-      <div className="flex items-center space-x-2.5 mb-2.5 pt-0.5">
+      <div className="flex items-center space-x-3 mb-6 pt-1.5">
         <div className="w-9 h-9 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
           <User size={18} />
         </div>
@@ -50,8 +50,8 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
       </div>
 
       {/* Financial State */}
-      <div className="mb-2.5">
-        <div className="grid grid-cols-2 gap-1.5 mb-2">
+      <div className="mb-6">
+        <div className="grid grid-cols-2 gap-2.5 mb-4">
           <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
           <MetricCard label="Int. Rate" value={appState.roi} decimals={1} suffix="%" />
           <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
@@ -59,7 +59,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
         </div>
         
         {appState.creditScore > 0 && (
-          <div className="grid grid-cols-2 gap-1.5 p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
+          <div className="grid grid-cols-2 gap-2.5 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
             <div className="text-center border-r border-slate-100">
               <div className="text-[10px] font-bold text-slate-400 uppercase">Credit Score</div>
               <div className="text-lg font-bold text-emerald-600">{appState.creditScore}</div>
@@ -75,7 +75,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
       </div>
 
       {/* Underwriting Status */}
-      <div className="mb-3">
+      <div className="mb-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={appState.underwritingStatus}
@@ -104,10 +104,10 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
       </div>
 
       {/* Document Vault */}
-      <div className="mb-3">
-        <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">KYC Documents</h3>
-        <div className="grid grid-cols-2 gap-1.5">
-          <div className="flex items-center justify-between p-1.5 bg-white rounded-md border border-slate-100 shadow-sm">
+      <div className="mb-6">
+        <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">KYC Documents</h3>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
             <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
               <FileText size={12} className="mr-1 text-slate-400" /> PAN
             </div>
@@ -117,7 +117,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
               <Circle size={14} className="text-slate-200 flex-shrink-0" />
             )}
           </div>
-          <div className="flex items-center justify-between p-1.5 bg-white rounded-md border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between p-2.5 bg-white rounded-md border border-slate-100 shadow-sm">
             <div className="flex items-center text-[10px] font-bold text-slate-600 truncate mr-1">
               <FileText size={12} className="mr-1 text-slate-400" /> Income
             </div>
@@ -132,12 +132,12 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
 
       {/* Past Sessions */}
       {appState.pastLoans && appState.pastLoans.length > 0 && (
-        <div className="mt-2 pt-2.5 border-t border-slate-200">
-          <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Past Loan History</h3>
-          <div className="space-y-1.5">
+        <div className="mt-6 pt-5 border-t border-slate-200">
+          <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-3">Past Loan History</h3>
+          <div className="space-y-2.5">
             {appState.pastLoans.slice(0, 2).map((loan, i) => (
-              <div key={i} className="p-1.5 bg-slate-100/50 rounded-md border border-slate-200/60">
-                <div className="flex justify-between items-start mb-0.5">
+              <div key={i} className="p-2.5 bg-slate-100/50 rounded-md border border-slate-200/60">
+                <div className="flex justify-between items-start mb-1.5">
                   <span className="text-[10px] font-bold text-slate-700">₹{loan.amount?.toLocaleString()} ({loan.type})</span>
                   <span className={clsx(
                     "text-[8px] px-1 py-0.5 rounded font-bold uppercase",
@@ -166,24 +166,24 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onLo
 
       {/* Recent Chat Sessions */}
       {appState.pastSessions && appState.pastSessions.length > 0 && (
-        <div className="flex-1 flex flex-col min-h-0 mt-3 pt-3 border-t border-slate-200">
-          <div className="flex justify-between items-center mb-2">
+        <div className="flex-1 flex flex-col min-h-0 mt-6 pt-5 border-t border-slate-200">
+          <div className="flex justify-between items-center mb-3.5">
             <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Recent Chats</h3>
             <button 
               onClick={onNewChat}
-              className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+              className="text-[9px] bg-emerald-600 text-white px-2 py-1 rounded font-bold hover:bg-emerald-700 transition-colors shadow-sm"
             >
               + New Chat
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-hide">
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
             {appState.pastSessions.slice(0, 5).map((session, i) => (
               <button 
                 key={i} 
                 onClick={() => onLoadSession?.(session.session_id)}
-                className="w-full text-left p-1.5 bg-white hover:bg-emerald-50 rounded-md border border-slate-200/60 transition-colors group"
+                className="w-full text-left p-2.5 bg-white hover:bg-emerald-50 rounded-md border border-slate-200/60 transition-colors group"
               >
-                <div className="flex justify-between items-center mb-0.5">
+                <div className="flex justify-between items-center mb-1.5">
                   <span className="text-[10px] font-bold text-slate-700 group-hover:text-emerald-700">{new Date(session.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
                   <span className="text-[8px] text-slate-400 font-mono">{session.session_id.slice(0, 8)}</span>
                 </div>
