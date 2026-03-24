@@ -25,10 +25,14 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onAuthComplete }) => {
   const handleLogin = async (userData: UserData) => {
     setLoading(true);
     try {
+      const formData = new URLSearchParams();
+      formData.append('phone', userData.phone);
+      formData.append('password', userData.password);
+
       const response = await fetch('http://localhost:8000/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `phone=${userData.phone}&password=${userData.password}`
+        body: formData.toString()
       });
       
       const result = await response.json();
@@ -40,7 +44,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onAuthComplete }) => {
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Login failed. Please check your credentials.');
+      alert(error instanceof Error ? error.message : 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -76,7 +80,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onAuthComplete }) => {
       }
     } catch (error) {
       console.error('Registration error:', error);
-      alert('Registration failed. Please try again.');
+      alert(error instanceof Error ? error.message : 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }

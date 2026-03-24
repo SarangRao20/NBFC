@@ -28,6 +28,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [isDevMode, setIsDevMode] = useState(false);
 
   const updateUserData = (field: keyof UserData, value: string) => {
     setUserData(prev => ({ ...prev, [field]: value }));
@@ -46,8 +47,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       });
       
       const result = await response.json();
-      if (result.dev_mode && result.dev_otp) {
+      const devMode = Boolean(result.dev_mode);
+      setIsDevMode(devMode);
+
+      if (devMode && result.dev_otp) {
         setDevOtp(result.dev_otp);
+      } else {
+        setDevOtp(null);
       }
       setCurrentStep('otp-phone');
     } catch (err) {
@@ -62,12 +68,17 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
     setLoading(true);
     setError('');
     try {
+      const formData = new URLSearchParams();
+      formData.append('phone', userData.phone);
+      formData.append('otp', otp);
+      if (isDevMode) formData.append('use_dev_otp', 'true');
+
       const response = await fetch('http://localhost:8000/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `phone=${userData.phone}&otp=${otp}`
+        body: formData.toString()
       });
-      
+
       const result = await response.json();
       if (result.success) {
         setCurrentStep('email');
@@ -93,8 +104,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       });
       
       const result = await response.json();
-      if (result.dev_mode && result.dev_otp) {
+      const devMode = Boolean(result.dev_mode);
+      setIsDevMode(devMode);
+
+      if (devMode && result.dev_otp) {
         setDevOtp(result.dev_otp);
+      } else {
+        setDevOtp(null);
       }
       setCurrentStep('otp-email');
     } catch (err) {
@@ -104,17 +120,22 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
   };
 
   const handleVerifyEmailOTP = async () => {
-    if (!otp || !userData.email) return;
+    if (!otp || !userData.phone) return;
 
     setLoading(true);
     setError('');
     try {
+      const formData = new URLSearchParams();
+      formData.append('phone', userData.phone);
+      formData.append('otp', otp);
+      if (isDevMode) formData.append('use_dev_otp', 'true');
+
       const response = await fetch('http://localhost:8000/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `phone=${userData.phone!}&otp=${otp}`
+        body: formData.toString()
       });
-      
+
       const result = await response.json();
       if (result.success) {
         setCurrentStep('details');
