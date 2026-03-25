@@ -18,14 +18,13 @@ async def emi_agent_node(state: dict) -> dict:
     if principal <= 0 or tenure <= 0:
         return {"messages": [AIMessage(content="⚠️ Invalid loan terms. Cannot compute EMI.")]}
 
-    # Simple interest model: SI = P * R * T, where T is in years.
-    tenure_years = tenure / 12
-    total_interest = round(principal * (rate_pa / 100) * tenure_years, 2)
+    from utils.financial_rules import calculate_emi
+
+    emi = calculate_emi(principal, rate_pa, tenure)
+    total_interest = round((emi * tenure) - principal, 2)
     total_payment = round(principal + total_interest, 2)
-    emi = round(total_payment / tenure, 2)
 
     updated_terms = {**terms, "emi": emi}
-
     msg = (
         f"📊 **EMI Breakdown:**\n"
         f"- Monthly EMI: **₹{emi:,.2f}**\n"

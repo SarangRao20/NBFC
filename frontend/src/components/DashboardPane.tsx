@@ -3,7 +3,6 @@ import type { AppState } from '../types';
 import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import MetricCard from './MetricCard';
-import EmiDonutChart from './EmiDonutChart';
 import confetti from 'canvas-confetti';
 import { useEffect, useRef, useState } from 'react';
 
@@ -62,26 +61,17 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
         {/* Financial State */}
         <div className="mb-6">
           <div className="grid grid-cols-2 gap-2.5 mb-4">
-            <MetricCard label="Requested" value={appState.requestedAmount} prefix="₹" />
+            <MetricCard label="Principal" value={appState.requestedAmount} prefix="₹" />
             <MetricCard label="Int. Rate" value={appState.roi} decimals={1} suffix="%" />
-            <MetricCard label="Tenure" value={appState.tenure} suffix=" Mo" />
             <MetricCard label="Monthly EMI" value={appState.emi} prefix="₹" />
+            <MetricCard
+              label="Est. Total Interest"
+              value={Math.max(0, (appState.emi * appState.tenure) - appState.requestedAmount)}
+              prefix="₹"
+            />
           </div>
           
-          {appState.creditScore > 0 && (
-            <div className="grid grid-cols-2 gap-2.5 p-3 bg-white rounded-lg border border-slate-100 shadow-sm">
-              <div className="text-center border-r border-slate-100">
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Credit Score</div>
-                <div className="text-lg font-bold text-emerald-600">{appState.creditScore}</div>
-              </div>
-              <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Pre-approved</div>
-                <div className="text-lg font-bold text-slate-700">₹{(appState.preApprovedLimit / 100000).toFixed(1)}L</div>
-              </div>
-            </div>
-          )}
-
-          <EmiDonutChart principal={appState.requestedAmount} emi={appState.emi} tenure={appState.tenure} />
+          {/* Minimal summary only. Removed redundant repayment summary as per user request. */}
           
           {/* Payment CTA */}
           {appState.underwritingStatus === 'Approved' && appState.emi > 0 && (

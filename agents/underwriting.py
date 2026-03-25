@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from langchain_core.messages import AIMessage
 from agents.session_manager import SessionManager
+from utils.financial_rules import calculate_foir
 
 
 def _calculate_max_principal(desired_emi: float, annual_rate: float, tenure_months: int) -> float:
@@ -78,7 +79,7 @@ async def underwriting_agent_node(state: dict) -> dict:
 
     # Base Metrics
     total_emi = existing_emi + emi
-    dti = round(total_emi / salary, 3) if salary > 0 else 1.0
+    dti = calculate_foir(existing_emi, emi, salary) / 100
 
     # Rule 5: Risk Classification
     if score > 0 and (score < 720 or dti > 0.40 or principal > pre_approved):

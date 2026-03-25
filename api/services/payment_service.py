@@ -58,3 +58,9 @@ async def process_emi_payment(session_id: str) -> dict:
         "message": f"Payment of ₹{emi:,.2f} successful!",
         "loan_terms": updated_terms
     }
+
+
+def calculate_cooling_off_settlement(principal: float, annual_rate: float, days_held: int, processing_fee: float) -> float:
+    """Apply cooling-off formula: P + (P × R/365 × t) + PF"""
+    from utils.financial_rules import calculate_cooling_off_settlement as cooling_func
+    return cooling_func(principal, annual_rate, days_held, processing_fee)

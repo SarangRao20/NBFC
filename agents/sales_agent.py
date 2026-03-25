@@ -68,14 +68,11 @@ def _parse_tenure_months(text: str) -> Optional[int]:
     return None
 
 
+from utils.financial_rules import calculate_emi
+
+
 def _calc_emi(principal: float, rate_pa: float, tenure: int) -> float:
-    if principal <= 0 or tenure <= 0:
-        return 0.0
-    r = (rate_pa / 12) / 100
-    if r == 0:
-        return round(principal / tenure, 2)
-    emi = principal * r * ((1 + r) ** tenure) / (((1 + r) ** tenure) - 1)
-    return round(emi, 2)
+    return calculate_emi(principal, rate_pa, tenure)
 
 
 ADVISOR_PROMPT_TEMPLATE = """You are Priya, a Senior Financial Wellness Advisor at FinServe.
@@ -709,8 +706,14 @@ async def _sales_mode(state: dict):
         if extracted.get("tenure"): new_terms["tenure"] = int(extracted.get("tenure"))
         if extracted.get("loan_purpose"): new_terms["loan_purpose"] = extracted.get("loan_purpose")
         if extracted.get("loan_type"): new_terms["loan_type"] = extracted.get("loan_type")
-        if extracted.get("interest_rate"): new_terms["rate"] = float(extracted.get("interest_rate"))
-        
+        if extracted.get("interest_rate"):
+            requested_rate = float(extracted.get("interest_rate"))
+            benchmark_rate = float(state.get("benchmark_rate", 7.0))
+            min_valid_rate = max(benchmark_rate + 2.0, 8.0)
+            if requested_rate < min_valid_rate:
+                requested_rate = min_valid_rate
+            new_terms["rate"] = requested_rate
+
         # Calculate EMI if we have principal and tenure
         if new_terms.get("principal") and new_terms.get("tenure"):
             rate = float(new_terms.get("rate", 12.0))
@@ -727,6 +730,18 @@ async def _sales_mode(state: dict):
         pass
 
     # CRITICAL FIX: Append new AI message to conversation history, don't replace it
+    # Ensure user-facing output is aligned with computed loan terms (no stale 4% / wrong AMT text)
+    final_terms = updates.get("loan_terms", {})
+    if final_terms.get("principal") and final_terms.get("tenure") and final_terms.get("rate") and final_terms.get("emi"):
+        visible_reply = (
+            "✅ Loan terms updated (policy-approved values):\n"
+            f"- Loan amount: ₹{final_terms.get('principal'):,.2f}\n"
+            f"- Tenure: {final_terms.get('tenure')} months\n"
+            f"- Final interest rate: {final_terms.get('rate'):.2f}% p.a.\n"
+            f"- Monthly EMI: ₹{final_terms.get('emi'):,.2f}\n"
+            "\n(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
+        )
+
     # Build new messages list: keep all prior messages + add new AI response
     updated_messages = list(state.get("messages", []))  # Copy all prior messages (HumanMessage/AIMessage objects)
     updated_messages.append(AIMessage(content=visible_reply))
