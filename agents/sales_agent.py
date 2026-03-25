@@ -225,20 +225,20 @@ def _build_customer_context(customer: dict) -> str:
 
     name = customer.get("name", "Customer")
     score = customer.get("credit_score") or customer.get("score", "N/A")
-    limit = customer.get("pre_approved_limit") or customer.get("limit") or 0
-    salary = customer.get("salary") or 0
-    emi_total = customer.get("existing_emi_total") or 0
+    limit = customer.get("pre_approved_limit") or customer.get("limit", 0)
+    salary = customer.get("salary", 0)
+    emi_total = customer.get("existing_emi_total", 0)
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
     
     # Enhanced Memory & Historical Loans
     past_loans = customer.get("past_loans", [])
     loan_history_str = ""
+
     if past_loans:
         loan_history_str = "\n## PAST LOAN HISTORY:\n"
         for i, loan in enumerate(past_loans, 1):
-            amount = loan.get('amount') or 0
-            past_loans_summary += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{amount:,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
+            loan_history_str += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{loan.get('amount', 0):,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
     
     past_records = customer.get("past_records") or "No previous recorded interactions."
     drop_offs = customer.get("drop_off_history") or "None recorded."
