@@ -139,10 +139,10 @@ function App() {
         if (res.all_replies && res.all_replies.length > 0) {
           res.all_replies.forEach((m: any) => {
             if (typeof m === 'string') pushAgentMessage(m);
-            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, m.options);
+            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type);
           });
         } else if (res.reply) {
-          pushAgentMessage(res.reply, 'text', undefined, res.options);
+          pushAgentMessage(res.reply, 'text');
         }
 
         // Fetch and display advisory message if user has past loans
@@ -331,6 +331,110 @@ function App() {
     }
   };
 
+  const handleBatchFileUpload = async (files: File[]) => {
+    if (!sessionId || files.length === 0) return;
+    
+    // 1. Log the batch intention
+    setChatHistory(prev => [...prev, {
+      id: `msg-batch-${Date.now()}`,
+      sender: 'user',
+      type: 'text',
+      content: `Uploading ${files.length} documents: ${files.map(f => f.name).join(', ')}`,
+      timestamp: new Date(),
+    }]);
+
+    setAppState(prev => ({
+      ...prev,
+      thinkingAgents: [...prev.thinkingAgents, 'Document Agent'],
+      activeAgent: '📄 Verifying All Documents...'
+    }));
+
+    const thinkingId = pushAgentMessage(`Running Batch Verification for ${files.length} documents...`, 'thinking');
+    
+    const failBatch = (reason: string) => {
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage(`❌ **Batch Verification Failed:** ${reason}`);
+      setAppState(prev => ({
+        ...prev,
+        thinkingAgents: [],
+        activeAgent: null
+      }));
+    };
+
+    try {
+      setChatPhase('processing');
+      
+      // Step 1: Batch OCR
+      const batchResult = await apiClient.extractOcrBatch(sessionId, files);
+      const results = batchResult.batch_results || [];
+      
+      let allPassed = true;
+      let failureReason = "";
+
+      for (let i = 0; i < results.length; i++) {
+        const res = results[i];
+        const docName = files[i].name;
+        const extracted = res.extracted_data || {};
+        const verified = extracted.verified === true;
+        
+        if (!verified) {
+          allPassed = false;
+          failureReason += `\n- **${docName}**: ${extracted.ocr_error || 'Identity or type mismatch.'}`;
+          continue;
+        }
+
+        // Additional checks for each (Tampering, KYC, Fraud)
+        // For simplicity in batch, we run them sequentially but they act on the "latest" state updated by extract_ocr
+        // Note: The backend extract_ocr already updates session state
+        
+        const tamper = await apiClient.checkTampering(sessionId);
+        if (tamper.tampered) {
+          allPassed = false;
+          failureReason += `\n- **${docName}**: Tampering detected.`;
+          continue;
+        }
+
+        const kyc = await apiClient.kycVerify(sessionId);
+        if (kyc.kyc_status === 'failed') {
+          allPassed = false;
+          failureReason += `\n- **${docName}**: KYC Match Failed (${kyc.issues?.join(', ')})`;
+          continue;
+        }
+      }
+
+      if (!allPassed) {
+        failBatch(`Some documents could not be verified:${failureReason}`);
+        return;
+      }
+
+      // Step 5: Final Fraud Check on the whole bundle
+      const fraud = await apiClient.fraudCheck(sessionId);
+      if (fraud.fraud_detected) {
+        failBatch(`Fraud signals detected in document bundle: ${fraud.details}`);
+        return;
+      }
+
+      // SUCCESS
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage(`✅ **All ${files.length} documents verified successfully.** Proceeding to underwriting...`);
+      
+      setAppState(prev => ({
+        ...prev,
+        thinkingAgents: [],
+        activeAgent: null,
+        needsDocument: false,
+        requiredDocuments: [],
+        uploadedDocNames: [...(prev.uploadedDocNames || []), ...files.map(f => f.name)]
+      }));
+
+      await runUnderwriting();
+
+    } catch (err) {
+      console.error("Batch upload failed:", err);
+      failBatch("System error during batch processing.");
+    }
+  };
+
   const handleFileUpload = async (file: File) => {
     if (!sessionId) return;
     
@@ -344,42 +448,101 @@ function App() {
 
     setAppState(prev => ({
       ...prev,
-      needsDocument: false,
-      documents: { ...prev.documents, bankStatement: 'verified' },
       thinkingAgents: [...prev.thinkingAgents, 'Document Agent'],
       activeAgent: '📄 Processing Document...'
     }));
 
     const thinkingId = pushAgentMessage('Running Verification (OCR, Tampering, KYC, Fraud)...', 'thinking');
     
+    const failAndKeepUploadZone = (reason: string) => {
+      setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+      pushAgentMessage(`❌ **Document Rejected:** ${reason}\n\nPlease upload the correct document.`);
+      setAppState(prev => ({
+        ...prev,
+        thinkingAgents: [],
+        activeAgent: null
+      }));
+    };
+
     try {
       setChatPhase('processing');
-      await apiClient.extractOcr(sessionId, file);
-      await apiClient.checkTampering(sessionId);
+      
+      const ocrResult = await apiClient.extractOcr(sessionId, file);
+      const docType = ocrResult?.extracted_data?.document_type || 'Unknown';
+      const ocrVerified = ocrResult?.extracted_data?.verified === true;
+      const confidence = ocrResult?.confidence || 0;
+      
+      if (!ocrVerified) {
+        const ocrError = ocrResult?.extracted_data?.ocr_error || '';
+        let reason = ocrError || `Document type "${docType}" could not be verified (confidence: ${(confidence * 100).toFixed(0)}%).`;
+        failAndKeepUploadZone(reason);
+        return;
+      }
+      
+      const tamperResult = await apiClient.checkTampering(sessionId);
+      if (tamperResult?.tampered) {
+        failAndKeepUploadZone(`Document appears to be tampered. ${tamperResult.tamper_reason || 'Digital alterations detected.'}`);
+        return;
+      }
+
       await apiClient.verifyIncome(sessionId);
-      await apiClient.kycVerify(sessionId);
-      await apiClient.fraudCheck(sessionId);
+      
+      const kycResult = await apiClient.kycVerify(sessionId);
+      if (kycResult?.kyc_status === 'failed') {
+        const issues = kycResult.issues?.join('; ') || 'KYC verification failed.';
+        failAndKeepUploadZone(`KYC Failed: ${issues}`);
+        return;
+      }
+      
+      const fraudResult = await apiClient.fraudCheck(sessionId);
+      if (fraudResult?.fraud_detected) {
+        failAndKeepUploadZone(`Fraud signals detected: ${fraudResult.details || 'Suspicious patterns identified.'}`);
+        return;
+      }
       
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      setAppState(prev => ({ 
-        ...prev, 
-        thinkingAgents: [],
-        activeAgent: null 
-      }));
       
-      pushAgentMessage('Documents verified successfully. Moving to Underwriting...');
+      setAppState(prev => {
+        const uploadedNames = [...(prev.uploadedDocNames || []), file.name];
+        const newRequired = [...(prev.requiredDocuments || [])];
+        
+        if (newRequired.length > 0) {
+          const matchIdx = newRequired.findIndex(d => {
+            const dLower = d.toLowerCase();
+            const typeLower = (docType || '').toLowerCase();
+            return dLower.includes(typeLower) || 
+              (typeLower.includes('pan') && dLower.includes('pan')) || 
+              (typeLower.includes('aadhaar') && dLower.includes('aadhaar')) || 
+              (typeLower.includes('salary') && dLower.includes('income'));
+          });
+          if (matchIdx >= 0) newRequired.splice(matchIdx, 1);
+          else newRequired.shift();
+        }
+        
+        const allUploaded = newRequired.length === 0;
+        return {
+          ...prev,
+          thinkingAgents: [],
+          activeAgent: null,
+          uploadedDocNames: uploadedNames,
+          requiredDocuments: newRequired,
+          needsDocument: !allUploaded,
+        };
+      });
       
-      // Automatically trigger underwriting
-      await runUnderwriting();
+      const uploadedSoFar = (appState.uploadedDocNames || []).length + 1;
+      const allDocsUploaded = uploadedSoFar >= (appState.requiredDocuments?.length || 0);
+      
+      if (allDocsUploaded) {
+        pushAgentMessage(`✅ **${docType} verified**. All required documents received. Analyzing risk...`);
+        await runUnderwriting();
+      } else {
+        pushAgentMessage(`✅ **${docType} verified**. Please upload the next document.`);
+      }
 
     } catch (err) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       pushAgentMessage('Error processing document. Please check backend logs.');
-      setAppState(prev => ({ 
-        ...prev, 
-        thinkingAgents: [],
-        activeAgent: null 
-      }));
     }
   };
 
@@ -530,15 +693,12 @@ function App() {
 
         // Handle multiple replies if available
         if (res.all_replies && res.all_replies.length > 0) {
-          res.all_replies.forEach((m: any, idx: number) => {
-              const isLast = idx === res.all_replies.length - 1;
-              const msgOptions = isLast ? (m.options || res.options) : m.options;
-              
-              if (typeof m === 'string') pushAgentMessage(m, 'text', undefined, msgOptions);
-              else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type, undefined, msgOptions);
+          res.all_replies.forEach((m: any) => {
+              if (typeof m === 'string') pushAgentMessage(m, 'text');
+              else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type);
           });
         } else if (res.reply) {
-          pushAgentMessage(res.reply, 'text', undefined, res.options);
+          pushAgentMessage(res.reply, 'text');
         }
       } catch (err) {
         console.error("Chat API failed:", err);
@@ -678,6 +838,7 @@ function App() {
         chatHistory={chatHistory} 
         onSendMessage={handleSendMessage} 
         onFileUpload={handleFileUpload}
+        onBatchFileUpload={handleBatchFileUpload}
       />
     </div>
   );

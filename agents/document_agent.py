@@ -347,47 +347,60 @@ async def document_agent_node(state: dict) -> dict:
         if loan_amount > pre_approved:
             required_docs.append("Salary Slip")
         
-        # MOCK BYPASS: Any 'Salary Slip' is accepted with 90% confidence for demo
-        is_mock_salary = doc_type == "Salary Slip"
-        if is_mock_salary:
-            confidence = max(confidence, 0.9)
-            tampered = False
-            print("🛠️ [MOCK] Salary Slip automatically validated for demo.")
+        # Normalize doc_type variants for matching
+        doc_type_normalized = doc_type.strip()
+        valid_types_map = {
+            "PAN": "PAN Card",
+            "PAN Card": "PAN Card",
+            "Aadhaar": "Aadhaar Card",
+            "Aadhaar Card": "Aadhaar Card",
+            "Salary Slip": "Salary Slip",
+            "Pay Stub": "Salary Slip",
+        }
+        mapped_type = valid_types_map.get(doc_type_normalized)
         
-        is_valid_doc_type = doc_type in required_docs or doc_type in ["PAN", "Aadhaar"]
+        # A document is valid only if it maps to one of the required document types
+        is_valid_doc_type = mapped_type is not None and mapped_type in required_docs
+        
+        # Reject Unknown / unrecognized document types explicitly
+        if doc_type_normalized == "Unknown" or mapped_type is None:
+            is_valid_doc_type = False
+            print(f"  ❌ Document type '{doc_type}' is not an accepted document type.")
+        
         name_match_score = _calculate_name_similarity(name_extracted.lower(), customer_name) if customer_name else 0
         
-        # Verification criteria
+        # Verification criteria (STRICTER)
         verification_checks = {
-            "confidence_ok": confidence > 0.70,
+            "confidence_ok": confidence > 0.85,
             "not_tampered": not tampered,
             "valid_doc_type": is_valid_doc_type,
-            "name_match": name_match_score > 0.6 if (customer_name and doc_type in ["PAN", "Aadhaar"]) else True
+            "name_match": name_match_score > 0.7 if (customer_name and doc_type in ["PAN", "PAN Card", "Aadhaar", "Aadhaar Card", "Salary Slip", "Pay Stub"]) else True
         }
         
         is_verified = all(verification_checks.values())
         log.append(f"🔍 Analyzing {doc_type}...")
         
         reason = ""
+        issues = []
         if not is_verified:
-            issues = []
-            if not verification_checks["confidence_ok"]: issues.append(f"Low clarity ({confidence:.0%})")
+            if not verification_checks["confidence_ok"]: issues.append(f"Low clarity ({confidence:.1%})")
             if not verification_checks["not_tampered"]: issues.append("Digital alterations detected")
-            if not verification_checks["valid_doc_type"]: issues.append(f"Document type mismatch ({doc_type})")
-            if not verification_checks["name_match"]: issues.append(f"Identity mismatch: {name_extracted}")
+            if not verification_checks["valid_doc_type"]: issues.append(f"Expected PAN, Aadhaar or Salary Slip, but found {doc_type}")
+            if not verification_checks["name_match"]: 
+                issues.append(f"Name on {doc_type} ({name_extracted or 'Unknown'}) does not match customer profile ({customer_name.title()})")
             
             reason = "; ".join(issues)
-            msg = f"❌ **Verification Failed:** {reason}."
-            log.append(f"❌ {doc_type} rejected: {reason}")
+            msg = f"Verification Failed: {reason}."
+            log.append(f" {doc_type} rejected: {reason}")
         else:
-            msg = f"✅ **{doc_type} verified successfully** ({confidence:.0%} confidence)"
-            log.append(f"✅ {doc_type} authenticated. Cross-referencing with profile...")
+            msg = f"{doc_type} verified successfully ({confidence:.0%} confidence)"
+            log.append(f"{doc_type} authenticated. Cross-referencing with profile...")
 
         doc_data = {
             **state.get("documents", {}),
             "verified": is_verified,
             "ocr_error": reason if not is_verified else "",
-            "document_type": doc_type,
+            "document_type": mapped_type or doc_type,
             "name_extracted": name_extracted,
             "salary_extracted": float(ext_data.get("net_monthly_income") or 0),
             "employer_name": ext_data.get("employer_name", ""),
@@ -396,13 +409,19 @@ async def document_agent_node(state: dict) -> dict:
             "confidence": confidence,
             "tampered": tampered,
             "verification_checks": verification_checks,
-            "all_extracted_docs": all_extracted # Store full list
+            "all_extracted_docs": all_extracted 
         }
 
-        # Build final user message
-        salary_line = f"\n💰 **Monthly Income**: ₹{doc_data['salary_extracted']:,.0f}" if doc_data['salary_extracted'] > 0 else ""
-        employer_line = f"\n🏢 **Employer**: {doc_data['employer_name']}" if doc_data.get("employer_name") else ""
-        final_msg = msg + salary_line + employer_line
+        # Build final user message with extraction details for transparency
+        details = []
+        if is_verified:
+            if doc_data['name_extracted']: details.append(f"Name: {doc_data['name_extracted']}")
+            if doc_data['document_number']: details.append(f"ID: {doc_data['document_number']}")
+            if doc_data['salary_extracted'] > 0: details.append(f"Monthly Income: ₹{doc_data['salary_extracted']:,.0f}")
+            if doc_data['employer_name']: details.append(f"Employer: {doc_data['employer_name']}")
+        
+        detail_msg = "\n" + "\n".join(details) if details else ""
+        final_msg = msg + detail_msg
         
         await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
@@ -414,12 +433,12 @@ async def document_agent_node(state: dict) -> dict:
         }
 
     except Exception as e:
-        print(f"  ❌ Document agent error: {e}")
+        print(f" Document agent error: {e}")
         await manager.broadcast_thinking(session_id, "Document Agent", False)
         return {
             "documents": {**state.get("documents", {}), "verified": False, "ocr_error": str(e)},
             "messages": [AIMessage(content=(
-                f"❌ **Document Processing Failed**\n\n"
+                f"Document Processing Failed\n\n"
                 "We couldn't process your document. Please ensure:\n"
                 "• The image is well-lit and in focus\n"
                 "• The document fills most of the frame\n"

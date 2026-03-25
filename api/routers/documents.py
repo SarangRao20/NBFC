@@ -41,11 +41,32 @@ async def extract_ocr(session_id: str, file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, tmp)
         tmp.close()
         result = await document_service.extract_ocr(session_id, tmp.name, file.filename)
+        return result
+    finally:
+        file.file.close()
+
+
+@router.post("/{session_id}/extract-ocr-batch", summary="Step 6 (Batch): Extract Data via OCR from multiple files")
+async def extract_ocr_batch(session_id: str, files: list[UploadFile] = File(...)):
+    """Upload multiple documents at once and extract data via OCR.
+    Only call when ALL required documents have been selected for better UX.
+    """
+    tmp_files = []
+    try:
+        for file in files:
+            suffix = os.path.splitext(file.filename)[1] or ".jpg"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="data/uploads")
+            shutil.copyfileobj(file.file, tmp)
+            tmp.close()
+            tmp_files.append({"path": tmp.name, "name": file.filename})
+            file.file.close()
+
+        result = await document_service.extract_ocr_batch(session_id, tmp_files)
         if result is None:
             raise SessionNotFoundError(session_id)
         return result
     finally:
-        file.file.close()
+        pass # tmp files handled by agent / saved audit copies
 
 
 @router.post("/{session_id}/check-tampering", response_model=TamperCheckResponse,

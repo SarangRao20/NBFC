@@ -164,6 +164,7 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
             "tamper_reason": agent_docs.get("tamper_reason", ""),
             "notes": agent_docs.get("notes", ""),
             "verified": agent_docs.get("verified", False),
+            "ocr_error": agent_docs.get("ocr_error", ""),
         }
         
         print(f"🤖 Document agent processed (real-await): {file_name}")
@@ -224,7 +225,26 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "confidence": extracted.get("confidence", 0.0),
         "document_id": doc_id,
         "gridfs_file_id": gridfs_file_id,
-        "message": f"Document processed and saved to {'GridFS' if gridfs_file_id else 'local storage'}. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "message": f"Document processed. Confidence: {extracted.get('confidence', 0.0):.2f}"
+    }
+
+async def extract_ocr_batch(session_id: str, files: list[dict]) -> dict:
+    """Batch process multiple documents.
+    files: [{"path": str, "name": str}]
+    """
+    results = []
+    all_verified = True
+    
+    for f in files:
+        res = await extract_ocr(session_id, f["path"], f["name"])
+        results.append(res)
+        if not res["extracted_data"].get("verified"):
+            all_verified = False
+            
+    return {
+        "batch_results": results,
+        "all_verified": all_verified,
+        "count": len(files)
     }
 
 async def extract_ocr_fallback(session_id: str, file_path: str, file_name: str) -> dict:

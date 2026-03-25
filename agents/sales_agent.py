@@ -228,9 +228,9 @@ def _build_customer_context(customer: dict) -> str:
 
     name = customer.get("name", "Customer")
     score = customer.get("credit_score") or customer.get("score", "N/A")
-    limit = customer.get("pre_approved_limit") or customer.get("limit", 0)
-    salary = customer.get("salary", 0)
-    emi_total = customer.get("existing_emi_total", 0)
+    limit = customer.get("pre_approved_limit") or customer.get("limit") or 0
+    salary = customer.get("salary") or 0
+    emi_total = customer.get("existing_emi_total") or 0
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
     
@@ -240,7 +240,8 @@ def _build_customer_context(customer: dict) -> str:
     if past_loans:
         loan_history_str = "\n## PAST LOAN HISTORY:\n"
         for i, loan in enumerate(past_loans, 1):
-            loan_history_str += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{loan.get('amount', 0):,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
+            amount = loan.get('amount') or 0
+            past_loans_summary += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{amount:,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
     
     past_records = customer.get("past_records") or "No previous recorded interactions."
     drop_offs = customer.get("drop_off_history") or "None recorded."
@@ -386,10 +387,10 @@ async def _advisor_mode(state: dict):
     reasons = state.get("reasons", [])
 
     salary = customer.get("salary") or 0
-    principal = terms.get("principal", 0)
-    emi = terms.get("emi", 0)
-    tenure = terms.get("tenure", 0)
-    existing_emi = customer.get("existing_emi_total", 0)
+    principal = terms.get("principal") or 0
+    emi = terms.get("emi") or 0
+    tenure = terms.get("tenure") or 0
+    existing_emi = customer.get("existing_emi_total") or 0
     total_emi = existing_emi + emi
 
     # Past loans summary
@@ -400,15 +401,16 @@ async def _advisor_mode(state: dict):
         past_loans_summary = "Customer Loan Profile:\n"
         for pl in past_loans:
             status = pl.get('status', 'Unknown')
-            emi_val = pl.get('emi', 0)
+            emi_val = pl.get('emi') or 0
+            amount = pl.get('amount') or 0
             if status == "Approved":
                 active_loans_found = True
-                past_loans_summary += f"✅ ACTIVE: ₹{pl.get('amount', 0):,} loan with ₹{emi_val:,} monthly EMI. "
+                past_loans_summary += f"✅ ACTIVE: ₹{amount:,} loan with ₹{emi_val:,} monthly EMI. "
                 if pl.get('tenure'):
                     past_loans_summary += f"Tenure: {pl.get('tenure')} months. "
                 past_loans_summary += "\n"
             else:
-                past_loans_summary += f"🕒 PAST: ₹{pl.get('amount', 0):,} {pl.get('type','loan')} - Status: {status}\n"
+                past_loans_summary += f"🕒 PAST: ₹{amount:,} {pl.get('type','loan')} - Status: {status}\n"
     else:
         past_loans_summary = "No previous loan history found in sessions."
 
@@ -434,9 +436,9 @@ async def _advisor_mode(state: dict):
     docs = state.get("documents", {})
     verified_doc = docs.get("document_type", "None")
     
-    docs_text = f"- **Currently Uploaded & Verified Document**: {verified_doc} (Score: {docs.get('confidence', 0):.0%})\n"
+    docs_text = f"- **Currently Uploaded & Verified Document**: {verified_doc} (Score: {(docs.get('confidence') or 0):.0%})\n"
     if docs.get("salary_extracted"):
-        docs_text += f"- **Verified OCR Monthly Income**: ₹{docs.get('salary_extracted'):,}\n"
+        docs_text += f"- **Verified OCR Monthly Income**: ₹{(docs.get('salary_extracted') or 0):,}\n"
     if docs.get("address_extracted"):
         docs_text += f"- **Verified Address**: {docs.get('address_extracted')}\n"
     
@@ -466,9 +468,9 @@ Active Loans: {', '.join(customer.get("current_loans", [])) or "None"}
 
     reasons_str = "; ".join(reasons) if reasons else "N/A"
     loan_context = f"""Decision: {adj_decision.upper()}
-Requested Amount: ₹{principal:,}
-Monthly EMI: ₹{emi:,.2f}
-Tenure: {tenure} months
+Requested Amount: ₹{(principal or 0):,}
+Monthly EMI: ₹{(emi or 0):,.2f}
+Tenure: {(tenure or 0)} months
 Loan Type: {terms.get("loan_type", "Personal").capitalize()}
 DTI (Debt-to-Income) Ratio: {dti * 100:.1f}%
 Fraud Risk Score: {fraud:.2f} / 1.0
@@ -685,10 +687,14 @@ async def _sales_mode(state: dict):
     visible_reply = reply
     # Remove code fences: ```json ... ```
     visible_reply = _re.sub(r"```json\s*\{.*?\}\s*```", "", visible_reply, flags=_re.DOTALL)
-    # Remove loose JSON: { "field": "value" } patterns
+    # Remove loose JSON: { "field": "value" } patterns (between newlines OR at end of string)
+    visible_reply = _re.sub(r"\n?\s*\{\s*[\"'][\w_]+[\"']:\s*[^}]*\}\s*$", "", visible_reply, flags=_re.DOTALL)
     visible_reply = _re.sub(r"\n\s*\{\s*[\"'][\w_]+[\"']:\s*[^}]*\}\s*\n", "", visible_reply, flags=_re.DOTALL)
     # Remove any remaining { ... } blocks that look like JSON (heuristic)
     visible_reply = _re.sub(r"\n\s*\{[^{}]*(?:\"[^\"]*\"|[^{])*\}\s*\n", "", visible_reply, flags=_re.DOTALL)
+    # Remove lead-in text that the LLM often uses before JSON
+    visible_reply = _re.sub(r"(?i)(?:here\s+is|the|following)\s+(?:the\s+)?json(?:\s+output|[\s\w]*):\s*", "", visible_reply)
+    visible_reply = _re.sub(r"(?i)json\s+output:?\s*$", "", visible_reply)
     visible_reply = visible_reply.strip()
     
     updates = {

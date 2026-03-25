@@ -63,6 +63,15 @@ export const apiClient = {
     });
     return checkResponse(res, `/session/${sessionId}/extract-ocr`);
   },
+  async extractOcrBatch(sessionId: string, files: File[]) {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/extract-ocr-batch`, {
+      method: 'POST',
+      body: formData,
+    });
+    return checkResponse(res, `/session/${sessionId}/extract-ocr-batch`);
+  },
 
   async checkTampering(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/check-tampering`, { method: 'POST' });

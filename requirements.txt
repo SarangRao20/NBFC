@@ -11,12 +11,9 @@ uvicorn
 python-dotenv
 python-multipart
 pymongo
-GridFS
+motor
 pydantic[email]
 email-validator
 pydantic-settings
 redis
 langchain-community
-langchain-google-genai
-langchain-groq
-langchain-openai

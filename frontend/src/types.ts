@@ -14,6 +14,7 @@ export interface AppState {
   thinkingAgents: string[];
   needsDocument: boolean;
   requiredDocuments: string[];
+  uploadedDocNames?: string[];
   documents: {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';

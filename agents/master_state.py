@@ -74,6 +74,7 @@ class MasterState(TypedDict):
     
     # ─── Loan Terms Negotiation ────────────────────────────────────────────────
     loan_terms: LoanTerms
+    loan_confirmed: bool  # ✅ Added: True when user accepts final terms
     
     # ─── Document Processing & Tracking ────────────────────────────────────────
     documents: DocumentData
@@ -83,8 +84,11 @@ class MasterState(TypedDict):
     # ─── Risk & Fraud Analysis ─────────────────────────────────────────────────
     fraud_score: float  # -1 = not checked, 0-100 = score
     dti_ratio: float
+    esign_completed: bool # ✅ Added: True after e-signature
     kyc_status: str  # "pending", "verified", "rejected"
     risk_level: str  # "low", "medium", "high"
+    sanction_pdf: str # ✅ Added: Move from below to ensure consistent schema
+    is_signed: bool
     
     # ─── Underwriting Decision ─────────────────────────────────────────────────
     decision: str  # "", "approve", "soft_reject", "hard_reject"

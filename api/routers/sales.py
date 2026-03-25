@@ -57,7 +57,7 @@ async def get_chat_history(session_id: str):
     import logging
     from db.database import sessions_collection
     try:
-        state_doc = sessions_collection.find_one({"_id": session_id})
+        state_doc = await sessions_collection.find_one({"_id": session_id})
         if state_doc:
             return {"history": state_doc.get("messages", [])}
     except Exception as e:

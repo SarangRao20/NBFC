@@ -68,10 +68,12 @@ interface Props {
   chatHistory: ChatMessage[];
   onSendMessage: (msg: string) => void;
   onFileUpload: (file: File) => void;
+  onBatchFileUpload: (files: File[]) => void;
 }
 
-export default function ChatPane({ appState, setAppState, chatHistory, onSendMessage, onFileUpload }: Props) {
+export default function ChatPane({ appState, setAppState, chatHistory, onSendMessage, onFileUpload, onBatchFileUpload }: Props) {
   const [input, setInput] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<Record<number, File>>({});
   const [isSigning, setIsSigning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -326,44 +328,83 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
           exit={{ opacity: 0, height: 0, scale: 0.95 }}
         >
           <div className={`w-full mb-4 grid gap-4 ${appState.requiredDocuments?.length && appState.requiredDocuments.length > 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}>
-            {appState.requiredDocuments?.map((docType, idx) => (
-              <motion.div 
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                className="border-dashed border-2 border-slate-300 bg-slate-50/50 hover:bg-white hover:border-emerald-400 hover:shadow-md rounded-2xl flex flex-col items-center justify-center p-6 transition-all cursor-pointer group relative overflow-hidden"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                    onFileUpload(e.dataTransfer.files[0]);
-                  }
-                }}
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = 'application/pdf,image/jpeg,image/png';
-                  input.onchange = (e: any) => {
-                    const file = e.target.files[0];
-                    if (file) onFileUpload(file);
-                  };
-                  input.click();
-                }}
-              >
-                <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="bg-emerald-500 text-white p-1 rounded-full">
-                    <CheckCircle2 size={12} />
+            {appState.requiredDocuments?.map((docType, idx) => {
+              const file = selectedFiles[idx];
+              return (
+                <motion.div 
+                  key={idx}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.1 }}
+                  className={`border-dashed border-2 rounded-2xl flex flex-col items-center justify-center p-6 transition-all cursor-pointer group relative overflow-hidden ${
+                    file ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-300 bg-slate-50/50 hover:bg-white hover:border-emerald-400 hover:shadow-md'
+                  }`}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      setSelectedFiles(prev => ({ ...prev, [idx]: e.dataTransfer.files[0] }));
+                    }
+                  }}
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'application/pdf,image/jpeg,image/png';
+                    input.onchange = (e: any) => {
+                      const file = e.target.files[0];
+                      if (file) setSelectedFiles(prev => ({ ...prev, [idx]: file }));
+                    };
+                    input.click();
+                  }}
+                >
+                  {file && (
+                    <div className="absolute top-0 right-0 p-2">
+                      <div className="bg-emerald-500 text-white p-1 rounded-full shadow-sm">
+                        <CheckCircle2 size={12} />
+                      </div>
+                    </div>
+                  )}
+                  <div className={`w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center transition-all mb-3 ${
+                    file ? 'text-emerald-500 scale-110' : 'text-slate-400 group-hover:text-emerald-500 group-hover:scale-110'
+                  }`}>
+                    <UploadCloud size={20} />
                   </div>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:scale-110 transition-all mb-3">
-                  <UploadCloud size={20} />
-                </div>
-                <p className="text-[13px] font-bold text-slate-700 text-center mb-0.5">{docType}</p>
-                <p className="text-[11px] font-semibold text-slate-400 text-center uppercase tracking-wider">Tap to upload</p>
-              </motion.div>
-            ))}
+                  <p className={`text-[13px] font-bold text-center mb-0.5 ${file ? 'text-emerald-700' : 'text-slate-700'}`}>
+                    {file ? file.name : docType}
+                  </p>
+                  <p className="text-[11px] font-semibold text-slate-400 text-center uppercase tracking-wider">
+                    {file ? 'Change file' : 'Tap to select'}
+                  </p>
+                </motion.div>
+              );
+            })}
           </div>
+
+          {/* Submit Batch Button */}
+          {Object.keys(selectedFiles).length > 0 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex justify-center mb-6"
+            >
+              <button
+                onClick={() => {
+                  const files = Object.values(selectedFiles);
+                  onBatchFileUpload(files);
+                  setSelectedFiles({});
+                }}
+                className={`px-8 py-3 rounded-2xl font-black text-[14px] shadow-lg transition-all active:scale-95 flex items-center ${
+                  Object.keys(selectedFiles).length >= (appState.requiredDocuments?.length || 0)
+                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                    : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                }`}
+                disabled={Object.keys(selectedFiles).length < (appState.requiredDocuments?.length || 0)}
+              >
+                Submit {Object.keys(selectedFiles).length} Document(s) for Verification
+                <CheckCircle2 size={18} className="ml-2.5" />
+              </button>
+            </motion.div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
