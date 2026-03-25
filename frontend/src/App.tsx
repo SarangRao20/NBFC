@@ -342,23 +342,32 @@ function App() {
       content: `Uploading ${files.length} documents: ${files.map(f => f.name).join(', ')}`,
       timestamp: new Date(),
     }]);
-
+    // Hide the zone immediately and log current selected documents
     setAppState(prev => ({
       ...prev,
       thinkingAgents: [...prev.thinkingAgents, 'Document Agent'],
-      activeAgent: '📄 Verifying All Documents...'
+      activeAgent: '📄 Verifying All Documents...',
+      needsDocument: false, // Hide UI zone immediately to avoid confusion
+      // Transfer current required to uploaded list if desired, but we'll clear it when verified
     }));
 
     const thinkingId = pushAgentMessage(`Running Batch Verification for ${files.length} documents...`, 'thinking');
     
     const failBatch = (reason: string) => {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      pushAgentMessage(`❌ **Batch Verification Failed:** ${reason}`);
-      setAppState(prev => ({
-        ...prev,
-        thinkingAgents: [],
-        activeAgent: null
-      }));
+      pushAgentMessage(`❌ **Batch Verification Failed:** ${reason}\n\nPlease try again with the correct files.`);
+      
+      // Restore document zone if failed so user can try again
+      setChatPhase('document');
+      setAppState(prev => {
+        // Re-calculate what's needed based on previous logic
+        return {
+          ...prev,
+          thinkingAgents: [],
+          activeAgent: null,
+          needsDocument: true,
+        };
+      });
     };
 
     try {
@@ -374,19 +383,16 @@ function App() {
       for (let i = 0; i < results.length; i++) {
         const res = results[i];
         const docName = files[i].name;
-        const extracted = res.extracted_data || {};
-        const verified = extracted.verified === true;
+        const extracted = (res.extracted_data && typeof res.extracted_data === 'object') ? res.extracted_data : {};
+        const verified = (extracted as any).verified === true;
         
         if (!verified) {
           allPassed = false;
-          failureReason += `\n- **${docName}**: ${extracted.ocr_error || 'Identity or type mismatch.'}`;
+          failureReason += `\n- **${docName}**: ${(extracted as any).ocr_error || 'Identity or type mismatch.'}`;
           continue;
         }
 
-        // Additional checks for each (Tampering, KYC, Fraud)
-        // For simplicity in batch, we run them sequentially but they act on the "latest" state updated by extract_ocr
-        // Note: The backend extract_ocr already updates session state
-        
+        // Additional checks (Tampering, KYC, Fraud)
         const tamper = await apiClient.checkTampering(sessionId);
         if (tamper.tampered) {
           allPassed = false;
@@ -407,7 +413,7 @@ function App() {
         return;
       }
 
-      // Step 5: Final Fraud Check on the whole bundle
+      // Final Fraud Check 
       const fraud = await apiClient.fraudCheck(sessionId);
       if (fraud.fraud_detected) {
         failBatch(`Fraud signals detected in document bundle: ${fraud.details}`);
@@ -570,14 +576,14 @@ function App() {
           actionLog: state.action_log || [],
           options: state.options || [],
           loan_terms: state.loan_terms || undefined,
-          needsDocument: state.current_phase === 'kyc_agent',
-          requiredDocuments: state.current_phase === 'document' ? ["Identity (PAN or Aadhaar)"] : [],
           documents: {
             pan: state.documents?.verified ? 'verified' : 'pending',
             bankStatement: state.documents?.verified ? 'verified' : 'pending',
           },
           pastLoans: state.customer_data?.past_loans,
           salary: state.customer_data?.salary || 0,
+          needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document'),
+          requiredDocuments: state.required_documents || [],
         };
         setAppState(sData);
         if (state.customer_data?.phone) {
@@ -742,11 +748,7 @@ function App() {
           setChatPhase('negotiate');
         } else if (fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document') {
           setChatPhase('document');
-          let docs = ["Identity (PAN or Aadhaar)"];
-          let limit = fullState.customer_data?.pre_approved_limit || 150000;
-          if (fullState.loan_terms?.principal > limit) {
-            docs.push("Income Proof (Salary Slip)");
-          }
+          const docs = fullState.required_documents || ["Identity (PAN or Aadhaar)"];
           setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
         } else if (fullState?.current_phase === 'sales' || fullState?.loan_terms?.principal) {
           setChatPhase('loan_details'); 

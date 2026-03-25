@@ -87,6 +87,7 @@ async def suggest_fix(session_id: str) -> dict:
     principal = terms.get("principal", 0)
     tenure = terms.get("tenure", 12)
 
+    negotiation_round = state.get("negotiation_round", 0) + 1
     # Guard: if salary not provided or zero, do not attempt division — ask user for income
     if not salary or salary <= 0:
         # Prompt user to provide monthly income before suggesting fixes
@@ -100,7 +101,6 @@ async def suggest_fix(session_id: str) -> dict:
         }
 
     max_emi = (settings.MAX_DTI_RATIO * salary) - existing_emi
-    negotiation_round = state.get("negotiation_round", 0) + 1
 
     # Check max rounds
     if negotiation_round > settings.MAX_NEGOTIATION_ROUNDS:

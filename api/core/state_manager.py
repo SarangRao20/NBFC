@@ -64,6 +64,7 @@ def _default_state() -> dict:
             "tamper_reason": "",
             "name_extracted": "",
         },
+        "required_documents": [],
 
         # KYC (Phase 4)
         "kyc_status": "",
@@ -208,6 +209,8 @@ async def get_session(session_id: str) -> Optional[dict]:
         doc["is_signed"] = False
     if "dti_ratio" not in doc:
         doc["dti_ratio"] = 0.0
+    if "required_documents" not in doc:
+        doc["required_documents"] = []
     
     return doc
 

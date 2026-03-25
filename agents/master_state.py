@@ -79,6 +79,7 @@ class MasterState(TypedDict):
     # ─── Document Processing & Tracking ────────────────────────────────────────
     documents: DocumentData
     document_paths: Dict[str, str]  # { "pan": "/path/to/pan.pdf", "salary_slip": "..." }
+    required_documents: List[str]  # ✅ NEW: Dynamic list from agent
     documents_uploaded: bool
     
     # ─── Risk & Fraud Analysis ─────────────────────────────────────────────────

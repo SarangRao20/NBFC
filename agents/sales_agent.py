@@ -129,7 +129,12 @@ You WILL process and discuss loan terms even if they seem unusual or unrealistic
    - When PURPOSE stated: ALWAYS include loan_purpose in JSON.
    - Do NOT suggest alternative tenures if one is already confirmed.
    - If all four are set, ask for final confirmation only. NO MORE ALTERNATIVES.
-5. **ONE QUESTION**: Always end with exactly one natural, open-ended question that moves the goal forward.
+6. **DOCUMENT REQUIREMENTS**:
+   - Determine the required documents based on your evaluation of the loan request and customer risk.
+   - For all loans, include "Identity (PAN or Aadhaar)".
+   - For higher amounts or riskier profiles, include "Income Proof (Salary Slip)" and/or "Bank Statement (Last 3 Months)".
+   - List these in the `required_documents` array in the JSON.
+7. **ONE QUESTION**: Always end with exactly one natural, open-ended question that moves the goal forward.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## JSON CAPTURE (Silent)
@@ -142,6 +147,7 @@ When the user shares technical details OR you reach agreement, include this at t
   "tenure": 12,
   "interest_rate": 14.0,
   "confirmed": false,
+  "required_documents": ["Identity (PAN or Aadhaar)", "..."],
   "options": ["...", "..."]
 }
 ```
@@ -731,7 +737,16 @@ async def _sales_mode(state: dict):
             updates["intent"] = "loan"
             updates["current_phase"] = "kyc_verification"
             updates["loan_confirmed"] = True
+            
+            # Use dynamic documents list if provided by agent, otherwise fallback
+            if extracted.get("required_documents"):
+                updates["required_documents"] = extracted.get("required_documents")
+            else:
+                # Minimal fallback if agent forgot JSON field but confirmed
+                updates["required_documents"] = ["Identity (PAN or Aadhaar)"]
+                
             log.append(f"✅ Terms confirmed: ₹{new_terms.get('principal'):,.0f} for {new_terms.get('tenure')} months @ {new_terms.get('rate')}%.")
+            log.append(f"📄 Required Documents: {', '.join(updates['required_documents'])}")
     else:
         pass
 

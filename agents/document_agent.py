@@ -342,10 +342,15 @@ async def document_agent_node(state: dict) -> dict:
         loan_amount = state.get("loan_terms", {}).get("principal", 0)
         pre_approved = customer_data.get("pre_approved_limit", 0)
         
-        # Document requirements logic
-        required_docs = ["PAN Card", "Aadhaar Card"]
-        if loan_amount > pre_approved:
-            required_docs.append("Salary Slip")
+        # Document requirements logic (Now DYNAMIC from state/Arjun)
+        required_docs = state.get("required_documents", [])
+        if not required_docs:
+            # Safe Fallback if not specified in state
+            required_docs = ["PAN Card", "Aadhaar Card"]
+            if loan_amount > pre_approved or loan_amount > 100000:
+                required_docs.append("Salary Slip")
+        if loan_amount > 500000 or (pre_approved > 0 and loan_amount / pre_approved > 2):
+                required_docs.append("Bank Statement")
         
         # Normalize doc_type variants for matching
         doc_type_normalized = doc_type.strip()
@@ -356,12 +361,29 @@ async def document_agent_node(state: dict) -> dict:
             "Aadhaar Card": "Aadhaar Card",
             "Salary Slip": "Salary Slip",
             "Pay Stub": "Salary Slip",
+            "Bank Statement": "Bank Statement",
+            "Passbook": "Bank Statement",
+            "Statement": "Bank Statement",
         }
         mapped_type = valid_types_map.get(doc_type_normalized)
         
-        # A document is valid only if it maps to one of the required document types
-        is_valid_doc_type = mapped_type is not None and mapped_type in required_docs
-        
+        # A document is valid if it maps to one of the category keywords in required_docs
+        is_valid_doc_type = False
+        if mapped_type:
+            # Check for substring match in any of the required descriptions
+            # e.g. "PAN Card" should match "Identity (PAN or Aadhaar)"
+            keywords = {
+                "PAN Card": ["identity", "pan"],
+                "Aadhaar Card": ["identity", "aadhaar"],
+                "Salary Slip": ["income proof", "salary slip", "pay stub"],
+                "Bank Statement": ["bank statement", "statement", "passbook"]
+            }
+            needed_keywords = keywords.get(mapped_type, [])
+            for req in [r.lower() for r in required_docs]:
+                if any(kw in req for kw in needed_keywords):
+                    is_valid_doc_type = True
+                    break
+
         # Reject Unknown / unrecognized document types explicitly
         if doc_type_normalized == "Unknown" or mapped_type is None:
             is_valid_doc_type = False
@@ -374,7 +396,7 @@ async def document_agent_node(state: dict) -> dict:
             "confidence_ok": confidence > 0.85,
             "not_tampered": not tampered,
             "valid_doc_type": is_valid_doc_type,
-            "name_match": name_match_score > 0.7 if (customer_name and doc_type in ["PAN", "PAN Card", "Aadhaar", "Aadhaar Card", "Salary Slip", "Pay Stub"]) else True
+            "name_match": name_match_score > 0.7 if (customer_name and doc_type in ["PAN", "PAN Card", "Aadhaar", "Aadhaar Card", "Salary Slip", "Pay Stub", "Bank Statement", "Passbook"]) else True
         }
         
         is_verified = all(verification_checks.values())
