@@ -13,6 +13,7 @@ Decision tree per workflow diagram:
 
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
+from utils.financial_rules import calculate_foir
 
 settings = get_settings()
 
@@ -49,6 +50,30 @@ async def underwrite(session_id: str) -> dict:
     tenure = terms.get("tenure", 12)
     fraud_score = state.get("fraud_score", 0.0)
 
+    # Pricing Engine: rate = benchmark + spread
+    benchmark_rate = state.get("benchmark_rate", 7.0)
+    if score > 800:
+        credit_risk_premium = 0.0
+    elif score >= 700:
+        credit_risk_premium = 2.0
+    else:
+        credit_risk_premium = 5.0
+
+    business_margin = state.get("business_margin", 1.5)
+    operating_cost_loading = state.get("operating_cost_loading", 1.0)
+
+    from utils.financial_rules import calculate_pricing_rate
+    # Ensure final rate respects minimum spread above benchmark and a floor for NBFC viability
+    rate = calculate_pricing_rate(
+        benchmark_rate,
+        credit_risk_premium,
+        business_margin,
+        operating_cost_loading,
+        min_spread=2.0,
+        floor_rate=8.0
+    )
+    terms["rate"] = rate
+
     reasons = []
     decision = "approve"
     risk_level = "low"
@@ -56,7 +81,7 @@ async def underwrite(session_id: str) -> dict:
 
     # Base Metrics
     total_emi = existing_emi + emi
-    dti = round(total_emi / salary, 3) if salary > 0 else 1.0
+    dti = calculate_foir(existing_emi, emi, salary) / 100
 
     # Risk Classification
     if score < 720 or dti > 0.40 or principal > pre_approved:

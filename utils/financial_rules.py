@@ -4,13 +4,46 @@ These rules precisely calculate Eligibility, DTI, FOIR, and Fraud Scores based o
 """
 
 def calculate_emi(principal: float, rate_pa: float, tenure_months: int) -> float:
-    """Standard EMI calculation formula: P * R * (1+R)^N / ((1+R)^N - 1)"""
-    if principal <= 0 or tenure_months <= 0 or rate_pa <= 0:
+    """Standard EMI calculation formula: P * r * (1+r)^n / ((1+r)^n - 1), where r is monthly rate."""
+    if principal <= 0 or tenure_months <= 0 or rate_pa < 0:
         return 0.0
-    
+
+    if rate_pa == 0:
+        return round(principal / tenure_months, 2)
+
     monthly_rate = (rate_pa / 12) / 100
-    emi = principal * monthly_rate * ((1 + monthly_rate)**tenure_months) / (((1 + monthly_rate)**tenure_months) - 1)
+    emi = principal * monthly_rate * ((1 + monthly_rate) ** tenure_months) / (((1 + monthly_rate) ** tenure_months) - 1)
     return round(emi, 2)
+
+1
+def calculate_foir(existing_emis: float, proposed_new_emi: float, net_monthly_income: float) -> float:
+    """FOIR (%) = (Existing EMIs + Proposed EMI) / Net Income * 100"""
+    if net_monthly_income <= 0:
+        return 100.0
+    return round(((existing_emis + proposed_new_emi) / net_monthly_income) * 100, 2)
+
+
+def calculate_pricing_rate(benchmark_rate: float, credit_risk_premium: float, business_margin: float, operating_cost_loading: float, min_spread: float = 2.0, floor_rate: float = 8.0) -> float:
+    """Final interest rate.
+
+    Model:
+        R_raw = benchmark_rate + credit_risk_premium + business_margin + operating_cost_loading
+        R_min = benchmark_rate + min_spread
+        R = max(R_raw, R_min, floor_rate)
+    """
+    raw_rate = benchmark_rate + credit_risk_premium + business_margin + operating_cost_loading
+    min_allowed = max(benchmark_rate + min_spread, floor_rate)
+    final_rate = max(raw_rate, min_allowed)
+    return round(final_rate, 2)
+
+
+def calculate_cooling_off_settlement(principal: float, annual_rate: float, days_held: int, processing_fee: float) -> float:
+    """Cooling-off repayment amount: P + (P × R/365 × t) + PF."""
+    if principal <= 0 or days_held < 0 or annual_rate < 0 or processing_fee < 0:
+        return 0.0
+    effective_interest = principal * (annual_rate / 100) / 365 * days_held
+    total = principal + effective_interest + processing_fee
+    return round(total, 2)
 
 
 def compute_fraud_score(claimed_salary: float, ocr_extracted_salary: float, claimed_name: str, ocr_name: str, doc_confidence: float) -> dict:
