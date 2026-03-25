@@ -66,7 +66,9 @@ export interface SessionSummary {
   created_at: string;
   current_phase: string;
   loan_amount?: number;
+  loan_type?: string;
   decision?: string;
+  display_status?: 'approved' | 'in_process' | 'rejected' | 'pending' | string;
 }
 
 export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps' | 'options';
