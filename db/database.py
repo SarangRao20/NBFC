@@ -11,7 +11,7 @@ if not MONGO_URI or MONGO_URI == "mock":
     from .mock_database import (
         client, database, users_collection, sessions_collection,
         loan_applications_collection, chat_sessions_collection,
-        documents_collection, init_collections
+        documents_collection, init_collections as init_mock_collections
     )
     print("🔧 Using mock database for development")
 else:
@@ -40,7 +40,7 @@ async def init_collections():
     """Initialize collections and GridFS in MongoDB Atlas."""
     if not MONGO_URI or MONGO_URI == "mock":
         # Mock database already initialized
-        return await init_collections() # Call the mock one if available
+        return await init_mock_collections()
     else:
         # MongoDB Atlas initialization
         existing = await database.list_collection_names()
