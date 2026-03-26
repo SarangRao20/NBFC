@@ -68,8 +68,8 @@ async def fraud_agent_node(state: dict) -> dict:
             )
 
     # ── Signal 2: Income inflation (claimed vs OCR salary) ────────────────────
-    claimed = customer.get("salary", 0)
-    extracted = docs.get("salary_extracted", 0)
+    claimed = customer.get("salary") or 0
+    extracted = docs.get("salary_extracted") or 0
     if extracted > 0 and claimed > (extracted * 1.20):
         inflation_pct = (claimed - extracted) / extracted * 100
         score += SIGNAL_WEIGHTS["income_inflation"]
@@ -93,7 +93,7 @@ async def fraud_agent_node(state: dict) -> dict:
         )
 
     # ── Signal 4: Low OCR confidence (blurry/incomplete scan) ────────────────
-    confidence = docs.get("confidence", 1.0)
+    confidence = (docs.get("confidence") or 1.0)
     if confidence < 0.60:
         score += SIGNAL_WEIGHTS["low_ocr_confidence"]
         signals_triggered += 1
@@ -115,7 +115,7 @@ async def fraud_agent_node(state: dict) -> dict:
         )
 
     # ── Signal 6: Abnormal loan-to-income ratio ───────────────────────────────
-    principal = terms.get("principal", 0)
+    principal = (terms.get("principal") or 0)
     if claimed > 0 and principal > (claimed * 60):  # > 5 years salary
         ratio = principal / claimed
         score += SIGNAL_WEIGHTS["abnormal_loan_ratio"]

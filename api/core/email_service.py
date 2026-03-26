@@ -121,7 +121,7 @@ class EmailService:
         
         # Prepare email content based on decision
         if decision == 'approve':
-            subject = f"🎉 Loan Approved - FinServe NBFC - ₹{loan_terms.get('principal', 0):,}"
+            subject = f"🎉 Loan Approved - FinServe NBFC - ₹{(loan_terms.get('principal') or 0):,}"
             body = self._get_approval_email_body(customer_name, loan_terms, session_id)
             
             # Attach sanction letter if available

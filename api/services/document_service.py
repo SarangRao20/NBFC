@@ -225,7 +225,7 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "confidence": extracted.get("confidence", 0.0),
         "document_id": doc_id,
         "gridfs_file_id": gridfs_file_id,
-        "message": f"Document processed. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "message": f"Document processed. Confidence: {(extracted.get('confidence') or 0.0):.2f}"
     }
 
 async def extract_ocr_batch(session_id: str, files: list[dict]) -> dict:
@@ -278,7 +278,7 @@ async def extract_ocr_fallback(session_id: str, file_path: str, file_name: str) 
         "extracted_data": extracted,
         "confidence": extracted.get("confidence", 0.0),
         "document_id": None,
-        "message": f"Document processed with fallback OCR. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "message": f"Document processed with fallback OCR. Confidence: {(extracted.get('confidence') or 0.0):.2f}"
     }
 
 

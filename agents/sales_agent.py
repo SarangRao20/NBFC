@@ -232,8 +232,8 @@ def _build_customer_context(customer: dict) -> str:
     name = customer.get("name", "Customer")
     score = customer.get("credit_score") or customer.get("score", "N/A")
     limit = customer.get("pre_approved_limit") or customer.get("limit", 0)
-    salary = customer.get("salary", 0)
-    emi_total = customer.get("existing_emi_total", 0)
+    salary = customer.get("salary") or 0
+    emi_total = customer.get("existing_emi_total") or 0
     loans = customer.get("current_loans", [])
     city = customer.get("city", "")
     
@@ -244,7 +244,7 @@ def _build_customer_context(customer: dict) -> str:
     if past_loans:
         loan_history_str = "\n## PAST LOAN HISTORY:\n"
         for i, loan in enumerate(past_loans, 1):
-            loan_history_str += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{loan.get('amount', 0):,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
+            loan_history_str += f"{i}. {loan.get('type', 'Personal')} Loan: ₹{(loan.get('amount') or 0):,} | Status: {loan.get('decision', 'N/A')} | Date: {loan.get('date', 'N/A')}\n"
     
     past_records = customer.get("past_records") or "No previous recorded interactions."
     drop_offs = customer.get("drop_off_history") or "None recorded."
@@ -452,7 +452,7 @@ async def _advisor_mode(state: dict):
 City: {customer.get("city", "N/A")}
 Monthly Salary: ₹{salary:,}
 Credit Score: {customer.get("credit_score", "N/A")}
-Pre-Approved Limit: ₹{customer.get("pre_approved_limit", 0):,}
+Pre-Approved Limit: ₹{(customer.get("pre_approved_limit") or 0):,}
 Current EMI Burden: ₹{existing_emi:,}/month
 Active Loans: {', '.join(customer.get("current_loans", [])) or "None"}
 """
@@ -749,7 +749,7 @@ async def _sales_mode(state: dict):
                 # Minimal fallback if agent forgot JSON field but confirmed
                 updates["required_documents"] = ["Identity (PAN or Aadhaar)"]
                 
-            log.append(f"✅ Terms confirmed: ₹{new_terms.get('principal'):,.0f} for {new_terms.get('tenure')} months @ {new_terms.get('rate')}%.")
+            log.append(f"✅ Terms confirmed: ₹{(new_terms.get('principal') or 0):,.0f} for {new_terms.get('tenure')} months @ {new_terms.get('rate')}%.")
             log.append(f"📄 Required Documents: {', '.join(updates['required_documents'])}")
     else:
         pass
@@ -760,10 +760,10 @@ async def _sales_mode(state: dict):
     if final_terms.get("principal") and final_terms.get("tenure") and final_terms.get("rate") and final_terms.get("emi"):
         visible_reply = (
             "✅ Loan terms updated (policy-approved values):\n"
-            f"- Loan amount: ₹{final_terms.get('principal'):,.2f}\n"
+            f"- Loan amount: ₹{(final_terms.get('principal') or 0):,.2f}\n"
             f"- Tenure: {final_terms.get('tenure')} months\n"
             f"- Final interest rate: {final_terms.get('rate'):.2f}% p.a.\n"
-            f"- Monthly EMI: ₹{final_terms.get('emi'):,.2f}\n"
+            f"- Monthly EMI: ₹{(final_terms.get('emi') or 0):,.2f}\n"
             "\n(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
         )
 

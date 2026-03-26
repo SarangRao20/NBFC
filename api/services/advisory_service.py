@@ -30,9 +30,9 @@ async def generate_advisory(session_id: str) -> dict:
 
     if decision == "approve":
         advisory_message = (
-            f"Congratulations, {name}! Your loan of ₹{terms.get('principal', 0):,} has been approved. "
-            f"EMI of ₹{emi:,.2f} will be debited on the 5th of every month. "
-            f"Total repayment: ₹{emi * terms.get('tenure', 0):,.2f} over {terms.get('tenure', 0)} months."
+            f"Congratulations, {name}! Your loan of ₹{(terms.get('principal') or 0):,} has been approved. "
+            f"EMI of ₹{(emi or 0):,.2f} will be debited on the 5th of every month. "
+            f"Total repayment: ₹{((emi or 0) * (terms.get('tenure') or 0)):,.2f} over {terms.get('tenure', 0)} months."
         )
         next_steps = [
             "Complete KYC documentation within 30 days",
@@ -326,3 +326,73 @@ What would you like to do?
 • Get financial advice
 
 Just ask! 🤝"""
+
+
+# ─── LOAN EXPLANATION (PHASE 5 INTEGRATION) ────────────────────────────────
+
+async def explain_selected_loan(session_id: str, lender_name: str, interest_rate: float, rank_info: Optional[str] = None) -> str:
+    """
+    ✅ NEW (Phase 6): Explain why the selected loan is a good choice and what it means.
+    
+    Args:
+        session_id: Session ID to fetch loan details
+        lender_name: Name of selected lender
+        interest_rate: Selected loan interest rate
+        rank_info: Optional rank/badge info (e.g., "🥇 Best Option", "🥈 Top Alternative")
+    
+    Returns: Formatted explanation message
+    """
+    try:
+        state = await get_session(session_id)
+        if not state:
+            return f"Great! You've selected {lender_name}. Let's proceed to the next step."
+        
+        terms = state.get("loan_terms", {})
+        customer = state.get("customer_data", {})
+        comparison_result = state.get("comparison_result", {})
+        
+        principal = terms.get("principal", 0)
+        tenure = terms.get("tenure", 12)
+        salary = customer.get("salary", 0)
+        
+        # Calculate monthly EMI for explanation
+        monthly_rate = interest_rate / 12 / 100
+        num_payments = tenure
+        emi = (principal * monthly_rate * (1 + monthly_rate) ** num_payments) / ((1 + monthly_rate) ** num_payments - 1)
+        
+        # Build explanation
+        badge = f"({rank_info}) " if rank_info else ""
+        emi_percentage = (emi / salary * 100) if salary > 0 else 0
+        total_cost = emi * tenure
+        total_interest = total_cost - principal
+        
+        explanation = f"""💡 **Why {lender_name}? {badge}**
+
+**Loan Summary:**
+• **Lender:** {lender_name}
+• **Amount:** ₹{principal:,.0f}
+• **Interest Rate:** {interest_rate:.2f}% per annum
+• **Tenure:** {tenure} months
+
+**Your Monthly Commitment:**
+• **EMI:** ₹{emi:,.0f}/month ({emi_percentage:.1f}% of your income)
+• **Total Interest:** ₹{total_interest:,.0f}
+• **Total Repayment:** ₹{total_cost:,.0f}
+
+**Why This Loan?**"""
+        
+        # Add comparison reasoning if available
+        if comparison_result:
+            eligible_count = comparison_result.get("eligible_count", 0)
+            explanation += f"\n✅ Selected from {eligible_count} eligible offers"
+            
+            recommendation_reason = comparison_result.get("recommendation_reason", "")
+            if recommendation_reason:
+                explanation += f"\n📊 {recommendation_reason}"
+        
+        explanation += f"\n\n**Next Steps:**\n1. Review your documents\n2. Proceed to verification\n3. Sanction letter generation\n4. E-sign & dibursement\n\n🚀 Ready to move forward?"
+        
+        return explanation
+        
+    except Exception as e:
+        return f"✅ You've selected {lender_name} at {interest_rate:.2f}% p.a. Let's proceed to document verification."

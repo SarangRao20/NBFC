@@ -375,7 +375,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                     "✅ Loan terms updated (policy-approved values):\n"
                     f"- Loan amount: ₹{lt['principal']:,.2f}\n"
                     f"- Tenure: {lt['tenure']} months\n"
-                    f"- Final interest rate: {lt.get('rate', 12):.2f}% p.a.\n"
+                    f"- Final interest rate: {(lt.get('rate') or 12):.2f}% p.a.\n"
                     f"- Monthly EMI: ₹{lt['emi']:,.2f}\n\n"
                     "(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
                 )

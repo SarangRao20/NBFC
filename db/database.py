@@ -39,8 +39,8 @@ COLLECTION_NAMES = [
 async def init_collections():
     """Initialize collections and GridFS in MongoDB Atlas."""
     if not MONGO_URI or MONGO_URI == "mock":
-        # Mock database already initialized
-        return await init_collections() # Call the mock one if available
+        # Mock database already initialized - no need to do anything
+        return
     else:
         # MongoDB Atlas initialization
         existing = await database.list_collection_names()

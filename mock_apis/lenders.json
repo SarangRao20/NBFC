@@ -1,0 +1,104 @@
+{
+  "lenders": [
+    {
+      "lender_id": "bank_a",
+      "lender_name": "Bank A",
+      "lender_type": "bank",
+      "interest_rate_range": {
+        "min": 9.5,
+        "max": 11.5
+      },
+      "base_rate": 9.5,
+      "processing_fee_percent": 0.5,
+      "max_loan_amount": 5000000,
+      "min_loan_amount": 100000,
+      "tenure_options": [12, 24, 36, 48, 60],
+      "min_credit_score": 750,
+      "foir_limit": 0.40,
+      "approval_probability": 0.85,
+      "risk_profile": "low",
+      "characteristics": "Lowest interest rate, stringent eligibility, good for creditworthy individuals",
+      "settlement_days": 7
+    },
+    {
+      "lender_id": "bank_b",
+      "lender_name": "Bank B",
+      "lender_type": "bank",
+      "interest_rate_range": {
+        "min": 10.5,
+        "max": 12.5
+      },
+      "base_rate": 10.5,
+      "processing_fee_percent": 0.75,
+      "max_loan_amount": 4000000,
+      "min_loan_amount": 100000,
+      "tenure_options": [12, 24, 36, 48, 60],
+      "min_credit_score": 700,
+      "foir_limit": 0.45,
+      "approval_probability": 0.80,
+      "risk_profile": "low",
+      "characteristics": "Balanced rates and eligibility, reliable and established",
+      "settlement_days": 5
+    },
+    {
+      "lender_id": "nbfc_x",
+      "lender_name": "NBFC X",
+      "lender_type": "nbfc",
+      "interest_rate_range": {
+        "min": 13.5,
+        "max": 16.0
+      },
+      "base_rate": 13.5,
+      "processing_fee_percent": 1.5,
+      "max_loan_amount": 3000000,
+      "min_loan_amount": 50000,
+      "tenure_options": [12, 24, 36, 48, 60],
+      "min_credit_score": 650,
+      "foir_limit": 0.50,
+      "approval_probability": 0.95,
+      "risk_profile": "medium",
+      "characteristics": "Highest approval rate, more flexible, higher costs",
+      "settlement_days": 2
+    },
+    {
+      "lender_id": "fintech_y",
+      "lender_name": "Fintech Y",
+      "lender_type": "fintech",
+      "interest_rate_range": {
+        "min": 12.0,
+        "max": 15.5
+      },
+      "base_rate": 12.0,
+      "processing_fee_percent": 2.0,
+      "max_loan_amount": 2500000,
+      "min_loan_amount": 50000,
+      "tenure_options": [12, 24, 36, 48],
+      "min_credit_score": 600,
+      "foir_limit": 0.55,
+      "approval_probability": 0.88,
+      "risk_profile": "medium",
+      "characteristics": "Very flexible, fast approval (instant), variable rates",
+      "settlement_days": 1
+    },
+    {
+      "lender_id": "credit_union_z",
+      "lender_name": "Credit Union Z",
+      "lender_type": "cooperative",
+      "interest_rate_range": {
+        "min": 10.5,
+        "max": 12.0
+      },
+      "base_rate": 10.5,
+      "processing_fee_percent": 0.25,
+      "max_loan_amount": 2000000,
+      "min_loan_amount": 100000,
+      "tenure_options": [12, 24, 36, 48, 60],
+      "min_credit_score": 700,
+      "foir_limit": 0.45,
+      "approval_probability": 0.78,
+      "risk_profile": "low",
+      "characteristics": "Cooperative, member-driven, lowest fees, community focus",
+      "settlement_days": 10
+    }
+  ]
+}

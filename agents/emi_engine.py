@@ -35,7 +35,8 @@ async def emi_engine_node(state: dict) -> dict:
         # Reminder Logic: Within 3 days of due date
         days_to_due = (next_emi_date - today).days
         if 0 <= days_to_due <= 3:
-            reminder_msg = f"🔔 **EMI Reminder**: Your payment of ₹{terms.get('emi', 0):,.2f} is due in {days_to_due} days ({next_emi_str})."
+            emi_value = (terms.get('emi') or 0)
+            reminder_msg = f"🔔 **EMI Reminder**: Your payment of ₹{emi_value:,.2f} is due in {days_to_due} days ({next_emi_str})."
             await manager.broadcast_to_session(session_id, {
                 "type": "NOTIFICATION",
                 "priority": "high",
@@ -126,7 +127,7 @@ async def emi_engine_node(state: dict) -> dict:
         
         updates["messages"] = [AIMessage(content=(
             f"✅ **Payment Successful!**\n\n"
-            f"Thank you for your payment of ₹{terms.get('emi', 0):,.2f}.\n"
+            f"Thank you for your payment of ₹{(terms.get('emi') or 0):,.2f}.\n"
             f"- Next Due Date: **{terms['next_emi_date']}**\n"
             f"- Your new Credit Score: **{new_score}** (↑ 10 pts)\n\n"
             f"Consistent payments help you qualify for lower rates in the future!"

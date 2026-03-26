@@ -34,6 +34,7 @@ from agents.emi_agent import emi_agent_node
 from agents.document_query_agent import document_query_agent_node
 from agents.emi_engine import emi_engine_node
 from agents.repayment_agent import repayment_agent_node
+from agents.comparison_agent import run_comparison_agent, run_loan_selection
 from agents.master_state import MasterState
 from agents.master_router import route_next_agent
 from agents.session_manager import SessionManager
@@ -197,6 +198,8 @@ def supervisor_router(state: MasterState):
     mapping = {
         "intent_agent": "intent_agent",
         "sales_agent": "sales_agent",
+        "comparison_agent": "comparison_agent",
+        "loan_selection": "loan_selection",
         "document_agent": "document_agent",
         "verification_agent": "verification_agent",
         "fraud_agent": "fraud_agent",
@@ -235,6 +238,8 @@ def compile_master_graph():
     workflow.add_node("supervisor",             supervisor_node)
     workflow.add_node("intent_agent",           intent_node)
     workflow.add_node("sales_agent",            sales_agent_node)
+    workflow.add_node("comparison_agent",       run_comparison_agent)
+    workflow.add_node("loan_selection",         run_loan_selection)
     workflow.add_node("document_agent",         document_agent_node)
     workflow.add_node("verification_agent",     verification_agent_node)
     workflow.add_node("fraud_agent",            fraud_agent_node)
@@ -259,6 +264,8 @@ def compile_master_graph():
         {
             "intent_agent": "intent_agent",
             "sales_agent": "sales_agent",
+            "comparison_agent": "comparison_agent",
+            "loan_selection": "loan_selection",
             "document_agent": "document_agent",
             "verification_agent": "verification_agent",
             "fraud_agent": "fraud_agent",
@@ -275,10 +282,14 @@ def compile_master_graph():
     # ── CHAT nodes — always END (pause, wait for next user message) ──────────
     workflow.add_conditional_edges("intent_agent", route_after_intent)
     workflow.add_edge("sales_agent",        END)
+    workflow.add_edge("comparison_agent",   END)  # Pauses, waits for user to select loan
     workflow.add_edge("persuasion_agent",   END)
     workflow.add_edge("document_query_agent", END)
     workflow.add_edge("emi_agent",          END) 
     workflow.add_edge("repayment_agent",    END)
+
+    # ── Loan Selection → Back to Supervisor (routes to underwriting) ────────
+    workflow.add_edge("loan_selection",     "supervisor")
 
     # ── AUTOMATIC processor nodes — Chain back to supervisor to continue ─────
     workflow.add_edge("document_agent",     END) 

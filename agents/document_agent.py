@@ -252,6 +252,20 @@ async def document_agent_node(state: dict) -> dict:
   session_id = state.get("session_id", "default")
   print(f"📄 [DOCUMENT AGENT] Running minimal verification for session: {session_id}")
 
+  # ✅ NEW: Check if lender was selected (Phase 5 integration)
+  selected_lender_id = state.get("selected_lender_id")
+  selected_lender_name = state.get("selected_lender_name")
+  
+  if not selected_lender_id:
+    print("⚠️ [DOCUMENT AGENT] No lender selected yet. Deferring document verification.")
+    return {
+      "messages": [AIMessage(content="📋 Please compare and select a loan offer first, then I'll verify your documents.")],
+      "current_phase": "comparison",  # or route back to comparison flow
+      "options": ["View Loan Comparison", "Speak to Arjun"]
+    }
+  
+  print(f"✅ [DOCUMENT AGENT] Proceeding with {selected_lender_name} as selected lender")
+
   docs_state = state.get("documents", {}) or {}
   doc_paths = docs_state.get("document_paths") or docs_state.get("salary_slip_path")
 
@@ -312,10 +326,12 @@ async def document_agent_node(state: dict) -> dict:
   }
 
   log = list(state.get("action_log") or [])
-  log.append("🔍 Document Agent: minimal verification passed.")
+  log.append(f"🔍 Document Agent: minimal verification passed for {selected_lender_name}.")
 
   return {
     "documents": doc_data,
+    "selected_lender_id": selected_lender_id,  # ✅ Persist lender selection
+    "selected_lender_name": selected_lender_name,  # ✅ Persist lender name
     "messages": [AIMessage(content=f"✅ Document verified: {doc_type}")],
     "action_log": log,
     "options": ["Proceed to Fraud Check", "Speak to Arjun"],

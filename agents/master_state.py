@@ -76,6 +76,12 @@ class MasterState(TypedDict):
     loan_terms: LoanTerms
     loan_confirmed: bool  # ✅ Added: True when user accepts final terms
     
+    # ─── Loan Comparison & Selection (Phase 5) ──────────────────────────────────
+    selected_lender_id: Optional[str]  # ✅ NEW: e.g., "bank_a", "nbfc_x"
+    selected_lender_name: Optional[str]  # ✅ NEW: e.g., "HDFC Bank"
+    selected_interest_rate: Optional[float]  # ✅ NEW: Selected loan's interest rate
+    comparison_result: Optional[Dict]  # ✅ NEW: Full comparison response from engine
+    
     # ─── Document Processing & Tracking ────────────────────────────────────────
     documents: DocumentData
     document_paths: Dict[str, str]  # { "pan": "/path/to/pan.pdf", "salary_slip": "..." }
