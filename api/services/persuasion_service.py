@@ -57,7 +57,6 @@ async def analyze_rejection(session_id: str) -> dict:
     
     # Update state from agent result
     await update_session(session_id, {
-        "negotiation_round": agent_result.get("negotiation_round", negotiation_round + 1),
         "persuasion_options": agent_result.get("persuasion_options", [])
     })
     

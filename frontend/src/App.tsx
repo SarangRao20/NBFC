@@ -279,7 +279,11 @@ function App() {
         setChatPhase('negotiate');
         pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.", 'emi_slider');
       } else {
-        pushAgentMessage("Unfortunately, we cannot offer a restructured loan at this time.");
+        let fallbackMessage = suggestion?.message || "Unfortunately, we cannot offer a restructured loan at this time.";
+        if (suggestion?.requires_salary) {
+          fallbackMessage += " Please share your monthly salary (for example: 'My salary is 60000') and then click Negotiate again.";
+        }
+        pushAgentMessage(fallbackMessage);
       }
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));

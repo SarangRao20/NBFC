@@ -1,5 +1,3 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-
 interface Props {
   principal: number;
   emi: number;
@@ -9,11 +7,6 @@ interface Props {
 export default function EmiDonutChart({ principal, emi, tenure }: Props) {
   const totalAmount = emi * tenure;
   const totalInterest = totalAmount - principal;
-
-  const data = [
-    { name: 'Principal', value: principal, color: '#0ea5e9' }, // sky-500
-    { name: 'Total Interest', value: Math.max(0, totalInterest), color: '#10b981' } // emerald-500
-  ];
 
   return (
     <div className="w-full bg-white p-3 rounded-lg border border-slate-100 shadow-sm mt-3">

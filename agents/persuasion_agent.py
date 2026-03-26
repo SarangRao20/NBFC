@@ -268,7 +268,7 @@ async def persuasion_agent_node(state: dict) -> dict:
     dti = state.get("dti_ratio", 0)
 
     # Track negotiation rounds
-    negotiation_round = state.get("negotiation_round", 0) + 1
+    negotiation_round = state.get("negotiation_round", 0)
 
     # Max rounds exceeded → auto-route to advisory
     if negotiation_round > MAX_NEGOTIATION_ROUNDS:

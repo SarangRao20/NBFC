@@ -759,12 +759,13 @@ async def _sales_mode(state: dict):
     final_terms = updates.get("loan_terms", {})
     if final_terms.get("principal") and final_terms.get("tenure") and final_terms.get("rate") and final_terms.get("emi"):
         visible_reply = (
-            "✅ Loan terms updated (policy-approved values):\n"
-            f"- Loan amount: ₹{final_terms.get('principal'):,.2f}\n"
-            f"- Tenure: {final_terms.get('tenure')} months\n"
-            f"- Final interest rate: {final_terms.get('rate'):.2f}% p.a.\n"
-            f"- Monthly EMI: ₹{final_terms.get('emi'):,.2f}\n"
-            "\n(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
+            "✅ Loan terms updated (policy-approved values):\n\n"
+            "| Term | Value |\n"
+            "| --- | --- |\n"
+            f"| Loan amount | ₹{final_terms.get('principal'):,.2f} |\n"
+            f"| Tenure | {final_terms.get('tenure')} months |\n"
+            f"| Final interest rate | {final_terms.get('rate'):.2f}% p.a. |\n"
+            f"| Monthly EMI | ₹{final_terms.get('emi'):,.2f} |"
         )
 
     # Build new messages list: keep all prior messages + add new AI response
