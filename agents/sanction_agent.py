@@ -128,6 +128,7 @@ async def sanction_agent_node(state: dict):
            f"**NEXT STEP**: Please click the button below to **E-sign** and authorize the disbursement of ₹{principal:,} to your linked account.")
     
     updates = {
+        "decision": decision,
         "sanction_pdf": filepath, 
         "messages": [AIMessage(content=msg)],
         "action_log": log,

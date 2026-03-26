@@ -67,7 +67,7 @@ function App() {
       async function resumeSession() {
         try {
           // Verify session first
-          const verifyUrl = `http://localhost:8000/auth/verify?session_id=${savedSessionId}`;
+          const verifyUrl = `http://192.168.0.231:8000/auth/verify?session_id=${savedSessionId}`;
           const vResp = await fetch(verifyUrl);
           const vData = await vResp.json();
           
@@ -151,7 +151,7 @@ function App() {
           const phone = state?.customer_data?.phone;
           
           if (phone) {
-            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`http://192.168.0.231:8000/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {
@@ -651,7 +651,7 @@ function App() {
           
           if (phone) {
             // Try to fetch advisory message
-            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`http://192.168.0.231:8000/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {

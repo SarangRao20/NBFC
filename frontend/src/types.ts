@@ -39,6 +39,10 @@ export interface AppState {
   }>;
   pastRecords?: string;
   pastSessions?: SessionSummary[];
+  disbursement_step?: "pending" | "ui_paused" | "completed";
+  net_disbursement_amount?: number;
+  kfs_signed?: boolean;
+  enach_setup?: boolean;
 }
 
 export interface UserData {

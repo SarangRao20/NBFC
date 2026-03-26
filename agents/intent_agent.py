@@ -64,7 +64,16 @@ async def intent_node(state: dict):
         if isinstance(m, HumanMessage):
             user_msg = m.content
             break
-    
+    # 🟢 HYBRID DISBURSEMENT INTERCEPT
+    if "signed the kfs" in user_msg.lower() and "authorized e-nach" in user_msg.lower():
+        log.append("✅ User digitally signed KFS and authorized e-NACH. Resuming Disbursement...")
+        return {
+            "kfs_signed": True, 
+            "enach_setup": True,
+            "disbursement_step": "compliance_verified",
+            "action_log": log
+        }
+    # 🟢 END INTERCEPT
     intent = "unclear"
     extracted_amount = 0
     extracted_salary = 0

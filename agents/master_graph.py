@@ -16,10 +16,9 @@ Advisor has full context: current_phase, docs, messages, action_log.
 
 import os
 import sys
-from typing import Annotated, TypedDict, Sequence, Optional
+from typing import Annotated, TypedDict, Sequence, Optional, Any, cast
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END, START
-from langgraph.graph.message import add_messages
 
 # Import agent nodes (registration removed since users authenticate via onboarding UI)
 from agents.intent_agent import intent_node
@@ -37,8 +36,7 @@ from agents.repayment_agent import repayment_agent_node
 from agents.master_state import MasterState
 from agents.master_router import route_next_agent
 from agents.session_manager import SessionManager
-
-from api.core.websockets import manager
+from agents.subgraphs import disbursement_subgraph
 
 from api.core.websockets import manager
 
@@ -231,21 +229,24 @@ def compile_master_graph():
     workflow = StateGraph(MasterState)
 
     # ── Register nodes ──────────────────────────────────────────────────────
-    workflow.add_node("load_session",           load_session_node)
-    workflow.add_node("supervisor",             supervisor_node)
-    workflow.add_node("intent_agent",           intent_node)
-    workflow.add_node("sales_agent",            sales_agent_node)
-    workflow.add_node("document_agent",         document_agent_node)
-    workflow.add_node("verification_agent",     verification_agent_node)
-    workflow.add_node("fraud_agent",            fraud_agent_node)
-    workflow.add_node("join_verification",      join_verification_node)
-    workflow.add_node("underwriting_agent",     underwriting_agent_node)
-    workflow.add_node("sanction_agent",         sanction_agent_node)
-    workflow.add_node("persuasion_agent",       persuasion_agent_node)
-    workflow.add_node("emi_agent",              emi_agent_node)
-    workflow.add_node("document_query_agent",   document_query_agent_node)
-    workflow.add_node("emi_engine",             emi_engine_node)
-    workflow.add_node("repayment_agent",        repayment_agent_node)
+    workflow.add_node("load_session", cast(Any, load_session_node))
+    workflow.add_node("supervisor", cast(Any, supervisor_node))
+    workflow.add_node("intent_agent", cast(Any, intent_node))
+    workflow.add_node("sales_agent", cast(Any, sales_agent_node))
+    workflow.add_node("document_agent", cast(Any, document_agent_node))
+    workflow.add_node("verification_agent", cast(Any, verification_agent_node))
+    workflow.add_node("fraud_agent", cast(Any, fraud_agent_node))
+    workflow.add_node("join_verification",join_verification_node)
+    workflow.add_node("underwriting_agent", cast(Any, underwriting_agent_node))
+    workflow.add_node("sanction_agent", cast(Any, sanction_agent_node))
+    workflow.add_node("persuasion_agent", cast(Any, persuasion_agent_node))
+    workflow.add_node("emi_agent", cast(Any, emi_agent_node))
+    workflow.add_node("document_query_agent", cast(Any, document_query_agent_node))
+    workflow.add_node("emi_engine", cast(Any, emi_engine_node))
+    workflow.add_node("repayment_agent", cast(Any, repayment_agent_node))
+
+    # 🟢 Add the new Disbursement Subgraph as a single node
+    workflow.add_node("disbursement_process", disbursement_subgraph)
 
     # ── Entry: Load session first, then engine, then supervisor ──────────────
     workflow.add_edge(START, "load_session")
@@ -269,6 +270,8 @@ def compile_master_graph():
             "document_query_agent": "document_query_agent",
             "emi_engine": "emi_engine",
             "repayment_agent": "repayment_agent",
+            "disbursement_process": "disbursement_process",
+            "END": END
         }
     )
 
@@ -280,6 +283,8 @@ def compile_master_graph():
     workflow.add_edge("emi_agent",          END) 
     workflow.add_edge("repayment_agent",    END)
 
+    workflow.add_edge("disbursement_process", END)
+
     # ── AUTOMATIC processor nodes — Chain back to supervisor to continue ─────
     workflow.add_edge("document_agent",     END) 
     
@@ -290,8 +295,8 @@ def compile_master_graph():
 
     workflow.add_edge("underwriting_agent", "supervisor")
     
-    # ── Sanction chains directly to END (advisor is now integrated into sales_agent) ──
-    workflow.add_edge("sanction_agent",     END)
+    # ── Sanction chains back to supervisor to trigger disbursement_process ──
+    workflow.add_edge("sanction_agent",     "supervisor")
 
     return workflow.compile()
 

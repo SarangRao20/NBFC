@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://192.168.0.231:8000';
 
 const checkResponse = async (res: Response, url: string) => {
   if (!res.ok) {

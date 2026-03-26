@@ -42,7 +42,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/auth/send-otp', {
+      const response = await fetch('http://192.168.0.231:8000/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `phone=${userData.phone}&email=${userData.email || ''}`
@@ -75,7 +75,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       formData.append('otp', otp);
       if (isDevMode) formData.append('use_dev_otp', 'true');
 
-      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+      const response = await fetch('http://192.168.0.231:8000/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -99,7 +99,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/auth/send-otp', {
+      const response = await fetch('http://192.168.0.231:8000/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `phone=${userData.phone!}&email=${userData.email}`
@@ -132,7 +132,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       formData.append('otp', otp);
       if (isDevMode) formData.append('use_dev_otp', 'true');
 
-      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+      const response = await fetch('http://192.168.0.231:8000/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()

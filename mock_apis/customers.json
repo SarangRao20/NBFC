@@ -116,5 +116,41 @@
         "current_loans": [],
         "risk_flags": [],
         "created_at": "2026-03-26T07:35:01.409968"
+    },
+    {
+        "id": "CUST008",
+        "phone": "9529149230",
+        "email": "harodekartik955@gmail.com",
+        "name": "Kartik Rupesh Harode",
+        "password": "kartik123",
+        "city": null,
+        "salary": 125000.0,
+        "dob": "2006-12-07",
+        "profession": "Software Engg.",
+        "address": "Paratvada, Maharashtra",
+        "credit_score": 816,
+        "pre_approved_limit": 750000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-26T18:52:43.353813"
+    },
+    {
+        "id": "CUST009",
+        "phone": "9999990001",
+        "email": "test_new2@gmail.com",
+        "name": "Test User 2",
+        "password": "123456",
+        "city": null,
+        "salary": 100000.0,
+        "dob": "1990-01-01",
+        "profession": "Tester",
+        "address": "123 Test St",
+        "credit_score": 819,
+        "pre_approved_limit": 600000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-26T19:27:28.297747"
     }
 ]

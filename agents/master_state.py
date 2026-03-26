@@ -1,15 +1,23 @@
 import operator
-from typing import Annotated, Sequence, TypedDict, Any, List, Dict, Optional
+from typing import Annotated, Sequence, TypedDict, Any, List, Dict, Optional, cast
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 # Custom message reducer that filters out dict messages
 def safe_add_messages(left: Sequence[BaseMessage], right: Sequence[BaseMessage]) -> Sequence[BaseMessage]:
     """Add messages while filtering out any dict messages."""
-    # Filter out any dict messages from both sides
-    filtered_left = [m for m in left if not isinstance(m, dict)]
-    filtered_right = [m for m in right if not isinstance(m, dict)]
-    return add_messages(filtered_left, filtered_right)
+    # Keep only actual BaseMessage instances from both sides (drop dicts/strings)
+    # Use `tuple` (a `Sequence`) because `Sequence` is covariant whereas `list` is not.
+    filtered_left: Sequence[BaseMessage] = tuple(m for m in left if isinstance(m, BaseMessage))
+    filtered_right: Sequence[BaseMessage] = tuple(m for m in right if isinstance(m, BaseMessage))
+
+    # `add_messages` may accept different message-like types; cast its result to a
+    # generic sequence for safe runtime filtering below so we return only BaseMessage
+    # Convert to list since `add_messages` expects Messages union which includes list[...] but not tuple[BaseMessage, ...]
+    combined = cast(Sequence[Any], add_messages(list(filtered_left), list(filtered_right)))
+
+    # Filter the combined result to only BaseMessage instances and return as a tuple
+    return tuple(m for m in combined if isinstance(m, BaseMessage))
 
 class LoanTerms(TypedDict, total=False):
     requested_amount: float     # Original amount user asked for
@@ -61,52 +69,57 @@ class MasterState(TypedDict):
     # ─── Session Metadata ───────────────────────────────────────────────────────
     customer_id: str
     session_id: str
-    current_phase: str  # "registration", "intent", "sales", "documents", "kyc", "fraud", "underwriting", "persuasion", "sanction", "advisor"
+    current_phase: str  
     
     # ─── Customer Profile (Minimal for NBFC) ───────────────────────────────────
-    customer_data: CustomerData  # name, email, phone, dob, city, salary
-    profile_complete: bool  # True if all 6 fields present
+    customer_data: CustomerData  
+    profile_complete: bool  
     is_authenticated: bool
     
     # ─── User Intent ───────────────────────────────────────────────────────────
-    intent: str  # "none", "loan", "kyc", "advice"
+    intent: str  
     pending_question: Optional[str]
     
     # ─── Loan Terms Negotiation ────────────────────────────────────────────────
     loan_terms: LoanTerms
-    loan_confirmed: bool  # ✅ Added: True when user accepts final terms
+    loan_confirmed: bool  
     
     # ─── Document Processing & Tracking ────────────────────────────────────────
     documents: DocumentData
-    document_paths: Dict[str, str]  # { "pan": "/path/to/pan.pdf", "salary_slip": "..." }
-    required_documents: List[str]  # ✅ NEW: Dynamic list from agent
+    document_paths: Dict[str, str]  
+    required_documents: List[str]  
     documents_uploaded: bool
     
     # ─── Risk & Fraud Analysis ─────────────────────────────────────────────────
-    fraud_score: float  # -1 = not checked, 0-100 = score
+    fraud_score: float  
     dti_ratio: float
-    esign_completed: bool # ✅ Added: True after e-signature
-    kyc_status: str  # "pending", "verified", "rejected"
-    risk_level: str  # "low", "medium", "high"
-    sanction_pdf: str # ✅ Added: Move from below to ensure consistent schema
-    is_signed: bool
+    esign_completed: bool 
+    kyc_status: str  
+    risk_level: str  
     
     # ─── Underwriting Decision ─────────────────────────────────────────────────
     decision: str  # "", "approve", "soft_reject", "hard_reject"
     reasons: List[str]
-    alternative_offer: float  # for soft_reject negotiation
+    alternative_offer: float  
     
     # ─── Sanction & Final Output ───────────────────────────────────────────────
     sanction_pdf: str  # path to generated PDF
     is_signed: bool
     
-    # ─── Persuasion/Negotiation State ─────────────────────────────────────────
+    # ─── Persuasion/Negotiation State (Soft Reject Loop) ───────────────────────
     negotiation_round: int
     persuasion_options: List[Dict]
+    user_accepted_counter_offer: bool  # ✅ NEW: Tracks if user accepted the soft-reject offer
+    
+    # ─── 5-Step Disbursement & Compliance Flags (Hybrid Approach) ──────────────
+    net_disbursement_amount: float     # ✅ NEW: Calculated post-sanction amount
+    kfs_signed: bool                   # ✅ NEW: UI flag for Key Fact Statement
+    enach_setup: bool                  # ✅ NEW: UI flag for Autopay
+    cooling_off_active: bool           # ✅ NEW: Tracks 1-day RBI cooling off period
+    disbursement_step: str             # ✅ NEW: "pending", "ui_paused", "completed"
     
     # ─── Routing & Logging ─────────────────────────────────────────────────────
     next_agent: str
     routing_reasoning: str
-    action_log: List[str]  # human-readable step log for UI + advisor
-    options: List[str]  # interaction buttons
-
+    action_log: List[str]  
+    options: List[str]

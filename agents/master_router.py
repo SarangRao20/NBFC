@@ -104,13 +104,33 @@ def route_next_agent(state: MasterState):
             else:
                 return "verification_agent", "Awaiting KYC completion before underwriting."
 
-    # ─── PHASE 8: SANCTION & ADVICE (Priya - Now via Sales Agent advisor mode) ──
-    if decision in ("approve", "soft_reject", "hard_reject"):
-        if not state.get("sanction_pdf"):
-            return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
-        return "sales_agent", "Documentation complete. Providing post-sanction orientation via advisor mode."
+    # ─── PHASE 8: HYBRID DISBURSEMENT & NEGOTIATION LOOP ───────────────────────
+    
+    # 🟢 1. The Disbursement Hook (Approved)
+    if decision == "approve":
+        # If the 5-step disbursement is totally finished, route to the final advisor greeting
+        if state.get("disbursement_step") == "completed":
+            return "sales_agent", "Disbursement complete. Providing post-sanction orientation."
+            
+        # Otherwise, hand off to our new Subgraph!
+        return "disbursement_process", "Loan approved. Routing to 5-Step Disbursement Subgraph."
 
-    # GLOBAL FALLBACK
+    # 🟡 2. The Soft-Reject Loop (Negotiation)
+    if decision == "soft_reject":
+        accepted_offer = state.get("user_accepted_counter_offer", False)
+        
+        if not accepted_offer:
+            # Route to Closer to pitch the Option A / Option B
+            return "persuasion_agent", "Soft reject detected. Routing to Closer for counter-offer negotiation."
+        else:
+            # User clicked 'Accept' on the UI or typed yes. Route back to Underwriting to formalize the new math.
+            return "underwriting_agent", "User accepted counter-offer. Re-running underwriting math for final approval."
+
+    # 🔴 3. The Hard Reject (Advisory)
+    if decision == "hard_reject":
+        return "sales_agent", "Hard reject. Providing alternative financial wellness advice."
+
+    # ─── GLOBAL FALLBACK ───────────────────────────────────────────────────────
     if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):
         return "sales_agent", "Continuing loan conversation with Arjun to ensure human-first support."
     

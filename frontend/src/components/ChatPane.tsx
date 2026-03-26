@@ -364,6 +364,79 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
         </motion.div>
       ))}
     </AnimatePresence>
+    {/* 🟢 HYBRID DISBURSEMENT UI PAUSE INSERTION */}
+    <AnimatePresence>
+      {appState.disbursement_step === "ui_paused" && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-50 border-2 border-emerald-200 shadow-xl shadow-emerald-900/5 rounded-2xl p-6 max-w-[85%] w-[460px] mx-auto my-6 text-left"
+        >
+          <div className="flex items-center mb-4 pb-3 border-b border-emerald-100">
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white mr-3">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <h3 className="font-black text-[17px] text-emerald-900 uppercase tracking-tight">RBI Compliance Checklist</h3>
+              <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest">Final Authorization</p>
+            </div>
+          </div>
+
+          <div className="bg-white/60 p-4 rounded-xl mb-6 border border-emerald-100">
+            <div className="text-xs font-bold text-slate-500 uppercase mb-1">Net Disbursement to Bank</div>
+            <div className="text-3xl font-black text-emerald-600">
+              ₹{new Intl.NumberFormat('en-IN').format(appState.net_disbursement_amount || 0)}
+            </div>
+            <p className="text-[12px] text-slate-500 mt-2 leading-relaxed italic">
+              *Fees, GST, and Broken Period Interest have been deducted as per the KFS.
+            </p>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                id="kfs_check"
+                className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 transition-all cursor-pointer"
+              />
+              <span className="text-[14px] font-bold text-slate-700 group-hover:text-emerald-800 transition-colors">
+                I accept the Key Fact Statement (KFS)
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                id="enach_check"
+                className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 transition-all cursor-pointer"
+              />
+              <span className="text-[14px] font-bold text-slate-700 group-hover:text-emerald-800 transition-colors">
+                Authorize e-NACH Autopay via NetBanking
+              </span>
+            </label>
+          </div>
+
+          <button 
+            onClick={() => {
+              const kfs = (document.getElementById('kfs_check') as HTMLInputElement).checked;
+              const enach = (document.getElementById('enach_check') as HTMLInputElement).checked;
+              
+              if(kfs && enach) {
+                // Ping backend to resume the LangGraph Subgraph
+                onSendMessage("I have signed the KFS and authorized e-NACH.");
+              } else {
+                alert("Please complete all compliance checkboxes to authorize disbursement.");
+              }
+            }}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all active:scale-[0.98] flex justify-center items-center gap-2 group"
+          >
+            Execute Direct Bank Transfer
+            <Send size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    {/* 🟢 END OF INSERTION */}
     <div ref={messagesEndRef} />
   </div>
 
