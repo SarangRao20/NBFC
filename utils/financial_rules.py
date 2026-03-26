@@ -1,7 +1,24 @@
 """Financial Rules & Deterministic Underwriting policies for NBFC.
 
 These rules precisely calculate Eligibility, DTI, FOIR, and Fraud Scores based on real-world Indian NBFC practices.
+
+CRITICAL: All DTI/FOIR values in this module are returned as FRACTIONS (0.0-1.0), NOT percentages.
+Example: 45% DTI is stored as 0.45, NOT 45.0
 """
+
+# ─── UNDERWRITING CONSTANTS (DTI as fractions) ──────────────────────────────
+MAX_SAFE_DTI = 0.50  # 50% max safe DTI
+HARD_DTI_CEILING = 1.5  # 150% absolute max (beyond this, no loan possible)
+MIN_CREDIT_SCORE = 650  # Minimum required credit score
+MIN_SALARY = 15000  # Minimum monthly salary
+FRAUD_SCORE_HARD_REJECT_THRESHOLD = 0.70  # Fraud score >= 0.70 → hard reject
+
+# ─── DTI TIERS (based on monthly salary) ─────────────────────────────────────
+DTI_TIERS = [
+    (30000, 0.40),     # < ₹30k monthly: 40% max DTI
+    (100000, 0.50),    # ₹30k-₹100k: 50% max DTI
+    (float('inf'), 0.60)  # > ₹100k: 60% max DTI
+]
 
 def calculate_emi(principal: float, rate_pa: float, tenure_months: int) -> float:
     """Standard EMI calculation formula: P * r * (1+r)^n / ((1+r)^n - 1), where r is monthly rate."""
@@ -15,12 +32,19 @@ def calculate_emi(principal: float, rate_pa: float, tenure_months: int) -> float
     emi = principal * monthly_rate * ((1 + monthly_rate) ** tenure_months) / (((1 + monthly_rate) ** tenure_months) - 1)
     return round(emi, 2)
 
-1
+
 def calculate_foir(existing_emis: float, proposed_new_emi: float, net_monthly_income: float) -> float:
-    """FOIR (%) = (Existing EMIs + Proposed EMI) / Net Income * 100"""
+    """
+    Calculate FOIR (Debt-to-Income Ratio) as a FRACTION (0.0-1.0).
+    
+    FOIR = (Existing EMIs + Proposed EMI) / Net Income
+    
+    Returns:
+        float: DTI as fraction (0.50 = 50%, 0.60 = 60%, etc.)
+    """
     if net_monthly_income <= 0:
-        return 100.0
-    return round(((existing_emis + proposed_new_emi) / net_monthly_income) * 100, 2)
+        return 1.0  # 100% DTI if no income
+    return round((existing_emis + proposed_new_emi) / net_monthly_income, 3)
 
 
 def calculate_pricing_rate(benchmark_rate: float, credit_risk_premium: float, business_margin: float, operating_cost_loading: float, min_spread: float = 2.0, floor_rate: float = 8.0) -> float:

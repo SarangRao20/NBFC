@@ -14,6 +14,8 @@ async def generate_sanction(session_id: str) -> dict:
     """Step 16: Compile Final Terms → Generate Loan PDF → Send to User."""
     cache = await get_cache()
     email_service = await get_email_service()
+    # Default to False so email failures don't cause UnboundLocalError later
+    email_sent = False
 
     state = await get_session(session_id)
     if not state:

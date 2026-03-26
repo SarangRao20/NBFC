@@ -272,26 +272,14 @@ def _build_customer_context(customer: dict) -> str:
 
 
 def _extract_json_from_response(text: str) -> Optional[dict]:
-    """Extract JSON from response. Handles multiple formats."""
-    # Try code block format first: ```json {...} ```
-    json_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except Exception:
-            pass
+    """Extract JSON from LLM response using robust multi-strategy parser."""
+    from api.core.validation import RobustJSONParser
     
-    # Try loose JSON format: { ... }
-    # Find all {...} blocks and try to parse them
-    loose_matches = re.findall(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
-    for match in loose_matches:
-        try:
-            data = json.loads(match)
-            # Validate it's likely loan data (has expected keys)
-            if any(k in data for k in ["loan_amount", "loan_purpose", "tenure", "confirmed"]):
-                return data
-        except Exception:
-            pass
+    parsed, success, debug = RobustJSONParser.parse(text)
+    if success and parsed:
+        # Validate it looks like loan data (has expected keys)
+        if any(k in parsed for k in ["loan_amount", "loan_purpose", "tenure", "confirmed", "action"]):
+            return parsed
     
     return None
 
@@ -707,28 +695,44 @@ async def _sales_mode(state: dict):
     }
     
     if extracted:
+        def _safe_float(val, default=0.0):
+            try:
+                if isinstance(val, (int, float)): return float(val)
+                if not val: return default
+                # Remove symbols and handle fractions if any
+                clean = str(val).lower().replace("₹", "").replace(",", "").replace("%", "").strip()
+                if "tbd" in clean or "discuss" in clean: return default
+                nums = _re.findall(r"[\d.]+", clean)
+                return float(nums[0]) if nums else default
+            except: return default
+
         # Update loan terms if LLM extracted new values
         new_terms = {**existing_terms}
         if extracted.get("loan_amount"): 
-            principal = float(extracted.get("loan_amount"))
-            new_terms["principal"] = principal
-            # Set requested_amount if not already set (preserve original request)
-            if not new_terms.get("requested_amount") or new_terms.get("requested_amount") == 0:
-                new_terms["requested_amount"] = principal
-        if extracted.get("tenure"): new_terms["tenure"] = int(extracted.get("tenure"))
+            principal = _safe_float(extracted.get("loan_amount"))
+            if principal > 0:
+                new_terms["principal"] = principal
+                if not new_terms.get("requested_amount"):
+                    new_terms["requested_amount"] = principal
+                    
+        if extracted.get("tenure"): 
+            try: new_terms["tenure"] = int(_safe_float(extracted.get("tenure")))
+            except: pass
+            
         if extracted.get("loan_purpose"): new_terms["loan_purpose"] = extracted.get("loan_purpose")
         if extracted.get("loan_type"): new_terms["loan_type"] = extracted.get("loan_type")
+        
         if extracted.get("interest_rate"):
-            requested_rate = float(extracted.get("interest_rate"))
-            benchmark_rate = float(state.get("benchmark_rate", 7.0))
+            requested_rate = _safe_float(extracted.get("interest_rate"), 12.0)
+            benchmark_rate = _safe_float(state.get("benchmark_rate", 7.0))
             min_valid_rate = max(benchmark_rate + 2.0, 8.0)
             if requested_rate < min_valid_rate:
                 requested_rate = min_valid_rate
             new_terms["rate"] = requested_rate
 
         # Calculate EMI if we have principal and tenure
-        if new_terms.get("principal") and new_terms.get("tenure"):
-            rate = float(new_terms.get("rate", 12.0))
+        if new_terms.get("principal") and new_terms.get("tenure") and new_terms.get("tenure") > 0:
+            rate = _safe_float(new_terms.get("rate", 12.0))
             new_terms["emi"] = _calc_emi(new_terms["principal"], rate, new_terms["tenure"])
         
         updates["loan_terms"] = new_terms

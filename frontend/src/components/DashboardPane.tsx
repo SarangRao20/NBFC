@@ -49,9 +49,15 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-slate-800 truncate">{appState.customerName || 'Guest User'}</h2>
               {appState.customerName && (
-                <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
-                  <BadgeCheck size={10} className="mr-1" /> Existing
-                </div>
+                <>
+                  <div className="flex items-center text-[9px] font-bold tracking-tight text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit uppercase mt-0.5">
+                    <BadgeCheck size={10} className="mr-1" /> Existing
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1 flex items-center space-x-3">
+                    <span>Score: <strong className="text-slate-700">{appState.creditScore || '-'}</strong></span>
+                    <span>Salary: <strong className="text-slate-700">{appState.salary ? `₹${Number(appState.salary).toLocaleString()}` : '-'}</strong></span>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -69,6 +75,8 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
               value={Math.max(0, (appState.emi * appState.tenure) - appState.requestedAmount)}
               prefix="₹"
             />
+            <MetricCard label="Salary" value={appState.salary || 0} prefix="₹" />
+            <MetricCard label="Credit Score" value={appState.creditScore || 0} />
           </div>
           
           {/* Minimal summary only. Removed redundant repayment summary as per user request. */}

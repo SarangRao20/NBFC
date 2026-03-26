@@ -267,6 +267,57 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
             </div>
           )}
 
+          {msg.type === 'rejection_letter' && (
+            <div className="bg-white/80 backdrop-blur-md border border-slate-200/60 shadow-xl shadow-slate-900/5 rounded-2xl rounded-bl-[4px] p-6 max-w-[85%] w-[460px]">
+              <div className="flex items-center mb-4 pb-4 border-b border-slate-100">
+                <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600 mr-3">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[16px] text-slate-800">Rejection Letter</h3>
+                  <p className="text-xs font-semibold text-slate-400">PDF Document • System-generated</p>
+                </div>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-xl mb-5 border border-slate-100/50">
+                <div className="text-sm text-slate-600 font-medium mb-1">Requested Amount</div>
+                <div className="text-2xl font-black text-amber-600 mb-2">₹{new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(appState.requestedAmount)}</div>
+                <p className="text-slate-500 text-[13px] leading-relaxed">
+                  {msg.content}
+                </p>
+              </div>
+              <div className="flex space-x-3">
+                <button 
+                  onClick={async () => {
+                    if (!appState.sessionId) return;
+                    try {
+                      const blob = await apiClient.downloadLetter(appState.sessionId);
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Rejection_Letter_${appState.sessionId?.slice(0, 8)}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error('Download failed:', err);
+                    }
+                  }}
+                  className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2.5 rounded-xl transition-all active:scale-95 shadow-sm"
+                >
+                  Download PDF
+                </button>
+                <button 
+                  onClick={() => {
+                    onSendMessage('Negotiate');
+                  }}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 shadow-sm text-white text-sm font-bold py-2.5 rounded-xl transition-all flex justify-center items-center active:scale-95"
+                >
+                  Try Negotiation
+                </button>
+              </div>
+            </div>
+          )}
+
           {msg.type === 'emi_slider' && (
             <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[85%] w-[460px]">
               <p className="text-slate-800 text-[15px] font-medium leading-relaxed mb-6">

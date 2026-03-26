@@ -68,6 +68,9 @@ def route_next_agent(state: MasterState):
     if intent == "payment":
         return "repayment_agent", "Routing to loan repayment portal."
 
+    if intent == "document_request":
+        return "sanction_agent", "User requesting official loan documentation (Sanction/Rejection)."
+
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
         # Always prioritize Arjun (Sales) for a human conversation unless terms are fully confirmed

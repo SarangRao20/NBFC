@@ -36,8 +36,9 @@ class Settings(BaseSettings):
 
     # Underwriting thresholds
     MIN_CREDIT_SCORE: int = 700
-    MAX_DTI_RATIO: float = 0.50
-    MAX_EXPOSURE_MULTIPLIER: float = 2.0
+    # DTI and exposure defaults — use realistic safe defaults
+    MAX_DTI_RATIO: float = 0.50  # 50% maximum DTI
+    MAX_EXPOSURE_MULTIPLIER: float = 2.0  # Allow up to 2× pre-approved by default
 
     # Persuasion loop
     MAX_NEGOTIATION_ROUNDS: int = 3

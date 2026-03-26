@@ -362,7 +362,25 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
 
         # For the legacy string reply, concat just the text bits
         texts = [m["content"] for m in new_ai if isinstance(m, dict) and m.get("type") == "text"]
-        reply = "\n\n".join(texts) if texts else "I'm here — what would you like to do next?"
+
+        # If LLM returned only structured JSON (no visible text), create a
+        # human-friendly fallback based on final_state loan_terms so the user
+        # always sees a meaningful response instead of an empty/default string.
+        if texts:
+            reply = "\n\n".join(texts)
+        else:
+            lt = final_state.get("loan_terms", {})
+            if lt and lt.get("principal") and lt.get("tenure") and lt.get("emi"):
+                reply = (
+                    "✅ Loan terms updated (policy-approved values):\n"
+                    f"- Loan amount: ₹{lt['principal']:,.2f}\n"
+                    f"- Tenure: {lt['tenure']} months\n"
+                    f"- Final interest rate: {lt.get('rate', 12):.2f}% p.a.\n"
+                    f"- Monthly EMI: ₹{lt['emi']:,.2f}\n\n"
+                    "(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
+                )
+            else:
+                reply = "I'm here — what would you like to do next?"
         
         # Ensure session metadata is preserved in the final state
         final_state["session_id"] = session_id

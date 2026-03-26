@@ -72,7 +72,7 @@ export interface SessionSummary {
   display_status?: 'approved' | 'in_process' | 'rejected' | 'pending' | string;
 }
 
-export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'emi_slider' | 'agent_steps' | 'options';
+export type MessageType = 'text' | 'thinking' | 'sanction_letter' | 'rejection_letter' | 'emi_slider' | 'agent_steps' | 'options';
 
 
 export interface ChatMessage {

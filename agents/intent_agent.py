@@ -19,11 +19,12 @@ INTENT_SYSTEM_PROMPT = """You are Arjun, the Senior Strategy Dispatcher at FinSe
 ## INTENT CATEGORIES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. **'loan'**: The user wants to borrow money, start a new application, check their pre-approved limit, or mentions "borrow", "apply", "fees", "tuition", "IIT", "loan please", "Apply for Loan", or any specific amount (e.g., "1 lakh", "75k", "50000"). **PRIORITIZE THIS** if the user mentions financial needs.
-2. **'advice'**: The user is asking "Should I take a loan?", "Is this a good investment?", "How can I improve my CIBIL?", "What is my DTI?", or looking for advisor guidance.
-3. **'kyc'**: The user is uploading or asking about PAN, Aadhaar, Salary Slips, or "how to upload documents".
-4. **'sign'**: The user says "I am ready to sign", "e-sign", "accept the offer", or "confirm the loan".
-5. **'payment'**: The user wants to make an EMI payment, check their **loan status**, see **remaining balance**, or track **repayment progress**. (e.g., "how much is left?", "pay my emi", "status of my loan").
-6. **'none'**: General greetings ("Hi", "Hello") or completely unrelated chat.
+2. **'document_request'**: The user wants an official letter like "rejection letter", "sanction letter", "loan agreement", "PDF", or "sanction agreement". They say things like "give rejection letter", "show my sanction", "rejection letter please".
+3. **'advice'**: The user is asking "Should I take a loan?", "Is this a good investment?", "How can I improve my CIBIL?", "What is my DTI?", or looking for advisor guidance.
+4. **'kyc'**: The user is uploading or asking about PAN, Aadhaar, Salary Slips, or "how to upload documents".
+5. **'sign'**: The user says "I am ready to sign", "e-sign", "accept the offer", or "confirm the loan".
+6. **'payment'**: The user wants to make an EMI payment, check their **loan status**, see **remaining balance**, or track **repayment progress**. (e.g., "how much is left?", "pay my emi", "status of my loan").
+7. **'none'**: General greetings ("Hi", "Hello") or completely unrelated chat.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## DISPATCH RULES (ANTI-HALLUCINATION):
@@ -123,7 +124,7 @@ async def intent_node(state: dict):
         print(f"  ⚠️ Intent Error: {e}")
         intent = "unclear"
 
-    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign', 'payment']:
+    if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign', 'payment', 'document_request']:
         cust = state.get("customer_data", {}) or {}
         name = cust.get("name", "").strip()
         
@@ -150,7 +151,8 @@ async def intent_node(state: dict):
         "advice": "advice", 
         "kyc": "kyc_verification", 
         "sign": "loan_approval",
-        "payment": "payment"
+        "payment": "payment",
+        "document_request": "document_generation"
     }
     updates = {"intent": intent, "action_log": log, "current_phase": phase_map.get(intent)}
     

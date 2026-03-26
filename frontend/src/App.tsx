@@ -317,8 +317,16 @@ function App() {
         setChatPhase('accepted');
         pushAgentMessage("Congratulations! The Underwriting Agent approved your loan. Review your Sanction Letter below.", 'sanction_letter');
       } else {
-        pushAgentMessage(`Your loan was soft-rejected. Reason: ${uwResult.reasons?.join(', ')}. Generating counter-offer...`);
-        await runNegotiation();
+        const reasonsText = uwResult.reasons?.length ? uwResult.reasons.join(', ') : 'Not specified';
+        // Present heuristic action buttons: Negotiate or Download Rejection Letter
+        setChatHistory(prev => [...prev, {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          sender: 'agent',
+          type: 'text',
+          content: `Your loan was soft-rejected. Reason: ${reasonsText}\n\nYou can choose to negotiate a counter-offer or download your rejection letter.`,
+          options: ['Negotiate', 'Download Rejection Letter'],
+          timestamp: new Date(),
+        }]);
       }
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
@@ -680,6 +688,36 @@ function App() {
       timestamp: new Date(),
     }]);
 
+    // Intercept common UI actions: negotiate or request rejection letter
+    const normalized = text.trim().toLowerCase();
+    if (normalized.includes('negotiate')) {
+      await runNegotiation();
+      return;
+    }
+
+    if ((normalized.includes('rejection') && normalized.includes('letter')) || normalized.includes('download rejection') || normalized.includes('give me rejection')) {
+      // Generate rejection letter on demand and render rejection card
+      const thinkingId = pushAgentMessage('Generating your rejection letter...', 'thinking');
+      try {
+        const res = await apiClient.sanction(sessionId);
+        // remove thinking indicator
+        setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+
+        const content = res?.message || 'Your rejection letter has been generated. Download below.';
+        setChatHistory(prev => [...prev, {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          sender: 'agent',
+          type: 'rejection_letter',
+          content,
+          timestamp: new Date(),
+        }]);
+      } catch (err) {
+        setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
+        pushAgentMessage('Failed to generate rejection letter.', 'text');
+      }
+      return;
+    }
+
     try {
       // General agent-driven chat
       setAppState(prev => ({ 
@@ -687,7 +725,7 @@ function App() {
         thinkingAgents: [...prev.thinkingAgents, 'Arjun'],
         activeAgent: 'Thinking...' 
       }));
-      
+
       let res: any = null;
       try {
         res = await apiClient.chat(sessionId!, text, chatHistory); 
