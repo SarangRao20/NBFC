@@ -262,7 +262,7 @@ function App() {
 
   const runNegotiation = async () => {
     if (!sessionId) return;
-    const thinkingId = pushAgentMessage('Persuasion loop activated...', 'thinking');
+    const thinkingId = pushAgentMessage('Negotiation in progress...', 'thinking');
     setAppState(prev => ({ 
       ...prev, 
       thinkingAgents: [...prev.thinkingAgents, 'Sales Agent'],
@@ -270,8 +270,8 @@ function App() {
     }));
     
     try {
-      await apiClient.analyzeRejection(sessionId);
-      const suggestion = await apiClient.suggestFix(sessionId);
+      // Use the main chat endpoint — sales agent now handles negotiation/persuasion
+      const res = await apiClient.chat(sessionId, 'I would like to negotiate a counter-offer for my soft-rejected loan. Please suggest restructured options.', chatHistory);
 
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       setAppState(prev => ({ 
@@ -280,44 +280,46 @@ function App() {
         activeAgent: null 
       }));
 
-      if (suggestion.options && suggestion.options.length > 0) {
-        // Apply first option's restructured terms to appState so the EMI slider shows correct values
-        const firstOption = suggestion.options[0];
+      // Display the agent's negotiation response
+      if (res?.messages && res.messages.length > 0) {
+        for (const msg of res.messages) {
+          const content = typeof msg === 'string' ? msg : msg.content || msg.text || '';
+          if (content) pushAgentMessage(content);
+        }
+      } else if (res?.reply) {
+        pushAgentMessage(res.reply);
+      } else if (res?.message) {
+        pushAgentMessage(res.message);
+      } else {
+        pushAgentMessage("The agent is reviewing your options. Please continue the conversation.");
+      }
+
+      // Update state from response if available
+      if (res?.options) {
         setAppState(prev => ({
           ...prev,
-          requestedAmount: firstOption.amount || prev.requestedAmount,
-          tenure: firstOption.tenure || prev.tenure,
-          emi: firstOption.emi || prev.emi,
+          options: res.options,
         }));
-        setChatPhase('negotiate');
-        pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then click 'Apply Revised Terms' to finalize.", 'emi_slider');
-      } else if (suggestion?.requires_salary) {
-        // Salary is missing — show a helpful prompt with action buttons to retry
-        const salaryMsg = suggestion?.message || 
-          "We need your monthly income to propose negotiable options. Please provide your monthly salary to continue.";
-        setChatHistory(prev => [...prev, {
-          id: `msg-${Date.now()}-${Math.random()}`,
-          sender: 'agent',
-          type: 'text',
-          content: `${salaryMsg}\n\nPlease share your monthly salary (for example: 'My salary is 60000') and then click Negotiate again.`,
-          options: ['Negotiate', 'Download Rejection Letter'],
-          timestamp: new Date(),
-        }]);
-      } else {
-        // No viable options at all — show rejection messaging with buttons
-        const fallbackMessage = suggestion?.message || "Unfortunately, we cannot offer a restructured loan at this time.";
-        setChatHistory(prev => [...prev, {
-          id: `msg-${Date.now()}-${Math.random()}`,
-          sender: 'agent',
-          type: 'text',
-          content: fallbackMessage,
-          options: ['Download Rejection Letter'],
-          timestamp: new Date(),
-        }]);
       }
+
+      setChatPhase('negotiate');
+
+      // Sync full state for sidebar updates
+      try {
+        const fullState = await apiClient.getSession(sessionId);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
+            tenure: fullState.loan_terms?.tenure || prev.tenure,
+            emi: fullState.loan_terms?.emi || prev.emi,
+          }));
+        }
+      } catch (_) { /* non-critical */ }
+
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      pushAgentMessage("Error generating counter offer.");
+      pushAgentMessage("Error generating counter offer. Please try again.");
       setAppState(prev => ({ 
         ...prev, 
         thinkingAgents: [],
