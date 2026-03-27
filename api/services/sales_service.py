@@ -307,6 +307,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
     
     # Run the Master Graph
     print(f"🧠 [SALES SERVICE] Invoking MasterGraph for session {session_id}...")
+    from agents.master_graph import compile_master_graph
     graph = compile_master_graph()
     
     try:

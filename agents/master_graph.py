@@ -269,7 +269,15 @@ def route_after_intent(state: MasterState) -> str:
     return "supervisor"
 
 # ─── Graph Construction ───────────────────────────────────────────────────────
+# ─── Singleton Compilation (Built only once for performance) ──────────────────
+_master_graph_instance = None
+
 def compile_master_graph():
+    """Build and compile the Master Graph (Singleton)."""
+    global _master_graph_instance
+    if _master_graph_instance:
+        return _master_graph_instance
+
     workflow = StateGraph(MasterState)
 
     # ── Register nodes (Wrapped) ─────────────────────────────────────────────
@@ -312,7 +320,6 @@ def compile_master_graph():
     )
 
     # ── ALL nodes - Chain back to supervisor to continue processing ──────────
-    # (Router handles END logic based on state change/human messages)
     workflow.add_edge("intent_agent",           "supervisor")
     workflow.add_edge("sales_agent",            "supervisor")
     workflow.add_edge("document_agent",         "supervisor")
@@ -326,7 +333,8 @@ def compile_master_graph():
     workflow.add_edge("fraud_agent",        "join_verification")
     workflow.add_edge("join_verification",  "supervisor")
 
-    return workflow.compile()
+    _master_graph_instance = workflow.compile()
+    return _master_graph_instance
 
 
 if __name__ == "__main__":

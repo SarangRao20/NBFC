@@ -22,13 +22,21 @@ class RedisCache:
     async def connect(self):
         """Initialize Redis connection"""
         try:
-            self.redis_client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                db=settings.REDIS_DB,
-                password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
-                decode_responses=True
-            )
+            if settings.REDIS_URL:
+                print(f"🌐 Connecting to Redis via URL...")
+                self.redis_client = redis.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True
+                )
+            else:
+                print(f"🏠 Connecting to local Redis at {settings.REDIS_HOST}...")
+                self.redis_client = redis.Redis(
+                    host=settings.REDIS_HOST,
+                    port=settings.REDIS_PORT,
+                    db=settings.REDIS_DB,
+                    password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
+                    decode_responses=True
+                )
             # Test connection
             await self.redis_client.ping()
             self.connected = True

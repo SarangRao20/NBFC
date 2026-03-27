@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AppState } from '../types';
-import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus, ChevronDown } from 'lucide-react';
+import { User, CheckCircle2, Circle, FileText, BadgeCheck, CreditCard, Trash2, Plus, ChevronDown, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import MetricCard from './MetricCard';
 import confetti from 'canvas-confetti';
@@ -13,9 +13,17 @@ interface Props {
   onPayEmi?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onSelectLender?: (lenderId: string) => void;
+  onLogout?: () => void;
 }
 
-export default function DashboardPane({ appState, onLoadSession, onNewChat, onPayEmi, onDeleteSession }: Props) {
+export default function DashboardPane({ 
+  appState, 
+  onLoadSession, 
+  onNewChat, 
+  onPayEmi, 
+  onDeleteSession,
+  onLogout 
+}: Props) {
   const badgeRef = useRef<HTMLDivElement>(null);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
@@ -290,6 +298,17 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Logout Button */}
+            <div className="border-t border-slate-100 p-2">
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center justify-center space-x-2 py-2 text-[10px] font-bold text-red-600 hover:bg-red-50 rounded-md transition-colors border border-transparent hover:border-red-100"
+              >
+                <LogOut size={12} />
+                <span>Sign Out</span>
+              </button>
             </div>
           </motion.div>
         )}

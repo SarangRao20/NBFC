@@ -919,6 +919,7 @@ function App() {
         onPayEmi={handlePayEmi}
         onDeleteSession={handleDeleteSession}
         onSelectLender={handleSelectLender}
+        onLogout={handleLogout}
       />
       <ChatPane 
         appState={appState} 

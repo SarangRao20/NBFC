@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017/nbfc")
     
     # Redis Configuration
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
