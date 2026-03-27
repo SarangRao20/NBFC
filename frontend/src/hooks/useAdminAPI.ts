@@ -18,7 +18,9 @@ import type {
   SystemInfoResponse,
 } from '../types/admin';
 
-const API_BASE_URL = (import.meta.env.REACT_APP_API_URL as string) || 'http://localhost:8000';
+import { BASE_URL } from '../api/client';
+
+const API_BASE_URL = BASE_URL;
 
 interface UseAdminAPIReturn {
   // State

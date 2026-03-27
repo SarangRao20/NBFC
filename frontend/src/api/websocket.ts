@@ -1,4 +1,5 @@
 type WSCallback = (data: any) => void;
+import { BASE_URL } from './client';
 
 class WebSocketClient {
   private socket: WebSocket | null = null;
@@ -8,9 +9,7 @@ class WebSocketClient {
   connect(sessionId: string) {
     if (this.socket || !sessionId) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = import.meta.env.VITE_API_URL 
-      ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '') 
-      : 'localhost:8000';
+    const host = BASE_URL.replace(/^https?:\/\//, '');
     
     const wsUrl = `${protocol}//${host}/ws/${sessionId}`;
     console.log(`🔌 [WS] Connecting to ${wsUrl}...`);

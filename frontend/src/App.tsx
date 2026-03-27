@@ -3,7 +3,7 @@ import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
 import AuthWrapper from './components/AuthWrapper';
 import type { AppState, ChatMessage, MessageType } from './types';
-import { apiClient } from './api/client';
+import { apiClient, BASE_URL } from './api/client';
 import { wsClient } from './api/websocket';
 
 interface UserData {
@@ -69,7 +69,7 @@ function App() {
       async function resumeSession() {
         try {
           // Verify session first
-          const verifyUrl = `http://localhost:8000/auth/verify?session_id=${savedSessionId}`;
+          const verifyUrl = `${BASE_URL}/auth/verify?session_id=${savedSessionId}`;
           const vResp = await fetch(verifyUrl);
           const vData = await vResp.json();
           
@@ -145,7 +145,7 @@ function App() {
           const phone = state?.customer_data?.phone;
           
           if (phone) {
-            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`${BASE_URL}/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {
@@ -674,7 +674,7 @@ function App() {
           
           if (phone) {
             // Try to fetch advisory message
-            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`${BASE_URL}/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {

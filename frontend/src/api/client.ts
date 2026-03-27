@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env?.VITE_API_URL || 'https://nbfc-inc.onrender.com';
+export const BASE_URL = import.meta.env?.VITE_API_URL || 'https://nbfc-inc.onrender.com';
 
 // Debug environment variables
 console.log('BASE_URL:', BASE_URL);

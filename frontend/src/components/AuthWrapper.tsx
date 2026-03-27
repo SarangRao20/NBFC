@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import Login from './Login';
 import Onboarding from './Onboarding';
+import { BASE_URL } from '../api/client';
+
 
 interface UserData {
   name: string;
@@ -31,7 +33,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onAuthComplete }) => {
       formData.append('phone', userData.phone);
       formData.append('password', userData.password);
 
-      const response = await fetch('http://localhost:8000/auth/login', {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -66,7 +68,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ onAuthComplete }) => {
       if (userData.profession) formData.append('profession', userData.profession);
       if (userData.address) formData.append('address', userData.address);
       
-      const response = await fetch('http://localhost:8000/auth/register', {
+      const response = await fetch(`${BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
