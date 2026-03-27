@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 """Sales Agent — Financial Advisor first, then Loan Sales mode.
 
 Two modes:
@@ -903,7 +902,7 @@ async def _sales_mode(state: dict):
         print(f"⚠️ Failed to save session: {e}")
     
     return updates
-=======
+
 """Sales Agent — Financial Advisor first, then Loan Sales mode.
 
 Two modes:
@@ -1781,4 +1780,3 @@ async def _sales_mode(state: dict):
         print(f"⚠️ Failed to save session: {e}")
     
     return updates
->>>>>>> 94244dfd3bff8b6f71829eb2c0fffef1a4d6ed1b
