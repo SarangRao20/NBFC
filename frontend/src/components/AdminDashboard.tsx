@@ -369,7 +369,7 @@ const FunnelChart: React.FC<FunnelChartProps> = ({ funnel }) => {
 
   return (
     <div className="space-y-6">
-      {stages.map((stage, index) => {
+      {stages.map((stage, _index) => {
         const percentage = (stage.value / maxValue) * 100;
         return (
           <div key={stage.label}>

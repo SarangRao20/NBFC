@@ -41,7 +41,7 @@ const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({ periodDays = 30
     );
   }
 
-  const getStatusColor = (value: number, threshold: number = 70) => {
+  const _getStatusColor = (value: number, threshold: number = 70) => {
     if (value >= threshold) return 'text-green-600 bg-green-50 border-green-200';
     if (value >= threshold - 20) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
     return 'text-red-600 bg-red-50 border-red-200';
