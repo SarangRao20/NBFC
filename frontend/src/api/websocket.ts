@@ -10,7 +10,7 @@ class WebSocketClient {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = import.meta.env.VITE_API_URL 
       ? import.meta.env.VITE_API_URL.replace(/^https?:\/\//, '') 
-      : '192.168.0.231:8000';
+      : 'localhost:8000';
     
     const wsUrl = `${protocol}//${host}/ws/${sessionId}`;
     console.log(`🔌 [WS] Connecting to ${wsUrl}...`);

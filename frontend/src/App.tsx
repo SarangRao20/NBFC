@@ -67,7 +67,7 @@ function App() {
       async function resumeSession() {
         try {
           // Verify session first
-          const verifyUrl = `http://192.168.0.231:8000/auth/verify?session_id=${savedSessionId}`;
+          const verifyUrl = `http://localhost:8000/auth/verify?session_id=${savedSessionId}`;
           const vResp = await fetch(verifyUrl);
           const vData = await vResp.json();
           
@@ -151,7 +151,7 @@ function App() {
           const phone = state?.customer_data?.phone;
           
           if (phone) {
-            const advisoryRes = await fetch(`http://192.168.0.231:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {
@@ -233,6 +233,10 @@ function App() {
               preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
               underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
               loan_terms: fullState.loan_terms || prev.loan_terms,
+              disbursement_step: fullState.disbursement_step,
+              net_disbursement_amount: fullState.net_disbursement_amount,
+              needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document'),
+              requiredDocuments: fullState.required_documents || prev.requiredDocuments,
             }));
           }
         });
@@ -276,14 +280,39 @@ function App() {
       }));
 
       if (suggestion.options && suggestion.options.length > 0) {
+        // Apply first option's restructured terms to appState so the EMI slider shows correct values
+        const firstOption = suggestion.options[0];
+        setAppState(prev => ({
+          ...prev,
+          requestedAmount: firstOption.amount || prev.requestedAmount,
+          tenure: firstOption.tenure || prev.tenure,
+          emi: firstOption.emi || prev.emi,
+        }));
         setChatPhase('negotiate');
-        pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.", 'emi_slider');
+        pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then click 'Apply Revised Terms' to finalize.", 'emi_slider');
+      } else if (suggestion?.requires_salary) {
+        // Salary is missing — show a helpful prompt with action buttons to retry
+        const salaryMsg = suggestion?.message || 
+          "We need your monthly income to propose negotiable options. Please provide your monthly salary to continue.";
+        setChatHistory(prev => [...prev, {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          sender: 'agent',
+          type: 'text',
+          content: `${salaryMsg}\n\nPlease share your monthly salary (for example: 'My salary is 60000') and then click Negotiate again.`,
+          options: ['Negotiate', 'Download Rejection Letter'],
+          timestamp: new Date(),
+        }]);
       } else {
-        let fallbackMessage = suggestion?.message || "Unfortunately, we cannot offer a restructured loan at this time.";
-        if (suggestion?.requires_salary) {
-          fallbackMessage += " Please share your monthly salary (for example: 'My salary is 60000') and then click Negotiate again.";
-        }
-        pushAgentMessage(fallbackMessage);
+        // No viable options at all — show rejection messaging with buttons
+        const fallbackMessage = suggestion?.message || "Unfortunately, we cannot offer a restructured loan at this time.";
+        setChatHistory(prev => [...prev, {
+          id: `msg-${Date.now()}-${Math.random()}`,
+          sender: 'agent',
+          type: 'text',
+          content: fallbackMessage,
+          options: ['Download Rejection Letter'],
+          timestamp: new Date(),
+        }]);
       }
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
@@ -596,6 +625,8 @@ function App() {
           salary: state.customer_data?.salary || 0,
           needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document'),
           requiredDocuments: state.required_documents || [],
+          disbursement_step: state.disbursement_step,
+          net_disbursement_amount: state.net_disbursement_amount,
         };
         setAppState(sData);
         if (state.customer_data?.phone) {
@@ -651,7 +682,7 @@ function App() {
           
           if (phone) {
             // Try to fetch advisory message
-            const advisoryRes = await fetch(`http://192.168.0.231:8000/advisory/loans/${phone}/message?intent=general`);
+            const advisoryRes = await fetch(`http://localhost:8000/advisory/loans/${phone}/message?intent=general`);
             if (advisoryRes.ok) {
               const advisoryData = await advisoryRes.json();
               if (advisoryData.message) {
@@ -778,6 +809,10 @@ function App() {
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
             loan_terms: fullState.loan_terms || prev.loan_terms,
             salary: fullState.customer_data?.salary || prev.salary,
+            disbursement_step: fullState.disbursement_step,
+            net_disbursement_amount: fullState.net_disbursement_amount,
+            needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document'),
+            requiredDocuments: fullState.required_documents || prev.requiredDocuments,
           }));
         }
       } catch (err) {

@@ -71,6 +71,32 @@ def route_next_agent(state: MasterState):
     if intent == "document_request":
         return "sanction_agent", "User requesting official loan documentation (Sanction/Rejection)."
 
+    # ─── PHASE 8: HYBRID DISBURSEMENT & NEGOTIATION LOOP ───────────────────────
+    
+    # 🟢 1. The Disbursement Hook (Approved)
+    if decision == "approve":
+        # If the 5-step disbursement is totally finished, route to the final advisor greeting
+        if state.get("disbursement_step") == "completed":
+            return "sales_agent", "Disbursement complete. Providing post-sanction orientation."
+            
+        # Otherwise, hand off to our new Subgraph!
+        return "disbursement_process", "Loan approved. Routing to 5-Step Disbursement Subgraph."
+
+    # 🟡 2. The Soft-Reject Loop (Negotiation)
+    if decision == "soft_reject":
+        accepted_offer = state.get("user_accepted_counter_offer", False)
+        
+        if not accepted_offer:
+            # Route to Closer to pitch the Option A / Option B
+            return "persuasion_agent", "Soft reject detected. Routing to Closer for counter-offer negotiation."
+        else:
+            # User clicked 'Accept' on the UI or typed yes. Route back to Underwriting to formalize the new math.
+            return "underwriting_agent", "User accepted counter-offer. Re-running underwriting math for final approval."
+
+    # 🔴 3. The Hard Reject (Advisory)
+    if decision == "hard_reject":
+        return "sales_agent", "Hard reject. Providing alternative financial wellness advice."
+
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
         # Always prioritize Arjun (Sales) for a human conversation unless terms are fully confirmed
@@ -103,32 +129,6 @@ def route_next_agent(state: MasterState):
                 return "underwriting_agent", "KYC verified. Reviewing for credit decision."
             else:
                 return "verification_agent", "Awaiting KYC completion before underwriting."
-
-    # ─── PHASE 8: HYBRID DISBURSEMENT & NEGOTIATION LOOP ───────────────────────
-    
-    # 🟢 1. The Disbursement Hook (Approved)
-    if decision == "approve":
-        # If the 5-step disbursement is totally finished, route to the final advisor greeting
-        if state.get("disbursement_step") == "completed":
-            return "sales_agent", "Disbursement complete. Providing post-sanction orientation."
-            
-        # Otherwise, hand off to our new Subgraph!
-        return "disbursement_process", "Loan approved. Routing to 5-Step Disbursement Subgraph."
-
-    # 🟡 2. The Soft-Reject Loop (Negotiation)
-    if decision == "soft_reject":
-        accepted_offer = state.get("user_accepted_counter_offer", False)
-        
-        if not accepted_offer:
-            # Route to Closer to pitch the Option A / Option B
-            return "persuasion_agent", "Soft reject detected. Routing to Closer for counter-offer negotiation."
-        else:
-            # User clicked 'Accept' on the UI or typed yes. Route back to Underwriting to formalize the new math.
-            return "underwriting_agent", "User accepted counter-offer. Re-running underwriting math for final approval."
-
-    # 🔴 3. The Hard Reject (Advisory)
-    if decision == "hard_reject":
-        return "sales_agent", "Hard reject. Providing alternative financial wellness advice."
 
     # ─── GLOBAL FALLBACK ───────────────────────────────────────────────────────
     if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):

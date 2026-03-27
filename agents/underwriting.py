@@ -167,13 +167,46 @@ async def underwriting_agent_node(state: dict) -> dict:
             if dti > MAX_SAFE_DTI:
                 reasons.append(f"DTI Ratio ({dti:.2%}) exceeds safe limit ({MAX_SAFE_DTI:.0%}). Offering restructured terms.")
                 decision = "soft_reject"
-                # Calculate what we CAN offer
-                max_viable_emi = (MAX_SAFE_DTI * salary) - existing_emi
-                if max_viable_emi > 0:
-                    alternative_offer = max_viable_emi
-            else:
-                # DTI is acceptable → approve
-                decision = "approve"
+
+                # 🟢 NEW: Pre-calculate safe boundaries for persuasion (STEP-1)
+                # Max safe EMI based on 50% DTI rule
+                max_safe_emi = (MAX_SAFE_DTI * salary) - existing_emi
+
+                # Safety check
+                if max_safe_emi > 0:
+                # Offer extended tenure (fixed for hackathon simplicity)
+                    extended_tenure = 60
+
+                    r = rate / 12 / 100  # monthly interest rate
+
+                    if r == 0:
+                        safe_emi_60m = principal / extended_tenure
+                else:
+                    safe_emi_60m = principal * r * ((1 + r)**extended_tenure) / (((1 + r)**extended_tenure) - 1)
+
+                # 🟢 STORE FOR PERSUASION AGENT
+                state["persuasion_options"] = [{
+                    "type": "extend_tenure",
+                    "original_amount": principal,
+                    "suggested_tenure": extended_tenure,
+                    "suggested_emi": safe_emi_60m,
+                    "max_safe_emi": max_safe_emi
+                }]
+
+                # Optional logging (very useful for demo/debug)
+                log = state.get("action_log", [])
+                log.append(
+                    f"⚠️ Soft Reject Triggered | DTI: {dti:.2%} | Max Safe EMI: ₹{max_safe_emi:.2f} | Suggested Tenure: {extended_tenure}"
+                )
+                state["action_log"] = log
+
+                # # Calculate what we CAN offer
+                # max_viable_emi = (MAX_SAFE_DTI * salary) - existing_emi
+                # if max_viable_emi > 0:
+                #     alternative_offer = max_viable_emi
+                # else:
+                #     # DTI is acceptable → approve
+                #     decision = "approve"
         
         else:
             # Principal within pre-approved limit → approve

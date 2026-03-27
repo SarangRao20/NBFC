@@ -226,7 +226,7 @@ async def generate_sanction(session_id: str) -> dict:
 
 
 async def process_esign_acceptance(session_id: str) -> dict:
-    """Process e-sign acceptance and route to advisory agent."""
+    """Process e-sign acceptance and trigger disbursement flow for approved loans."""
     state = await get_session(session_id)
     if not state:
         return None
@@ -237,28 +237,49 @@ async def process_esign_acceptance(session_id: str) -> dict:
     
     cust_name = customer.get("name", "Customer")
     principal = terms.get("principal", 0)
-    
-    # Generate thank you message
-    if decision == "approve":
+
+    # ── For APPROVED loans: trigger the disbursement flow ──────────────────────
+    if decision == "approve" and principal > 0:
+        # Calculate net disbursement (mirrors subgraphs.py net_calc_node)
+        fee = principal * 0.01       # 1% Processing Fee
+        gst = fee * 0.18            # 18% GST on Fee
+        bpi = 450.00                # Mock Broken Period Interest
+        net_amount = principal - fee - gst - bpi
+
         thank_you_msg = (
             f"🎉 **Congratulations {cust_name}!**\n\n"
             f"Your loan of ₹{principal:,.0f} has been successfully approved and e-signed!\n\n"
-            f"📄 **Next Steps:**\n"
-            f"• Your sanction letter will be sent to your registered email\n"
-            f"• Our advisory team will now contact you for documentation guidance\n"
-            f"• Loan disbursement will begin after document verification\n\n"
-            f"Thank you for choosing FinServe NBFC! 🙏"
+            f"💰 **Net Disbursement:** ₹{net_amount:,.2f}\n"
+            f"_(After deducting processing fee, GST, and broken period interest)_\n\n"
+            f"Please complete the **RBI Compliance Checklist** below to authorize the final disbursement."
         )
-    else:
-        thank_you_msg = (
-            f"📝 **Thank you {cust_name}**\n\n"
-            f"We've received your e-sign on the loan decision letter.\n\n"
-            f"🤝 **Next Steps:**\n"
-            f"• Our advisory team will provide personalized guidance\n"
-            f"• We'll help you improve your eligibility for future applications\n"
-            f"• Free financial planning consultation will be arranged\n\n"
-            f"Thank you for considering FinServe NBFC! 🙏"
-        )
+
+        # Set disbursement_step to ui_paused so the frontend shows the compliance UI
+        await update_session(session_id, {
+            "esign_completed": True,
+            "net_disbursement_amount": net_amount,
+            "disbursement_step": "ui_paused",
+            "current_phase": "disbursement",
+        })
+
+        return {
+            "success": True,
+            "message": thank_you_msg,
+            "next_step": "disbursement",
+            "disbursement_step": "ui_paused",
+            "net_disbursement_amount": net_amount,
+        }
+
+    # ── For non-approved decisions: advisory flow ─────────────────────────────
+    thank_you_msg = (
+        f"📝 **Thank you {cust_name}**\n\n"
+        f"We've received your e-sign on the loan decision letter.\n\n"
+        f"🤝 **Next Steps:**\n"
+        f"• Our advisory team will provide personalized guidance\n"
+        f"• We'll help you improve your eligibility for future applications\n"
+        f"• Free financial planning consultation will be arranged\n\n"
+        f"Thank you for considering FinServe NBFC! 🙏"
+    )
     
     # Route to sales agent for advisory mode (post-sanction guidance)
     from agents.sales_agent import sales_agent_node

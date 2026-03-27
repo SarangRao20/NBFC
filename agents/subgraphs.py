@@ -60,10 +60,14 @@ def direct_transfer_node(state: MasterState):
 
 def cooling_off_node(state: MasterState):
     """Step 6: Initiate 1-day cooling-off tracking"""
+    current_log = state.get("action_log", [])
+    current_log.append("🎉 Funds successfully transferred to linked bank account.")
+    
     return {
         "cooling_off_active": True,
         "disbursement_step": "completed",
-        "current_phase": "sanction",
+        "current_phase": "completed",
+        "action_log": current_log,
         "messages": [AIMessage(content="🎉 **Disbursement Successful!** \n\nYour funds have been transferred. Under RBI Digital Lending Guidelines, your 1-day cooling-off period is now active. Check your dashboard for details.")]
     }
 

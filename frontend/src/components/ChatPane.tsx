@@ -245,8 +245,18 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                         if (!appState.sessionId) return;
                         setIsSigning(true);
                         try {
-                          await apiClient.esignAccept(appState.sessionId);
-                          onSendMessage("I accept the sanction letter and e-sign it.");
+                          const esignResult = await apiClient.esignAccept(appState.sessionId);
+                          // If the backend returns disbursement state, apply it immediately
+                          if (esignResult?.disbursement_step) {
+                            setAppState(prev => ({
+                              ...prev,
+                              disbursement_step: esignResult.disbursement_step,
+                              net_disbursement_amount: esignResult.net_disbursement_amount || prev.net_disbursement_amount,
+                            }));
+                          }
+                          if (esignResult?.message) {
+                            onSendMessage("I accept the sanction letter and e-sign it.");
+                          }
                         } catch (err) {
                           console.error('E-sign failed:', err);
                         } finally {
@@ -319,6 +329,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
           )}
 
           {msg.type === 'emi_slider' && (
+            <>
             <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[85%] w-[460px]">
               <p className="text-slate-800 text-[15px] font-medium leading-relaxed mb-6">
                 {msg.content}
@@ -357,6 +368,16 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                 </div>
               </div>
             </div>
+
+            {/* 🟢 NEW: The Apply Button */}
+            <button onClick={() => {
+                // Send the exact revised terms back to the backend
+                onSendMessage(`I accept the revised offer: ${appState.tenure} months tenure.`);
+              }}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md transition-all active:scale-95 flex justify-center items-center">
+                Apply Revised Terms <CheckCircle2 size={18} className="ml-2" />
+            </button>
+            </>
           )}
           {msg.type === 'agent_steps' && (
             <AgentStepsBlock content={msg.content} />

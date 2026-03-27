@@ -55,21 +55,39 @@ async def intent_node(state: dict):
     history = []
     for m in state.get("messages", [])[-3:]:
         role = "User" if isinstance(m, HumanMessage) else "Assistant"
-        history.append(f"{role}: {m.content if hasattr(m, 'content') else str(m)}")
+        history.append(f"{role}: {getattr(m, 'content', str(m))}")
     context_text = "\n".join(history)
     
     # Get the latest user message for extraction
     user_msg = ""
     for m in reversed(state.get("messages", [])):
         if isinstance(m, HumanMessage):
-            user_msg = m.content
+            user_msg = getattr(m, 'content', str(m))
             break
-    # 🟢 HYBRID DISBURSEMENT INTERCEPT
-    if "signed the kfs" in user_msg.lower() and "authorized e-nach" in user_msg.lower():
+
+    # 🟢 PERSUASION LOOP INTERCEPT (CRITICAL)
+    if state.get("next_expected_action") == "user_choice_persuasion" and user_msg:
+        log.append("🤝 Detected persuasion loop response. Routing to Persuasion Handler...")
+
+        from agents.persuasion_agent import process_persuasion_response
+        result = process_persuasion_response(user_msg, state)
+
+        # Merge logs safely
+        result["action_log"] = log + result.get("action_log", [])
+
+        return result
+
+    # 🟢 2. HYBRID DISBURSEMENT INTERCEPT (Final Step)
+    # Triggered when user clicks "Execute Direct Bank Transfer" in the frontend
+    user_lower = user_msg.lower()
+    if ("signed" in user_lower and "kfs" in user_lower) or ("authorized" in user_lower and "e-nach" in user_lower):
         log.append("✅ User digitally signed KFS and authorized e-NACH. Resuming Disbursement...")
         return {
+            "intent": "loan",
+            "current_phase": "disbursement",
             "kfs_signed": True, 
             "enach_setup": True,
+            "esign_completed": True,
             "disbursement_step": "compliance_verified",
             "action_log": log
         }

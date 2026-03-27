@@ -208,46 +208,6 @@ A financial advisor
 Act with clarity, control, and precision.
 """
 
-
-def _calculate_options(salary, existing_emi, rate, original_principal, original_tenure):
-    """Generate viable restructured loan options."""
-    max_emi = (0.50 * salary) - existing_emi
-    if max_emi <= 0:
-        return [], 0
-
-    options = []
-
-    # Option A: Same tenure, lower amount
-    r_monthly = (rate / 12) / 100
-    n = original_tenure
-    if r_monthly > 0 and n > 0:
-        max_principal_same_tenure = max_emi * (((1 + r_monthly) ** n) - 1) / (r_monthly * ((1 + r_monthly) ** n))
-        max_principal_same_tenure = round(max_principal_same_tenure, -3)  # Round to nearest 1000
-        if max_principal_same_tenure > 0:
-            new_emi = calculate_emi(max_principal_same_tenure, rate, n)
-            options.append({
-                "label": f"Reduce to ₹{max_principal_same_tenure:,.0f} ({n} months)",
-                "amount": max_principal_same_tenure,
-                "tenure": n,
-                "emi": new_emi
-            })
-
-    # Option B & C: Extended tenures
-    for extended_tenure in [36, 48, 60]:
-        if extended_tenure <= original_tenure:
-            continue
-        emi_extended = calculate_emi(original_principal, rate, extended_tenure)
-        if emi_extended > 0 and (existing_emi + emi_extended) / salary <= 0.50:
-            options.append({
-                "label": f"Full ₹{original_principal:,.0f} ({extended_tenure} months)",
-                "amount": original_principal,
-                "tenure": extended_tenure,
-                "emi": emi_extended
-            })
-
-    return options, round(max_principal_same_tenure if options else 0)
-
-
 async def persuasion_agent_node(state: dict) -> dict:
     """Persuasion Loop: negotiate revised loan terms after soft rejection."""
     print("🤝 [PERSUASION AGENT] Entering negotiation mode...")
@@ -286,8 +246,24 @@ async def persuasion_agent_node(state: dict) -> dict:
         }
 
     # Calculate viable options
-    options, max_amount = _calculate_options(salary, existing_emi, rate, principal, tenure)
-    log.append(f"📊 Calculated {len(options)} viable restructuring plans.")
+    # 🟢 NEW: Use precomputed options from underwriting
+    options = state.get("persuasion_options", [])
+
+    # 🟢 Normalize underwriting format → UI format
+    normalized_options = []
+
+    for opt in options:
+        if "suggested_tenure" in opt:
+            normalized_options.append({
+                "label": f"₹{opt['original_amount']:,.0f} for {opt['suggested_tenure']} months",
+                "amount": opt["original_amount"],
+                "tenure": opt["suggested_tenure"],
+                "emi": opt["suggested_emi"]
+            })
+        else:
+            normalized_options.append(opt)
+
+    options = normalized_options
 
     if not options:
         # No viable restructuring possible → hard reject
@@ -372,10 +348,12 @@ async def persuasion_agent_node(state: dict) -> dict:
 
     return {
         "negotiation_round": negotiation_round,
-        "persuasion_options": options,
+        "persuasion_options": state.get("persuasion_options", []),
         "messages": [AIMessage(content=msg)],
         "action_log": log,
-        "options": opts_buttons
+        "options": opts_buttons,
+
+        "next_expected_action": "user_choice_persuasion"
     }
 
 
@@ -428,6 +406,8 @@ def process_persuasion_response(user_response: str, state: dict) -> dict:
                     "requested_amount": terms.get("requested_amount", opt["amount"])  # Preserve original request
                 },
                 "decision": "", # Reset for re-evaluation
+                "user_accepted_counter_offer": True,
+                "next_expected_action": None, 
                 "persuasion_status": "accepted",
                 "action_log": log,
                 "messages": [AIMessage(content=(
