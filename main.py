@@ -52,12 +52,15 @@ app = FastAPI(
 
 # Global Exception Handler to log full tracebacks to terminal
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    print("\n" + "="*50)
-    print(f"🔥 UNHANDLED EXCEPTION: {request.method} {request.url}")
-    print("="*50)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"❌ GLOBAL ERROR: {request.method} {request.url}")
+    print(f"❌ Error type: {type(exc).__name__}")
+    print(f"❌ Error message: {str(exc)}")
+    print(f"❌ Stack trace:")
+    import traceback
     traceback.print_exc()
-    print("="*50 + "\n")
+    
+    # Return proper error response without trying to serialize problematic data
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error. Check terminal logs."},
