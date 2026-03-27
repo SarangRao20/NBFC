@@ -187,22 +187,22 @@ async def underwriting_agent_node(state: dict) -> dict:
             # Principal within pre-approved limit → approve
             decision = "approve"
 
-    # Rule 7: Smart Offer Optimization + Soft Reject Classification
-    # Per workflow diagram: DTI-only failures with good credit → "soft_reject" (Persuasion Loop)
-    # Hard rejects (fraud, low credit score, exposure) remain "reject"
+    # Rule 7: Smart Offer Optimization + Direct Approvals/Rejects
+    # Simplified: No persuasion loop - direct decisions for cleaner flow
     if decision == "reject" and fraud_score < 0.7 and score >= 700:
         # Calculate maximum mathematically viable EMI
         max_viable_emi = (0.50 * salary) - existing_emi
         if max_viable_emi > 0:
             alt_p = _calculate_max_principal(max_viable_emi, rate, tenure)
-            # Cap the alternative offer to the absolute maximum exposure limit (2x pre-approved)
+            # Cap alternative offer to absolute maximum exposure limit (2x pre-approved)
             alt_p = min(alt_p, 2 * pre_approved)
             # Round down to nearest 5000 for realistic offering
             alt_p = (alt_p // 5000) * 5000
             alternative_offer = alt_p
-            # Reclassify as soft_reject — eligible for Persuasion Loop negotiation
-            if alt_p > 1000:
-                decision = "soft_reject"
+            # Just provide information about alternative options - no complex negotiation
+            print(f"💡 [UNDERWRITING] Customer qualifies for alternative: ₹{alternative_offer:,.0f}")
+        else:
+            alternative_offer = 0
 
     # Rule 9: Explainability Layer Output Generator
     # ── Arjun's Human-Centric Decisioning ──

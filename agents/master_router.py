@@ -111,9 +111,9 @@ def route_next_agent(state: MasterState):
     if intent == "unclear" or intent == "unclear_greeting":
         return "__end__", "Waiting for user clarification (unclear intent)."
 
-    if decision in ("approve", "soft_reject", "hard_reject"):
-        # If soft_reject, we stay in sales (Arjun) for negotiation until agreement
-        if decision == "soft_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
+    if decision in ("approve", "hard_reject"):
+        # If hard reject, we stay in sales (Arjun) for final communication
+        if decision == "hard_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
             # Only go to sanction if the user has accepted the negotiation (this would be set by Arjun)
             if not state.get("negotiation_signed_off"):
                 return "sales_agent", "Loan soft-rejected. Arjun is handling the persuasion/negotiation loop."
