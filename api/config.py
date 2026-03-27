@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment."""
     APP_NAME: str = "NBFC Loan Processing API"
     APP_VERSION: str = "1.0.0"
+    APP_ENV: str = os.getenv("APP_ENV", "development")
     DEBUG: bool = True
 
     # File storage
