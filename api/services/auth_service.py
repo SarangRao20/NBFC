@@ -19,7 +19,7 @@ CUSTOMERS_FILE = os.path.join("mock_apis", "customers.json")
 
 def load_mock_customers() -> List[Dict]:
     """Load mock customers only in development mode"""
-    if settings.APP_ENV == "production":
+    if get_settings().APP_ENV == "production":
         return []
     if os.path.exists(CUSTOMERS_FILE):
         with open(CUSTOMERS_FILE, "r") as f:
@@ -28,7 +28,7 @@ def load_mock_customers() -> List[Dict]:
 
 def save_mock_customers(customers: List[Dict]):
     """Save mock customers only in development mode"""
-    if settings.APP_ENV == "production":
+    if get_settings().APP_ENV == "production":
         return
     with open(CUSTOMERS_FILE, "w") as f:
         json.dump(customers, f, indent=4)
@@ -40,6 +40,7 @@ class AuthService:
     def __init__(self):
         self.cache: Optional[RedisCache] = None
         self.email_service: Optional[EmailService] = None
+        self.settings = get_settings()
     
     async def _get_services(self):
         """Initialize services if not already done"""
@@ -236,7 +237,7 @@ class AuthService:
             if not customer_data:
                 return {
                     "is_complete": False,
-                    "missing_fields": settings.REQUIRED_PROFILE_FIELDS,
+                    "missing_fields": get_settings().REQUIRED_PROFILE_FIELDS,
                     "completeness_percentage": 0.0,
                     "message": "Customer not found. Please register first."
                 }
@@ -245,14 +246,14 @@ class AuthService:
             missing_fields = []
             filled_fields = 0
             
-            for field in settings.REQUIRED_PROFILE_FIELDS:
+            for field in get_settings().REQUIRED_PROFILE_FIELDS:
                 value = customer_data.get(field)
                 if value is None or value == "" or (isinstance(value, (int, float)) and value <= 0):
                     missing_fields.append(field)
                 else:
                     filled_fields += 1
             
-            total_fields = len(settings.REQUIRED_PROFILE_FIELDS)
+            total_fields = len(get_settings().REQUIRED_PROFILE_FIELDS)
             completeness = (filled_fields / total_fields) * 100 if total_fields > 0 else 0
             
             is_complete = len(missing_fields) == 0
@@ -286,7 +287,7 @@ class AuthService:
             print(f"❌ Profile completeness check failed: {e}")
             return {
                 "is_complete": False,
-                "missing_fields": settings.REQUIRED_PROFILE_FIELDS,
+                "missing_fields": get_settings().REQUIRED_PROFILE_FIELDS,
                 "completeness_percentage": 0.0,
                 "message": f"Profile check failed: {str(e)}"
             }
