@@ -79,7 +79,7 @@ app.add_middleware(
         "http://0.0.0.0:5173",
         # Add your Vercel frontend URL here after deployment
         "https://*.vercel.app",  # Allow all Vercel domains
-        "https://your-project-name.vercel.app",  # Replace with your actual URL
+        "https://nbfc-frontend.vercel.app",  # Replace with your actual URL
     ],
     allow_credentials=True,
     allow_methods=["*"],
