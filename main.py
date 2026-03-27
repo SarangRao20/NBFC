@@ -81,6 +81,7 @@ app.add_middleware(
         "https://*.vercel.app",  # Allow all Vercel domains
         "https://nbfc-inc.vercel.app",  # Your actual Vercel URL
         "https://nbfc-inc.onrender.com",  # Allow Render to access itself
+        "https://vercel.app",  # Allow Vercel's custom domains
     ],
     allow_credentials=True,
     allow_methods=["*"],

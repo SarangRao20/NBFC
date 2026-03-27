@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    }
+  ],
+  "env": {
+    "MONGO_URI": "mongodb+srv://sumitarya6217dev_db_user:UHsZbulQxJF6z80R@nbfc-inc.wbkckl9.mongodb.net/?retryWrites=true&w=majority",
+    "APP_ENV": "production",
+    "OPENAI_API_KEY": "@openai-api-key",
+    "GEMINI_API_KEY": "@gemini-api-key",
+    "GROQ_API_KEY": "@groq-api-key"
+  }
+}

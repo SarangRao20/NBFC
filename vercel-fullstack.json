@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "api/main.py", 
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "MONGO_URI": "mongodb+srv://sumitarya6217dev_db_user:UHsZbulQxJF6z80R@nbfc-inc.wbkckl9.mongodb.net/?retryWrites=true&w=majority",
+    "APP_ENV": "production",
+    "OPENAI_API_KEY": "@openai-api-key",
+    "GEMINI_API_KEY": "@gemini-api-key", 
+    "GROQ_API_KEY": "@groq-api-key"
+  }
+}
