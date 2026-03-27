@@ -480,25 +480,50 @@ class AuthService:
             }
     
     async def login_with_password(self, phone: str, password: str) -> Dict[str, Any]:
-        """Login with phone and password using mock customers database."""
-        customers = load_mock_customers()
-        user = next((c for c in customers if c.get("phone") == phone), None)
+        """Login with phone and password using MongoDB database."""
+        await self._get_services()
         
-        if not user:
-            return {"success": False, "message": "User not found"}
-        
-        if user.get("password") != password:
-            return {"success": False, "message": "Invalid password"}
-        
-        # Create session
-        session_data = await self.create_login_session(phone)
-        
-        return {
-            "success": True,
-            "message": "Login successful",
-            "session_id": session_data["session_id"],
-            "customer_data": user
-        }
+        try:
+            # First check MongoDB
+            from db.database import users_collection
+            user = await users_collection.find_one({"phone": phone})
+            
+            # If not found in MongoDB and in development mode, check mock customers
+            if not user and get_settings().APP_ENV != "production":
+                customers = load_mock_customers()
+                user = next((c for c in customers if c.get("phone") == phone), None)
+            
+            if not user:
+                return {
+                    "success": False,
+                    "message": "User not found"
+                }
+            
+            # Check password (assuming plain text for now - should be hashed in production)
+            stored_password = user.get("password", "")
+            if stored_password != password:
+                return {
+                    "success": False,
+                    "message": "Invalid password"
+                }
+            
+            # Create session
+            session_result = await self.create_login_session(phone)
+            
+            return {
+                "success": True,
+                "message": "Login successful",
+                "user": user,
+                "customer_data": user,
+                "session_id": session_result["session_id"]
+            }
+            
+        except Exception as e:
+            print(f"❌ Login error: {e}")
+            return {
+                "success": False,
+                "message": f"Login failed: {str(e)}"
+            }
 
     async def register_customer(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Register new customer and save to both mock JSON and MongoDB."""
