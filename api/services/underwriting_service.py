@@ -84,10 +84,14 @@ async def underwrite(session_id: str) -> dict:
     # calculate_foir returns a fraction (e.g., 0.45 for 45%). Do NOT divide by 100 here.
     dti = calculate_foir(existing_emi, emi, salary)
 
+    # If DTI usage is disabled via settings (demo/test mode), treat DTI as neutral (0.0)
+    if not settings.USE_DTI_SCORE:
+        dti = 0.0
+
     # Risk Classification
-    if score < 720 or dti > 0.40 or principal > pre_approved:
+    if score < 720 or (settings.USE_DTI_SCORE and dti > 0.40) or principal > pre_approved:
         risk_level = "high"
-    elif 720 <= score <= 750 or 0.30 <= dti <= 0.40:
+    elif 720 <= score <= 750 or (settings.USE_DTI_SCORE and 0.30 <= dti <= 0.40):
         risk_level = "medium"
     else:
         risk_level = "low"
@@ -111,12 +115,12 @@ async def underwrite(session_id: str) -> dict:
         if not docs.get("verified"):
             reasons.append("Loan exceeds pre-approved limit; additional income verification required.")
             decision = "pending_docs"
-        elif dti > settings.MAX_DTI_RATIO:
+        elif settings.USE_DTI_SCORE and dti > settings.MAX_DTI_RATIO:
             reasons.append(f"⚠️ DTI ratio ({dti*100:.1f}%) is high and exceeds maximum allowed ({settings.MAX_DTI_RATIO*100:.0f}%).")
             decision = "reject"
     else:
         # Principal <= pre_approved — still enforce DTI limits
-        if dti > settings.MAX_DTI_RATIO:
+        if settings.USE_DTI_SCORE and dti > settings.MAX_DTI_RATIO:
             reasons.append(f"⚠️ DTI ratio ({dti*100:.1f}%) exceeds maximum allowed ({settings.MAX_DTI_RATIO*100:.0f}%).")
             decision = "reject"
 

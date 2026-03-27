@@ -112,7 +112,10 @@ class MasterState(TypedDict):
     
     # ─── Routing & Logging ─────────────────────────────────────────────────────
     next_agent: str
+    previous_agent: Optional[str]  # ✅ Added: Internal tracker to prevent loops
     routing_reasoning: str
     action_log: List[str]  # human-readable step log for UI + advisor
     options: List[str]  # interaction buttons
+    eligible_offers: List[Dict] # ✅ NEW: NBFC offers for selection
+    sales_output: Dict # ✅ NEW: Structured sales data for UI
 

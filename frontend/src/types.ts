@@ -19,6 +19,8 @@ export interface AppState {
     pan: 'pending' | 'verified';
     bankStatement: 'pending' | 'verified';
   };
+  documents_uploaded: boolean;
+  eligible_offers: any[];
   actionLog: string[];
   options: string[];
   loan_terms?: {

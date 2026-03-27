@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from config import get_master_llm
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from mock_apis.loan_products import LOAN_PRODUCTS
+from mock_apis.lender_apis import aggregate_lender_offers
 from agents.session_manager import SessionManager
 from api.core.websockets import manager
 
@@ -66,6 +67,18 @@ def _parse_tenure_months(text: str) -> Optional[int]:
         if 6 <= n <= 120:
             return n
     return None
+
+
+def _safe_float(val, default=0.0):
+    try:
+        if isinstance(val, (int, float)): return float(val)
+        if not val: return default
+        # Remove symbols and handle fractions if any
+        clean = str(val).lower().replace("₹", "").replace(",", "").replace("%", "").strip()
+        if "tbd" in clean or "discuss" in clean: return default
+        nums = re.findall(r"[\d.]+", clean)
+        return float(nums[0]) if nums else default
+    except: return default
 
 
 from utils.financial_rules import calculate_emi
@@ -147,6 +160,7 @@ When the user shares technical details OR you reach agreement, include this at t
   "tenure": 12,
   "interest_rate": 14.0,
   "confirmed": false,
+  "pending_question": "loan_amount/tenure/purpose/none",
   "required_documents": ["Identity (PAN or Aadhaar)", "..."],
   "options": ["...", "..."]
 }
@@ -583,9 +597,23 @@ async def _sales_mode(state: dict):
     tenure = existing_terms.get("tenure", 0) or 0
     rate_pa = float(existing_terms.get("rate", 12.0) or 12.0)
     pending_q = state.get("pending_question")
-    user_clean = (user_msg or "").strip().lower()
-    
+    # ─── DETERMINISTIC EXTRACTION (Regex Fallback) ────
+    # If values are missing in existing_terms, try to parse them from the CURRENT user message.
+    # This acts as a safety layer before the LLM.
+    if principal == 0:
+        p_amt = _parse_amount_inr(user_msg)
+        if p_amt:
+            principal = p_amt
+            log.append(f"🔢 Deterministically extracted amount: ₹{principal:,.0f}")
+            
+    if tenure == 0:
+        p_ten = _parse_tenure_months(user_msg)
+        if p_ten:
+            tenure = p_ten
+            log.append(f"📅 Deterministically extracted tenure: {tenure} months")
+
     # ─── DETECT CONFIRMATION (User agreeing to terms) ────
+    user_clean = (user_msg or "").strip().lower()
     confirmation_keywords = {
         "fair enough", "okay", "ok", "fine", "good", "perfect", "alright", 
         "update", "confirmed", "confirmed", "confirm", "proceed", "go ahead", 
@@ -595,39 +623,48 @@ async def _sales_mode(state: dict):
     is_user_confirming = any(kw in user_clean for kw in confirmation_keywords)
     
     # If user is confirming, inject a signal to the LLM
-    lllm_user_signal = ""
+    llm_user_signal = ""
     if is_user_confirming and principal > 0 and tenure > 0:
-        lllm_user_signal = "\n[NOTE: User is confirming/accepting the terms above. Emit confirmed: true in JSON.]"
-    
+        llm_user_signal = "\n[NOTE: User is confirming/accepting the terms above. Emit confirmed: true in JSON.]"
+        
     # ─── DETECT RE-NEGOTIATION (User asking for lower amount after rejection) ────
     decision = state.get("decision", "")
-    is_renegotiating = decision in ("hard_reject", "soft_reject") and any(
+    is_renegotiating_amount = decision in ("hard_reject", "soft_reject") and any(
         kw in user_clean for kw in ["lower", "less", "smaller", "different", "another", "reduce"]
     )
     
-    # Preserve requested_amount before resetting principal
-    requested_amount = existing_terms.get("requested_amount", 0)
+    # ─── DETECT RATE NEGOTIATION ────
+    is_negotiating_rate = any(kw in user_clean for kw in ["lower rate", "less interest", "discount", "reduce rate", "negotiate"])
     
-    if is_renegotiating:
+    if is_renegotiating_amount:
         # Reset loan amount to re-collect from user
         principal = 0
         tenure = 0
         log.append("🔄 Re-assessment triggered. Adjusting application parameters for optimal fit.")
+
+    # ─── APPLY RATE DISCOUNT if negotiating ────
+    if is_negotiating_rate:
+        # Check if we have a current lender and offer a small discount if possible
+        current_rate = float(existing_terms.get("rate", 12.0))
+        benchmark_rate = float(state.get("benchmark_rate", 7.0))
+        if current_rate > benchmark_rate + 2.0:
+            rate_pa = max(current_rate - 0.5, benchmark_rate + 1.5)
+            log.append(f"🤝 Negotiation: Offered rate reduction from {current_rate}% to {rate_pa}%")
+        else:
+            log.append("🤝 Negotiation: Rate already at minimum viable. Explaining constraints.")
+
+    # Preserve requested_amount
+    requested_amount = existing_terms.get("requested_amount", 0)
     
-    # Accumulate updates
-    final_updates = {
-        "loan_terms": {
-            **existing_terms,
-            "principal": principal,
-            "tenure": tenure,
-            "rate": rate_pa,
-            "requested_amount": requested_amount,  # Always preserve requested_amount
-            "loan_purpose": existing_terms.get("loan_purpose"), # Initialize with existing, will be updated
-            "loan_type": existing_terms.get("loan_type", "personal") # Initialize with existing, will be updated
-        },
-        "customer_data": customer_context,
-        "current_phase": "sales",
-        "decision": "" if is_renegotiating else decision  # Clear decision when re-negotiating
+    # Merge extracted values into a fresh terms object
+    new_terms = {
+        **existing_terms,
+        "principal": principal,
+        "tenure": tenure,
+        "rate": rate_pa,
+        "requested_amount": requested_amount or (principal if principal > 0 else 0),
+        "loan_purpose": existing_terms.get("loan_purpose"),
+        "loan_type": existing_terms.get("loan_type", "personal")
     }
 
     # Always call LLM to ensure human conversation
@@ -640,12 +677,12 @@ async def _sales_mode(state: dict):
         already_have.append(f"- Loan Amount: ₹{principal:,.0f}")
     if tenure > 0:
         already_have.append(f"- Tenure: {tenure} months ({tenure // 12} years)")
-    if existing_terms.get("loan_purpose"):
-        already_have.append(f"- Loan Purpose: {existing_terms.get('loan_purpose')}")
-    if existing_terms.get("loan_type"):
-        already_have.append(f"- Loan Type: {existing_terms.get('loan_type')}")
-    if existing_terms.get("rate") and existing_terms.get("rate") != 12.0:
-        already_have.append(f"- Interest Rate: {existing_terms.get('rate')}% p.a.")
+    if new_terms.get("loan_purpose"):
+        already_have.append(f"- Loan Purpose: {new_terms.get('loan_purpose')}")
+    if new_terms.get("loan_type"):
+        already_have.append(f"- Loan Type: {new_terms.get('loan_type')}")
+    if new_terms.get("rate") and new_terms.get("rate") != 12.0:
+        already_have.append(f"- Interest Rate: {new_terms.get('rate')}% p.a.")
     
     if already_have:
         extracted_summary += "\n".join(already_have) + "\n\nDO NOT re-ask for any of the above. Move to the next missing piece only."
@@ -666,7 +703,7 @@ async def _sales_mode(state: dict):
         messages.append(role(content=msg["content"]))
     
     # Append user message with confirmation signal if applicable
-    final_user_msg = user_msg + lllm_user_signal if lllm_user_signal else user_msg
+    final_user_msg = user_msg + llm_user_signal if llm_user_signal else user_msg
     messages.append(HumanMessage(content=final_user_msg))
     
     log.append("🧠 Conversing with customer...")
@@ -691,29 +728,18 @@ async def _sales_mode(state: dict):
     updates = {
         "action_log": log,
         "current_phase": "sales",
-        "decision": decision
+        "decision": decision,
+        "loan_terms": new_terms
     }
     
     if extracted:
-        def _safe_float(val, default=0.0):
-            try:
-                if isinstance(val, (int, float)): return float(val)
-                if not val: return default
-                # Remove symbols and handle fractions if any
-                clean = str(val).lower().replace("₹", "").replace(",", "").replace("%", "").strip()
-                if "tbd" in clean or "discuss" in clean: return default
-                nums = _re.findall(r"[\d.]+", clean)
-                return float(nums[0]) if nums else default
-            except: return default
-
         # Update loan terms if LLM extracted new values
-        new_terms = {**existing_terms}
         if extracted.get("loan_amount"): 
-            principal = _safe_float(extracted.get("loan_amount"))
-            if principal > 0:
-                new_terms["principal"] = principal
+            p = _safe_float(extracted.get("loan_amount"))
+            if p > 0:
+                new_terms["principal"] = p
                 if not new_terms.get("requested_amount"):
-                    new_terms["requested_amount"] = principal
+                    new_terms["requested_amount"] = p
                     
         if extracted.get("tenure"): 
             try: new_terms["tenure"] = int(_safe_float(extracted.get("tenure")))
@@ -722,6 +748,9 @@ async def _sales_mode(state: dict):
         if extracted.get("loan_purpose"): new_terms["loan_purpose"] = extracted.get("loan_purpose")
         if extracted.get("loan_type"): new_terms["loan_type"] = extracted.get("loan_type")
         
+        if extracted.get("pending_question"):
+            updates["pending_question"] = extracted.get("pending_question")
+
         if extracted.get("interest_rate"):
             requested_rate = _safe_float(extracted.get("interest_rate"), 12.0)
             benchmark_rate = _safe_float(state.get("benchmark_rate", 7.0))
@@ -730,13 +759,9 @@ async def _sales_mode(state: dict):
                 requested_rate = min_valid_rate
             new_terms["rate"] = requested_rate
 
-        # Calculate EMI if we have principal and tenure
-        if new_terms.get("principal") and new_terms.get("tenure") and new_terms.get("tenure") > 0:
-            rate = _safe_float(new_terms.get("rate", 12.0))
-            new_terms["emi"] = _calc_emi(new_terms["principal"], rate, new_terms["tenure"])
-        
+        # Ensure loan_terms in updates is the most current one
         updates["loan_terms"] = new_terms
-        
+
         if extracted.get("confirmed") is True:
             updates["intent"] = "loan"
             updates["current_phase"] = "kyc_verification"
@@ -751,24 +776,88 @@ async def _sales_mode(state: dict):
                 
             log.append(f"✅ Terms confirmed: ₹{(new_terms.get('principal') or 0):,.0f} for {new_terms.get('tenure')} months @ {new_terms.get('rate')}%.")
             log.append(f"📄 Required Documents: {', '.join(updates['required_documents'])}")
-    else:
-        pass
 
-    # CRITICAL FIX: Append new AI message to conversation history, don't replace it
-    # Ensure user-facing output is aligned with computed loan terms (no stale 4% / wrong AMT text)
-    final_terms = updates.get("loan_terms", {})
-    if final_terms.get("principal") and final_terms.get("tenure") and final_terms.get("rate") and final_terms.get("emi"):
-        visible_reply = (
-            "✅ Loan terms updated (policy-approved values):\n"
-            f"- Loan amount: ₹{(final_terms.get('principal') or 0):,.2f}\n"
-            f"- Tenure: {final_terms.get('tenure')} months\n"
-            f"- Final interest rate: {final_terms.get('rate'):.2f}% p.a.\n"
-            f"- Monthly EMI: ₹{(final_terms.get('emi') or 0):,.2f}\n"
-            "\n(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
-        )
+    # Proactive Lender Choice & EMI Calculation (Independent of 'extracted' but needs terms)
+    if new_terms.get("principal") and new_terms.get("tenure") and new_terms.get("tenure") > 0:
+        salary = _safe_float(customer_context.get("salary"), 50000.0)
+        score = int(_safe_float(customer_context.get("credit_score"), 750.0))
+        
+        try:
+            comp = await aggregate_lender_offers(
+                principal=new_terms["principal"],
+                tenure=new_terms["tenure"],
+                credit_score=score,
+                monthly_income=salary
+            )
+            
+            offers = comp.get("offers", [])
+            updates["eligible_offers"] = offers
+            
+            # If user already selected a lender via button:
+            selected_lender_name = ""
+            for offer in offers:
+                if offer["lender_name"].lower() in user_clean:
+                    selected_lender_name = offer["lender_name"]
+                    new_terms["rate"] = offer["interest_rate"]
+                    updates["selected_lender_id"] = offer["lender_id"]
+                    updates["selected_lender_name"] = offer["lender_name"]
+                    updates["selected_interest_rate"] = offer["interest_rate"]
+                    updates["selected_lender_reg_details"] = offer.get("reg_details", {})
+                    updates["confirmed"] = True
+                    updates["intent"] = "loan"
+                    updates["current_phase"] = "kyc_verification"
+                    log.append(f"🎯 User selected lender: {selected_lender_name}")
+                    break
+
+            if not updates.get("selected_lender_id") and offers:
+                # No selection yet, but we have offers. Present them as options.
+                lender_names = [o["lender_name"] for o in offers]
+                updates["options"] = lender_names
+                updates["pending_question"] = "lender_selection"
+                
+                names_str = ", ".join(lender_names[:-1]) + (f" and {lender_names[-1]}" if len(lender_names) > 1 else lender_names[0])
+                visible_reply = (
+                    f"I've found {len(offers)} great offers for you! We have options from {names_str}. "
+                    "Which one of these would you like to proceed with?"
+                )
+            elif not offers:
+                # No lenders found - might need soft reject later, but for now use default rate
+                if comp.get("max_eligible_amount"):
+                    updates["max_eligible_amount"] = comp.get("max_eligible_amount")
+                    max_amt = updates["max_eligible_amount"]
+                    visible_reply = (
+                        f"I've checked our current lenders, and while we can't quite match ₹{new_terms['principal']:,.0f} right now, "
+                        f"I can get you an offer for up to ₹{max_amt:,.0f} over {new_terms['tenure']} months.\n\n"
+                        "Would you like to proceed with this adjusted amount?"
+                    )
+                    new_terms["principal"] = max_amt
+                else:
+                    if not new_terms.get("rate"):
+                        new_terms["rate"] = 12.0
+                    log.append("⚠️ No matching lenders found for these terms.")
+                    visible_reply = "I'm looking into the best possible rates for you. Could you tell me a bit more about the goal for this loan?"
+        except Exception as e:
+            print(f"⚠️ Lender aggregation failed in sales: {e}")
+            if not new_terms.get("rate"):
+                new_terms["rate"] = 12.0
+
+        new_terms["emi"] = _calc_emi(new_terms["principal"], new_terms["rate"], new_terms["tenure"])
+        updates["loan_terms"] = new_terms
+
+    # ─── PENDING QUESTION FALLBACK ────
+    # If the LLM didn't provide a pending_question but we are missing critical data, set it.
+    if not updates.get("pending_question"):
+        if not new_terms.get("principal"):
+            updates["pending_question"] = "loan_amount"
+        elif not new_terms.get("tenure"):
+            updates["pending_question"] = "tenure"
+        elif not new_terms.get("loan_purpose"):
+            updates["pending_question"] = "loan_purpose"
+        elif not updates.get("loan_confirmed") and not updates.get("confirmed"):
+            updates["pending_question"] = "confirmation"
 
     # Build new messages list: keep all prior messages + add new AI response
-    updated_messages = list(state.get("messages", []))  # Copy all prior messages (HumanMessage/AIMessage objects)
+    updated_messages = list(state.get("messages", []))  # Copy all prior messages
     updated_messages.append(AIMessage(content=visible_reply))
     updates["messages"] = updated_messages
 
@@ -785,4 +874,4 @@ async def _sales_mode(state: dict):
     except Exception as e:
         print(f"⚠️ Failed to save session: {e}")
     
-    return updates
+    return updates

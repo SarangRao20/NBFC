@@ -61,11 +61,32 @@ async def generate_sanction(session_id: str) -> dict:
                                 rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
         styles = getSampleStyleSheet()
         elements = []
+        # Use unified lender state keys
+        selected_lender_name = (
+            state.get("selected_lender_name")
+            or state.get("selected_lender") # Legacy fallback
+            or "FinServe NBFC Ltd."
+        )
+
+        # Load lender details if available
+        lender_info = {}
+        try:
+            import json
+            lenders_path = os.path.join(os.path.dirname(settings.SANCTION_DIR), "mock_apis", "lenders.json")
+            if os.path.exists(lenders_path):
+                with open(lenders_path, "r") as f:
+                    lenders_data = json.load(f)
+                    for l in lenders_data.get("lenders", []):
+                        if l["lender_name"] == selected_lender_name:
+                            lender_info = l
+                            break
+        except Exception as e:
+            print(f"⚠️ Failed to load lender info: {e}")
 
         # Header
-        elements.append(Paragraph("<b>FinServe NBFC Ltd.</b>", styles["Title"]))
-        elements.append(Paragraph("Registered Office: Financial District, Mumbai", styles["Normal"]))
-        elements.append(Paragraph("CIN: U65100MH2024PLC123456", styles["Normal"]))
+        elements.append(Paragraph(f"<b>{selected_lender_name}</b>", styles["Title"]))
+        elements.append(Paragraph(f"Registered Office: {lender_info.get('office', 'Financial District, Mumbai')}", styles["Normal"]))
+        elements.append(Paragraph(f"CIN: {lender_info.get('cin', 'U65100MH2024PLC123456')}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
         title = "LOAN SANCTION LETTER" if is_approved else "LOAN REJECTION LETTER"
@@ -98,11 +119,16 @@ async def generate_sanction(session_id: str) -> dict:
 
         # Loan details
         elements.append(Paragraph("<b>Loan Details</b>", styles["Heading3"]))
+        
+        processing_fee = lender_info.get("processing_fee_percent", 1.0)
+        fee_amount = (principal * processing_fee) / 100
+
         loan_data = [
             ["Amount", f"INR {principal:,.2f}"],
             ["Interest Rate", f"{rate}% p.a."],
             ["Tenure", f"{tenure} months"],
             ["EMI", f"INR {emi:,.2f}"],
+            ["Processing Fee", f"{processing_fee}% (INR {fee_amount:,.2f})"],
             ["DTI Ratio", f"{dti*100:.1f}%"],
         ]
         loan_table = Table(loan_data, colWidths=[200, 250])
@@ -115,8 +141,9 @@ async def generate_sanction(session_id: str) -> dict:
 
         # Footer
         if is_approved:
+            settlement = lender_info.get("settlement_days", 3)
             elements.append(Paragraph(
-                "Congratulations! Your loan has been approved. Complete documentation within 30 days.",
+                f"Congratulations! Your loan has been approved. Disbursement will be initiated within {settlement} business days of document verification.",
                 styles["Normal"]))
         else:
             elements.append(Paragraph(
@@ -125,17 +152,20 @@ async def generate_sanction(session_id: str) -> dict:
 
         elements.append(Spacer(1, 20))
         elements.append(Paragraph("This is a system-generated letter.", styles["Italic"]))
-        elements.append(Paragraph("<b>For FinServe NBFC Ltd.</b>", styles["Normal"]))
+        elements.append(Paragraph(f"<b>For {selected_lender_name}</b>", styles["Normal"]))
 
         # Terms page
         elements.append(PageBreak())
         elements.append(Paragraph("<b>Terms & Conditions</b>", styles["Heading3"]))
+        
+        characteristics = lender_info.get("characteristics", "Terms subject to regulatory guidelines.")
+        
         terms_text = (
             "1. Sanction valid for 30 days from issue. <br/>"
-            "2. Disbursement subject to documentation. <br/>"
-            "3. Late payment: 2% per month penal interest. <br/>"
-            "4. Prepayment permitted after 6 months. <br/>"
-            "5. Terms subject to regulatory guidelines. <br/>"
+            "2. Disbursement subject to successful document verification. <br/>"
+            f"3. {characteristics} <br/>"
+            "4. Late payment: 2% per month penal interest. <br/>"
+            "5. Prepayment permitted after 6 months. <br/>"
         )
         elements.append(Paragraph(terms_text, styles["Normal"]))
 

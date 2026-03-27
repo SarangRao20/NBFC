@@ -171,6 +171,15 @@ export const apiClient = {
     return res.blob();
   },
 
+  async selectLender(sessionId: string, lenderId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/select-lender`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected_lender_id: lenderId })
+    });
+    return checkResponse(res, `/session/${sessionId}/select-lender`);
+  },
+
   async payEmi(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/pay-emi`, { method: 'POST' });
     return checkResponse(res, `/session/${sessionId}/pay-emi`);

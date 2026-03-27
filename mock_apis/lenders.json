@@ -1,9 +1,15 @@
 {
   "lenders": [
     {
-      "lender_id": "bank_a",
-      "lender_name": "Bank A",
+      "lender_id": "hdfc_bank",
+      "lender_name": "HDFC Bank",
       "lender_type": "bank",
+      "reg_details": {
+        "cin": "L65920MH1994PLC080618",
+        "office": "HDFC Bank House, Senapati Bapat Marg, Lower Parel, Mumbai - 400013",
+        "email": "loansupport@hdfcbank.com",
+        "web": "https://www.hdfcbank.com"
+      },
       "interest_rate_range": {
         "min": 9.5,
         "max": 11.5
@@ -17,13 +23,19 @@
       "foir_limit": 0.40,
       "approval_probability": 0.85,
       "risk_profile": "low",
-      "characteristics": "Lowest interest rate, stringent eligibility, good for creditworthy individuals",
+      "characteristics": "Lowest interest rate in the market, perfect for professionals with high credit scores. Offers premium customer service and a wide branch network.",
       "settlement_days": 7
     },
     {
-      "lender_id": "bank_b",
-      "lender_name": "Bank B",
+      "lender_id": "icici_bank",
+      "lender_name": "ICICI Bank",
       "lender_type": "bank",
+      "reg_details": {
+        "cin": "L65190GJ1994PLC021012",
+        "office": "ICICI Bank Tower, Near Chakli Circle, Old Padra Road, Vadodara - 390007",
+        "email": "care@icicibank.com",
+        "web": "https://www.icicibank.com"
+      },
       "interest_rate_range": {
         "min": 10.5,
         "max": 12.5
@@ -32,18 +44,24 @@
       "processing_fee_percent": 0.75,
       "max_loan_amount": 4000000,
       "min_loan_amount": 100000,
-      "tenure_options": [12, 24, 36, 48, 60],
+      "tenure_options": [12, 24, 36, 48, 60, 72],
       "min_credit_score": 700,
       "foir_limit": 0.45,
       "approval_probability": 0.80,
       "risk_profile": "low",
-      "characteristics": "Balanced rates and eligibility, reliable and established",
+      "characteristics": "Highly reliable with a completely digital approval process. Great for existing salary account holders with personalized pre-approved offers.",
       "settlement_days": 5
     },
     {
-      "lender_id": "nbfc_x",
-      "lender_name": "NBFC X",
+      "lender_id": "bajaj_finserv",
+      "lender_name": "Bajaj Finserv",
       "lender_type": "nbfc",
+      "reg_details": {
+        "cin": "L65910PN2007PLC130076",
+        "office": "Bajaj Auto Limited Complex, Mumbai-Pune Road, Akurdi, Pune - 411035",
+        "email": "wecare@bajajfinserv.in",
+        "web": "https://www.bajajfinserv.in"
+      },
       "interest_rate_range": {
         "min": 13.5,
         "max": 16.0
@@ -57,48 +75,61 @@
       "foir_limit": 0.50,
       "approval_probability": 0.95,
       "risk_profile": "medium",
-      "characteristics": "Highest approval rate, more flexible, higher costs",
+      "characteristics": "Market leader in NBFC approvals. Most flexible eligibility criteria and fastest disbursal (often within 2 hours of document verification).",
       "settlement_days": 2
     },
     {
-      "lender_id": "fintech_y",
-      "lender_name": "Fintech Y",
-      "lender_type": "fintech",
+      "lender_id": "muthoot_finance",
+      "lender_name": "Muthoot Finance",
+      "lender_type": "nbfc",
+      "reg_details": {
+        "cin": "L65910KL1997PLC011300",
+        "office": "Muthoot Chambers, Opposite Saritha Theatre Complex, Banerji Road, Kochi - 682018",
+        "email": "mails@muthootgroup.com",
+        "web": "https://www.muthootfinance.com"
+      },
       "interest_rate_range": {
         "min": 12.0,
         "max": 15.5
       },
       "base_rate": 12.0,
-      "processing_fee_percent": 2.0,
-      "max_loan_amount": 2500000,
+      "processing_fee_percent": 1.0,
+      "max_loan_amount": 2000000,
       "min_loan_amount": 50000,
-      "tenure_options": [12, 24, 36, 48],
+      "tenure_options": [6, 12, 24, 36, 48],
       "min_credit_score": 600,
       "foir_limit": 0.55,
-      "approval_probability": 0.88,
+      "approval_probability": 0.90,
       "risk_profile": "medium",
-      "characteristics": "Very flexible, fast approval (instant), variable rates",
+      "characteristics": "Legacy institution with high trust. Excellent for quick personal loans with minimal friction, especially for returning customers.",
       "settlement_days": 1
     },
     {
-      "lender_id": "credit_union_z",
-      "lender_name": "Credit Union Z",
+      "lender_id": "saraswat_bank",
+      "lender_name": "Saraswat Bank",
       "lender_type": "cooperative",
+      "reg_details": {
+        "cin": "U99999MH1918PLC000481",
+        "office": "Eknath Thakur Bhavan, Plot No. 953, Appasaheb Marathe Marg, Prabhadevi, Mumbai - 400025",
+        "email": "corporate.office@saraswatbank.com",
+        "web": "https://www.saraswatbank.com"
+      },
       "interest_rate_range": {
         "min": 10.5,
         "max": 12.0
       },
       "base_rate": 10.5,
       "processing_fee_percent": 0.25,
-      "max_loan_amount": 2000000,
-      "min_loan_amount": 100000,
-      "tenure_options": [12, 24, 36, 48, 60],
-      "min_credit_score": 700,
+      "max_loan_amount": 2500000,
+      "min_loan_amount": 50000,
+      "tenure_options": [12, 24, 36, 48, 60, 84],
+      "min_credit_score": 680,
       "foir_limit": 0.45,
       "approval_probability": 0.78,
       "risk_profile": "low",
-      "characteristics": "Cooperative, member-driven, lowest fees, community focus",
+      "characteristics": "Cooperative approach with very low processing fees. Ideal for long-term tenures and community-focused lending with a personal touch.",
       "settlement_days": 10
     }
+
   ]
 }

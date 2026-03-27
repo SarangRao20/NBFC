@@ -38,6 +38,8 @@ const INITIAL_APP_STATE: AppState = {
     pan: 'pending',
     bankStatement: 'pending',
   },
+  documents_uploaded: false,
+  eligible_offers: [],
   actionLog: [],
   options: [],
   loan_terms: undefined,
@@ -134,16 +136,8 @@ function App() {
         // Set session ID and start chat
         setAppState(prev => ({ ...prev, sessionId: sessionId }));
 
-        // Automatically trigger initial greeting from Arjun
-        const res = await apiClient.chat(sessionId!, "hello");
-        if (res.all_replies && res.all_replies.length > 0) {
-          res.all_replies.forEach((m: any) => {
-            if (typeof m === 'string') pushAgentMessage(m);
-            else if (m && typeof m === 'object') pushAgentMessage(m.content, m.type);
-          });
-        } else if (res.reply) {
-          pushAgentMessage(res.reply, 'text');
-        }
+        // Initial greeting is now handled by the user's first interaction
+        // to prevent duplicate initial messages.
 
         // Fetch and display advisory message if user has past loans
         try {
@@ -233,6 +227,13 @@ function App() {
               preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
               underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
               loan_terms: fullState.loan_terms || prev.loan_terms,
+              eligible_offers: (fullState.eligible_offers || prev.eligible_offers || []).map((o: any) => ({
+                lender_id: o.lender_id || o.id || o.lenderId || o.nbfc_id || o.nbfcId,
+                lender_name: o.lender_name || o.name || o.lenderName || o.nbfc_name || o.nbfcName,
+                interest_rate: o.interest_rate || o.rate || o.rate_percent || o.r,
+                emi: o.emi || o.monthly_payment || 0
+              })),
+              documents_uploaded: fullState.documents_uploaded || prev.documents_uploaded || false,
             }));
           }
         });
@@ -339,6 +340,26 @@ function App() {
     }
   };
 
+  const handleSelectLender = async (lenderId: string) => {
+    if (!sessionId) return;
+    try {
+      const res = await apiClient.selectLender(sessionId, lenderId);
+      // Refresh session state
+      const fullState = await apiClient.getSession(sessionId);
+      if (fullState) {
+        setAppState(prev => ({
+          ...prev,
+          loan_terms: fullState.loan_terms || prev.loan_terms,
+          options: fullState.options || prev.options,
+        }));
+      }
+      pushAgentMessage(res.message || 'Lender selected');
+    } catch (err) {
+      console.error('Select lender failed:', err);
+      pushAgentMessage('Failed to save selected lender.');
+    }
+  };
+
   const handleBatchFileUpload = async (files: File[]) => {
     if (!sessionId || files.length === 0) return;
     
@@ -355,8 +376,8 @@ function App() {
       ...prev,
       thinkingAgents: [...prev.thinkingAgents, 'Document Agent'],
       activeAgent: '📄 Verifying All Documents...',
-      needsDocument: false, // Hide UI zone immediately to avoid confusion
-      // Transfer current required to uploaded list if desired, but we'll clear it when verified
+      // Keep the upload zone visible until verification completes
+      needsDocument: true,
     }));
 
     const thinkingId = pushAgentMessage(`Running Batch Verification for ${files.length} documents...`, 'thinking');
@@ -592,6 +613,12 @@ function App() {
           salary: state.customer_data?.salary || 0,
           needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document'),
           requiredDocuments: state.required_documents || [],
+          eligible_offers: (state.eligible_offers || []).map((o: any) => ({
+            lender_id: o.lender_id || o.id || o.lenderId || o.nbfc_id || o.nbfcId,
+            lender_name: o.lender_name || o.name || o.lenderName || o.nbfc_name || o.nbfcName,
+            interest_rate: o.interest_rate || o.rate || o.rate_percent || o.r,
+            emi: o.emi || o.monthly_payment || 0
+          })),
         };
         setAppState(sData);
         if (state.customer_data?.phone) {
@@ -744,6 +771,14 @@ function App() {
         } else if (res.reply) {
           pushAgentMessage(res.reply, 'text');
         }
+        
+        // Update eligible_offers from chat response if available
+        if (res.eligible_offers) {
+          console.log('App.tsx: Received eligible_offers from chat:', res.eligible_offers);
+          setAppState(prev => ({ ...prev, eligible_offers: res.eligible_offers }));
+        } else {
+          console.log('App.tsx: No eligible_offers in chat response:', Object.keys(res));
+        }
       } catch (err) {
         console.error("Chat API failed:", err);
         pushAgentMessage("System Error: Chat communication failed.");
@@ -774,6 +809,7 @@ function App() {
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
             loan_terms: fullState.loan_terms || prev.loan_terms,
             salary: fullState.customer_data?.salary || prev.salary,
+            eligible_offers: fullState.eligible_offers || prev.eligible_offers || [],
           }));
         }
       } catch (err) {
@@ -782,14 +818,24 @@ function App() {
 
       // Update Phase based on intent/decision/next_agent
       try {
+        const isDocPhase = fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document';
+        const allUploaded = fullState?.documents_uploaded === true;
+
         if (fullState?.decision === 'soft_reject') {
           setChatPhase('negotiate');
-        } else if (fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document') {
+          setAppState(prev => ({ ...prev, needsDocument: false }));
+        } else if (isDocPhase && !allUploaded) {
           setChatPhase('document');
           const docs = fullState.required_documents || ["Identity (PAN or Aadhaar)"];
-          setAppState(prev => ({ ...prev, needsDocument: true, requiredDocuments: docs }));
+          setAppState(prev => ({ 
+            ...prev, 
+            needsDocument: true, 
+            requiredDocuments: docs,
+            documents_uploaded: false
+          }));
         } else if (fullState?.current_phase === 'sales' || fullState?.loan_terms?.principal) {
           setChatPhase('loan_details'); 
+          setAppState(prev => ({ ...prev, needsDocument: false, documents_uploaded: allUploaded }));
           // Fetch past sessions when user is identified
           if (fullState?.customer_data?.phone) {
             const sessions = await apiClient.getSessionsByPhone(fullState.customer_data.phone);
@@ -797,6 +843,7 @@ function App() {
           }
         } else {
           setChatPhase('onboarding');
+          setAppState(prev => ({ ...prev, needsDocument: false, documents_uploaded: allUploaded }));
         }
       } catch (err) {
         console.error("Post-chat logic failed:", err);
@@ -871,6 +918,7 @@ function App() {
         onNewChat={handleNewChat} 
         onPayEmi={handlePayEmi}
         onDeleteSession={handleDeleteSession}
+        onSelectLender={handleSelectLender}
       />
       <ChatPane 
         appState={appState} 

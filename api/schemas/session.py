@@ -32,9 +32,17 @@ class LoanTermsOut(BaseModel):
     rate: Optional[float] = 0.0
     tenure: Optional[int] = 0
     emi: Optional[float] = 0.0
+    loan_purpose: Optional[str] = ""
     payments_made: Optional[int] = 0
     remaining_balance: Optional[float] = 0.0
     next_emi_date: Optional[str] = ""
+
+class EligibleOfferOut(BaseModel):
+    lender_id: Optional[str] = ""
+    lender_name: Optional[str] = ""
+    interest_rate: Optional[float] = 0.0
+    emi: Optional[float] = 0.0
+    tenure: Optional[int] = 0
 
 class DocumentsOut(BaseModel):
     verified: Optional[bool] = False
@@ -51,6 +59,7 @@ class SessionStateResponse(BaseModel):
     customer_data: Optional[CustomerDataOut] = None
     loan_terms: Optional[LoanTermsOut] = None
     documents: Optional[DocumentsOut] = None
+    eligible_offers: Optional[list[EligibleOfferOut]] = []
     kyc_status: Optional[str] = ""
     fraud_score: Optional[float] = -1.0
     decision: Optional[str] = ""
