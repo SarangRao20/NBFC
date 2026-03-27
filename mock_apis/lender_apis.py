@@ -49,16 +49,22 @@ def fetch_lender_offer(
     lender = next((l for l in lenders["lenders"] if l["lender_id"] == lender_id), None)
     
     if not lender:
+        print(f"🔍 [LENDER DEBUG] Lender {lender_id} not found")
         return None
         
+    print(f"🔍 [LENDER DEBUG] Checking {lender['lender_name']}: amount={loan_amount}, tenure={tenure_months}, score={credit_score}, salary={monthly_salary}")
+    
     # Eligibility check
     if credit_score < lender["min_credit_score"]:
+        print(f"🔍 [LENDER DEBUG] REJECTED: Credit score {credit_score} < min {lender['min_credit_score']}")
         return None  # Not eligible
     
     if loan_amount > lender["max_loan_amount"] or loan_amount < lender["min_loan_amount"]:
+        print(f"🔍 [LENDER DEBUG] REJECTED: Loan amount {loan_amount} not in range [{lender['min_loan_amount']}, {lender['max_loan_amount']}]")
         return None
     
     if tenure_months not in lender["tenure_options"]:
+        print(f"🔍 [LENDER DEBUG] REJECTED: Tenure {tenure_months} not in options {lender['tenure_options']}")
         # Allow slight flexibility in tenure for mock purposes if it's close? 
         # No, let's stick to defined options for consistency.
         return None
@@ -67,9 +73,13 @@ def fetch_lender_offer(
     emi = _calculate_emi(loan_amount, _calculate_interest_rate(lender["base_rate"], credit_score), tenure_months)
     monthly_foir = emi / monthly_salary if monthly_salary > 0 else 1.0
     
+    print(f"🔍 [LENDER DEBUG] EMI={emi}, FOIR={monthly_foir}, limit={lender['foir_limit']}")
+    
     if monthly_foir > lender["foir_limit"]:
+        print(f"🔍 [LENDER DEBUG] REJECTED: FOIR {monthly_foir} > limit {lender['foir_limit']}")
         return None
     
+    print(f"🔍 [LENDER DEBUG] APPROVED: {lender['lender_name']}")
     return {
         "lender_id": lender["lender_id"],
         "lender_name": lender["lender_name"],

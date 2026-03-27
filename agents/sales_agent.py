@@ -810,13 +810,14 @@ async def _sales_mode(state: dict):
         score = int(_safe_float(customer_context.get("credit_score"), 750.0))
         
         try:
+            print(f"🔍 [DEBUG] Calling lender aggregation: amount={new_terms['principal']}, tenure={new_terms['tenure']}, score={score}, salary={salary}")
             comp = await aggregate_lender_offers(
                 principal=new_terms["principal"],
                 tenure=new_terms["tenure"],
                 credit_score=score,
                 monthly_income=salary
             )
-            
+            print(f"🔍 [DEBUG] Lender aggregation result: {comp.get('total_offers', 0)} offers found")
             offers = comp.get("offers", [])
             updates["eligible_offers"] = offers
             
@@ -862,7 +863,11 @@ async def _sales_mode(state: dict):
                     if not new_terms.get("rate"):
                         new_terms["rate"] = 12.0
                     log.append("⚠️ No matching lenders found for these terms.")
-                    visible_reply = "I'm looking into the best possible rates for you. Could you tell me a bit more about the goal for this loan?"
+                    # Check if we already have the loan purpose before asking for it again
+                    if new_terms.get("loan_purpose"):
+                        visible_reply = f"I've checked our lenders, but unfortunately none can offer ₹{new_terms['principal']:,.0f} for {new_terms['tenure']} months right now. Would you consider a longer tenure or a different amount?"
+                    else:
+                        visible_reply = "I'm looking into the best possible rates for you. Could you tell me a bit more about the goal for this loan?"
         except Exception as e:
             print(f"⚠️ Lender aggregation failed in sales: {e}")
             if not new_terms.get("rate"):
@@ -1688,13 +1693,14 @@ async def _sales_mode(state: dict):
         score = int(_safe_float(customer_context.get("credit_score"), 750.0))
         
         try:
+            print(f"🔍 [DEBUG] Calling lender aggregation: amount={new_terms['principal']}, tenure={new_terms['tenure']}, score={score}, salary={salary}")
             comp = await aggregate_lender_offers(
                 principal=new_terms["principal"],
                 tenure=new_terms["tenure"],
                 credit_score=score,
                 monthly_income=salary
             )
-            
+            print(f"🔍 [DEBUG] Lender aggregation result: {comp.get('total_offers', 0)} offers found")
             offers = comp.get("offers", [])
             updates["eligible_offers"] = offers
             
@@ -1740,7 +1746,11 @@ async def _sales_mode(state: dict):
                     if not new_terms.get("rate"):
                         new_terms["rate"] = 12.0
                     log.append("⚠️ No matching lenders found for these terms.")
-                    visible_reply = "I'm looking into the best possible rates for you. Could you tell me a bit more about the goal for this loan?"
+                    # Check if we already have the loan purpose before asking for it again
+                    if new_terms.get("loan_purpose"):
+                        visible_reply = f"I've checked our lenders, but unfortunately none can offer ₹{new_terms['principal']:,.0f} for {new_terms['tenure']} months right now. Would you consider a longer tenure or a different amount?"
+                    else:
+                        visible_reply = "I'm looking into the best possible rates for you. Could you tell me a bit more about the goal for this loan?"
         except Exception as e:
             print(f"⚠️ Lender aggregation failed in sales: {e}")
             if not new_terms.get("rate"):
