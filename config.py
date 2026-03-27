@@ -79,7 +79,7 @@ def _get_llm_with_fallback(temperature: float = 0.3):
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
             return ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 google_api_key=GEMINI_API_KEY,
                 temperature=temperature
             )
