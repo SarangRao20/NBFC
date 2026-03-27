@@ -241,14 +241,13 @@ Act deterministically and precisely.
 from api.core.websockets import manager
 
 async def document_agent_node(state: dict) -> dict:
-  """Professional document collection agent.
-  
-  In this phase, we focus purely on gathering the required KYC and income documents
-  requested by Arjun in the sales phase.
-  """
+  """Professional document collection agent with Gemini Vision OCR."""
   session_id = state.get("session_id", "default")
-  print(f"📄 [DOCUMENT AGENT] Processing document phase for session: {session_id}")
+  await manager.broadcast_thinking(session_id, "Document Agent", True)
 
+  print(f"📄 [DOCUMENT AGENT] Processing document phase for session: {session_id}")
+  log = list(state.get("action_log") or [])
+  
   docs_state = state.get("documents", {}) or {}
   doc_paths = docs_state.get("document_paths") or docs_state.get("salary_slip_path")
   required_docs = state.get("required_documents", ["Identity Proof (PAN/Aadhaar)", "Income Proof (Salary Slip)"])
@@ -262,6 +261,7 @@ async def document_agent_node(state: dict) -> dict:
 
   if not doc_path or not os.path.exists(doc_path):
     # No file present — prompt the user professionally
+    await manager.broadcast_thinking(session_id, "Document Agent", False)
     doc_list_str = "\n".join([f"- {d}" for d in required_docs])
     msg = (
       f"🛡️ **Document Verification Phase**\n\n"
@@ -277,108 +277,93 @@ async def document_agent_node(state: dict) -> dict:
       "options": ["📤 Upload Documents Now", "❓ Why is this required?"]
     }
 
-  # File exists - perform "verification" (simplified for demo)
-  customer_name = (state.get("customer_data") or {}).get("name", "Customer").title()
-  doc_type = "Verified Document"
-
-  doc_data = {
-    **docs_state,
-    "verified": True,
-    "ocr_error": "",
-    "document_type": doc_type,
-    "name_extracted": customer_name,
-    "confidence": 0.98,
-    "tampered": False,
-    "verification_checks": {"confidence_ok": True, "not_tampered": True, "valid_doc_type": True, "name_match": True},
-    "all_extracted_docs": [{"document_type": doc_type, "extracted_data": {"full_name": customer_name}, "forensic_analysis": {"confidence_score": 0.98, "is_tampered": False}}]
-  }
-
-  log = list(state.get("action_log") or [])
-  log.append(f"✅ Document '{os.path.basename(doc_path)}' verified successfully.")
+  # File exists - initiate high-fidelity OCR and forensic analysis
+  log.append("🔍 Initiating high-fidelity OCR and forensic document analysis...")
   
-  return {
-    "documents": doc_data,
-    "documents_uploaded": True,
-    "kyc_status": "verified", # Crucial for MasterRouter to move to Underwriting
-    "messages": [AIMessage(content="✅ Thank you. Your documents have been verified successfully. We are now processing your application for final approval.")],
-    "action_log": log,
-    "current_phase": "underwriting",
-    "next_agent": "underwriting_agent"
-  }
+  # Audit copy
+  audit_filename = f"audit_{session_id[:8]}_{os.path.basename(doc_path)}"
+  audit_path = os.path.join("data", "uploads", audit_filename)
+  shutil.copy2(doc_path, audit_path)
 
+  import base64
+  ext = doc_path.rsplit(".", 1)[-1].lower()
+  mime_map = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+  mime = mime_map.get(ext, "image/jpeg")
 
-# ORIGINAL CODE COMMENTED OUT FOR LATER USE
-"""
-async def document_agent_node_original(state: dict) -> dict:
-    session_id = state.get("session_id", "default")
-    await manager.broadcast_thinking(session_id, "Document Agent", True)
-
-    print("📄 [DOCUMENT AGENT] Processing uploaded document...")
-    log = list(state.get("action_log") or [])
-    log.append("🔍 Initiating high-fidelity OCR and forensic document analysis...")
-
-    doc_paths = state.get("documents", {}).get("document_paths", None)
-    if doc_paths and isinstance(doc_paths, list) and doc_paths:
-        doc_path = doc_paths[0]
-    else:
-        doc_path = state.get("documents", {}).get("salary_slip_path", "")
-
-    if not doc_path or not os.path.exists(doc_path):
-        await manager.broadcast_thinking(session_id, "Document Agent", False)
-        return {
-            "documents": {**state.get("documents", {}), "verified": False, "ocr_error": "No document path found"},
-            "messages": [AIMessage(content="📄 **Document Required**...")],
-            "current_phase": "kyc_verification"
-        }
-
-    # Audit copy
-    audit_filename = f"audit_{os.path.basename(doc_path)}"
-    audit_path = os.path.join("data", "uploads", audit_filename)
-    shutil.copy2(doc_path, audit_path)
-
-    import base64
-    ext = doc_path.rsplit(".", 1)[-1].lower()
-    mime = {"pdf": "application/pdf"}.get(ext, "image/jpeg")
+  try:
     with open(doc_path, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
 
     vision_llm = get_vision_llm()
-    try:
-        message = HumanMessage(content=[
-            {"type": "text", "text": DOCUMENT_VISION_AGENT_PROMPT},
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_data}"}}
-        ])
-        response = await vision_llm.ainvoke([message])
-        text_content = response.content
-        json_match = re.search(r'\{.*\}', text_content, re.DOTALL)
-        extracted_root = json.loads(json_match.group(0)) if json_match else {"extracted_documents": []}
-        all_extracted = extracted_root.get("extracted_documents", [])
+    message = HumanMessage(content=[
+        {"type": "text", "text": DOCUMENT_VISION_AGENT_PROMPT},
+        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_data}"}}
+    ])
+    
+    response = await vision_llm.ainvoke([message])
+    text_content = response.content
+    
+    # Extract JSON content from potential Markdown blocks
+    json_match = re.search(r'\{.*\}', text_content, re.DOTALL)
+    if not json_match:
+        raise ValueError("LLM response did not contain valid JSON")
         
-        first_doc = all_extracted[0] if all_extracted else {}
-        doc_type = first_doc.get("document_type", "Unknown")
-        ext_data = first_doc.get("extracted_data", {})
-        forensic = first_doc.get("forensic_analysis", {})
+    extracted_root = json.loads(json_match.group(0))
+    all_extracted = extracted_root.get("extracted_documents", [])
+    
+    if not all_extracted:
+        raise ValueError("No documents extracted from file")
         
-        is_verified = forensic.get("confidence_score", 0) > 0.85 and not forensic.get("is_tampered", False)
-        
-        doc_data = {
-            **state.get("documents", {}),
-            "verified": is_verified,
-            "document_type": doc_type,
-            "name_extracted": ext_data.get("full_name", ""),
-            "salary_extracted": float(ext_data.get("net_monthly_income") or 0),
-            "confidence": forensic.get("confidence_score", 0),
-            "all_extracted_docs": all_extracted 
-        }
+    first_doc = all_extracted[0]
+    doc_type = first_doc.get("document_type", "Unknown")
+    ext_data = first_doc.get("extracted_data", {})
+    forensic = first_doc.get("forensic_analysis", {})
+    
+    # Validation signals
+    confidence_score = forensic.get("confidence_score", 0.0)
+    is_tampered = forensic.get("is_tampered", False)
+    
+    # Final verification state
+    is_verified = confidence_score > 0.85 and not is_tampered
+    
+    doc_data = {
+        **docs_state,
+        "verified": is_verified,
+        "document_type": doc_type,
+        "name_extracted": ext_data.get("full_name", ""),
+        "salary_extracted": float(ext_data.get("net_monthly_income") or 0),
+        "gross_salary_extracted": float(ext_data.get("gross_monthly_income") or 0),
+        "employer_name": ext_data.get("employer_name", ""),
+        "document_number": ext_data.get("document_number", ""),
+        "issue_date": ext_data.get("document_date", ""),
+        "confidence": confidence_score,
+        "tampered": is_tampered,
+        "tamper_indicators": forensic.get("tamper_indicators", []),
+        "fraud_signals": forensic.get("fraud_signals", []),
+        "all_extracted_docs": all_extracted,
+        "ocr_error": ""
+    }
 
-        await manager.broadcast_thinking(session_id, "Document Agent", False)
-        return {
-            "documents": doc_data, 
-            "messages": [AIMessage(content=f"Verified: {is_verified}")],
-            "action_log": log,
-            "current_phase": "fraud_analysis" if is_verified else "kyc_verification"
-        }
+    log.append(f"✅ Document verified: {doc_type} (Confidence: {confidence_score:.2f})")
+    await manager.broadcast_thinking(session_id, "Document Agent", False)
+    
+    msg = f"✅ Thank you. Your {doc_type} has been verified successfully." if is_verified else f"⚠️ We encountered issues verifying your {doc_type}. Please ensure it is clear and untampered."
+    
+    return {
+        "documents": doc_data,
+        "documents_uploaded": True,
+        "kyc_status": "verified" if is_verified else "failed",
+        "messages": [AIMessage(content=msg)],
+        "action_log": log,
+        "current_phase": "underwriting" if is_verified else "kyc_verification",
+        "next_agent": "underwriting_agent" if is_verified else None
+    }
 
-    except Exception as e:
-        return {"documents": {"verified": False, "ocr_error": str(e)}, "current_phase": "kyc_verification"}
-"""
+  except Exception as e:
+    print(f"❌ DOCUMENT AGENT ERROR: {e}")
+    await manager.broadcast_thinking(session_id, "Document Agent", False)
+    return {
+        "documents": {**docs_state, "verified": False, "ocr_error": str(e)},
+        "messages": [AIMessage(content=f"❌ Error processing document: {str(e)}")],
+        "current_phase": "document"
+    }

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Development Settings
     DISABLE_OTP: bool = os.getenv("DISABLE_OTP", "false").lower() == "true"
     DEV_OTP: str = os.getenv("DEV_OTP", "123456")  # Default OTP for development
+    
+    # Feature Flags
+    USE_DTI_SCORE: bool = os.getenv("USE_DTI_SCORE", "false").lower() == "true"
 
     # Underwriting thresholds
     MIN_CREDIT_SCORE: int = int(os.getenv("MIN_CREDIT_SCORE", "700"))
