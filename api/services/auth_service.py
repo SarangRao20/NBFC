@@ -4,7 +4,7 @@ import os
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from api.core.redis_cache import get_cache, RedisCache
 from api.core.email_service import get_email_service, EmailService
 from api.core.state_manager import get_session, update_session
@@ -14,15 +14,22 @@ from mock_apis.cibil_api import get_cibil_score as mock_get_cibil_score
 
 settings = get_settings()
 
+# Only use mock customers in development/mock mode
 CUSTOMERS_FILE = os.path.join("mock_apis", "customers.json")
 
 def load_mock_customers() -> List[Dict]:
+    """Load mock customers only in development mode"""
+    if settings.APP_ENV == "production":
+        return []
     if os.path.exists(CUSTOMERS_FILE):
         with open(CUSTOMERS_FILE, "r") as f:
             return json.load(f)
     return []
 
 def save_mock_customers(customers: List[Dict]):
+    """Save mock customers only in development mode"""
+    if settings.APP_ENV == "production":
+        return
     with open(CUSTOMERS_FILE, "w") as f:
         json.dump(customers, f, indent=4)
 

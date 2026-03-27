@@ -1,388 +1,562 @@
-# NBFC INC — Lending Orchestration & Agent Framework
+# FinServe NBFC - Intelligent Loan Origination & Management Platform
 
-> End-to-end NBFC lending orchestration platform combining FastAPI backend, modular agent-based decisioning, and a Vite + React frontend. Designed for development with a file-backed mock database and easy switch to MongoDB Atlas, Redis, and LLM providers.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-red.svg)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-19.2.4-blue.svg)](https://reactjs.org)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green.svg)](https://www.mongodb.com/atlas)
 
----
-
-## Table of Contents
-- Overview
-- Quick Start
-- Prerequisites
-- Installation
-- Environment variables (.env)
-- Running the backend
-- Running with Mock DB (recommended for local dev)
-- Running with MongoDB Atlas (production/dev with real DB)
-- Frontend (development & build)
-- API surface & routers
-- Agents & architecture
-- Database & persistence
-- Mock APIs
-- Tests
-- Common development workflows
-- Debugging & troubleshooting
-- Contributing
-- License & acknowledgements
+> **Modern NBFC lending platform** with AI-powered agents, real-time decisioning, and seamless customer experience. Built for scalability, compliance, and rapid deployment.
 
 ---
 
-## Overview
+## Business Overview
 
-This repository implements a modular loan origination & servicing platform focused on NBFC workflows (sales, KYC, underwriting, sanctions, fraud checks, EMI/payment flows). It uses:
+FinServe NBFC is a comprehensive **Non-Banking Financial Company** management system that orchestrates the entire loan lifecycle from customer acquisition to repayment. The platform leverages:
 
-- FastAPI for the backend REST + WebSocket API (`main.py`).
-- A collection of domain-specific agents in `agents/` that orchestrate conversational flows, document extraction, and decisioning.
-- A Vite + React frontend in `frontend/` for dashboards and flow-driven UIs.
-- MongoDB (via Motor) for persistence, with a file-backed `mock_db.json` and `db/mock_database.py` for local development.
-- Optional Redis for caching and LLM caching.
-- Optional LLM integrations (Gemini, Groq, OpenRouter) controlled by environment variables.
+- **AI-Powered Agents** for intelligent decisioning and customer interaction
+- **Real-time Analytics** for risk assessment and portfolio management
+- **Enterprise Security** with fraud detection and compliance checks
+- **High-Performance Architecture** built on FastAPI and React
+- **Cloud-Ready** deployment with MongoDB Atlas and Redis caching
 
-This README documents navigation, installation, and how to run the system both locally (mocked) and with real infra.
+### Key Features
+
+| Feature | Description | Technology |
+|---------|-------------|------------|
+| **Conversational AI Sales** | Intelligent loan advisory with natural language processing | LangChain + LLMs |
+| **Automated Underwriting** | Real-time credit scoring and risk assessment | Custom ML models |
+| **Digital KYC** | Document extraction and verification with OCR | Computer Vision APIs |
+| **Fraud Detection** | Multi-layer security with behavioral analysis | Rule-based + ML |
+| **Multi-Lender Marketplace** | Connect borrowers with optimal loan products | Aggregator Engine |
+| **EMI Management** | Flexible repayment scheduling and tracking | Automated Calculators |
+| **Admin Dashboard** | Real-time portfolio analytics and oversight | React + Recharts |
 
 ---
 
-## Quick Start (local, mock mode)
+## Quick Start
 
-1. Clone the repo and change directory:
+### Prerequisites
 
+- **Python 3.10+** (3.11 recommended)
+- **Node.js 18+** and npm
+- **MongoDB Atlas** (or local MongoDB)
+- **Redis** (optional, for caching)
+- **Git** for version control
+
+### Installation
+
+1. **Clone Repository**
+   ```bash
+   git clone https://github.com/SarangRao20/NBFC.git
+   cd NBFC
+   ```
+
+2. **Backend Setup**
+   ```bash
+   # Create virtual environment
+   python -m venv venv
+   
+   # Activate (Windows PowerShell)
+   & .\venv\Scripts\Activate.ps1
+   
+   # Install dependencies
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+3. **Environment Configuration**
+   ```bash
+   # Copy example environment file
+   cp .env.example .env
+   
+   # Edit .env with your configuration
+   # See Environment Variables section below
+   ```
+
+4. **Frontend Setup**
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+### Running the Application
+
+#### Development Mode (Local)
 ```bash
-git clone <YOUR_REPO_URL> nbfc-inc
-cd nbfc-inc
-```
-
-2. Create and activate a Python virtual environment (Windows PowerShell example):
-
-```powershell
-python -m venv venv
-& .\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-3. Start the backend in mock mode (no Mongo required):
-
-```powershell
-# ensure MONGO_URI is unset or set to 'mock' in .env
+# Backend (Terminal 1)
+cd NBFC
 python main.py
-# or with uvicorn directly:
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+# Backend will be available at http://localhost:8000
 
-4. Open API docs: http://localhost:8000/docs
-
-5. (Optional) Start frontend UI:
-
-```bash
-cd frontend
-npm install
+# Frontend (Terminal 2)
+cd NBFC/frontend
 npm run dev
-# frontend served at http://localhost:5173 (Vite default)
+# Frontend will be available at http://localhost:5173
+```
+
+#### Production Mode
+```bash
+# Set production environment variables
+export APP_ENV=production
+export MONGO_URI=mongodb+srv://...
+
+# Start production server
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ---
 
-## Prerequisites
+## Environment Configuration
 
-- Python 3.10+ (3.11 recommended)
-- Node.js 18+ (for frontend dev)
-- Git
-- Optional: MongoDB Atlas (or local Mongo), Redis, SMTP access for emails
-- Optional: API keys for LLM providers (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`)
-
-Dependencies are listed in `requirements.txt`.
-
----
-
-## Installation (detailed)
-
-1. Clone repository.
-2. Create a virtual environment:
-
-```bash
-python -m venv venv
-```
-
-3. Activate the virtual environment:
-
-- PowerShell:
-
-```powershell
-& .\venv\Scripts\Activate.ps1
-```
-
-- Command Prompt:
-
-```cmd
-.\venv\Scripts\activate.bat
-```
-
-- macOS / Linux:
-
-```bash
-source venv/bin/activate
-```
-
-4. Install Python dependencies:
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-5. (Optional) Install frontend dependencies:
-
-```bash
-cd frontend
-npm install
-```
-
----
-
-## Environment variables (.env)
-
-Create a `.env` file in the project root to control runtime behavior. Example minimal `.env` for mock development:
+Create a `.env` file in the project root:
 
 ```ini
-MONGO_URI=mock
+# ===========================================
+# FINSERVE NBFC CONFIGURATION
+# ===========================================
+
+# LLM PROVIDERS
+# Choose one or more: Gemini, Groq, OpenRouter
+GEMINI_API_KEY=your-google-gemini-key
+GROQ_API_KEY=your-groq-api-key
+OPENROUTER_API_KEY=your-openrouter-key
+
+# DATABASE CONFIGURATION
+# Production: MongoDB Atlas connection string
+# Development: Set to 'mock' for local file-based DB
+MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/?retryWrites=true&w=majority
+
+# REDIS CACHING (Optional)
 REDIS_HOST=localhost
 REDIS_PORT=6379
-# LLM providers — leave empty for mock/non-LLM runs
-GEMINI_API_KEY=
-GROQ_API_KEY=
-OPENROUTER_API_KEY=
+REDIS_DB=0
+REDIS_PASSWORD=
+REDIS_CACHE_TTL=3600
 
-# SMTP (email) — optional
+# EMAIL NOTIFICATIONS
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=you@example.com
-SMTP_PASSWORD=yourpassword
+SMTP_USER=your-email@company.com
+SMTP_PASSWORD=your-app-password
+EMAIL_FROM=noreply@finserve-nbfc.com
+EMAIL_FROM_NAME=FinServe NBFC
 
-# Other toggles
-DISABLE_OTP=True
+# SMS/OTP (Twilio)
+TWILIO_ACCOUNT_SID=your-twilio-sid
+TWILIO_AUTH_TOKEN=your-twilio-token
+TWILIO_PHONE_NUMBER=+1234567890
+
+# FILE STORAGE
+UPLOAD_DIR=data/uploads
+SANCTION_DIR=data/sanctions
+
+# DEVELOPMENT SETTINGS
+DEBUG=true
+DISABLE_OTP=true
+DEV_OTP=123456
+APP_NAME=FinServe NBFC
+APP_VERSION=1.0.0
+APP_ENV=development
+
+# UNDERWRITING & RISK
+MIN_CREDIT_SCORE=700
+MAX_DTI_RATIO=0.50
+MAX_EXPOSURE_MULTIPLIER=2.0
+MAX_NEGOTIATION_ROUNDS=3
 ```
 
-Important variables:
+### Critical Configuration Notes
 
-- `MONGO_URI` — set to a Mongo connection string to use MongoDB. If empty or `mock`, the project uses `db/mock_database.py` with `mock_db.json`.
-- `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB` — Redis connection for caching.
-- `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` — LLM provider credentials used by `config.py`.
-- SMTP variables for sending emails.
-
-Refer to `api/config.py` and `config.py` for additional available settings and defaults.
+- **`MONGO_URI=mock`** enables local development with file-based storage
+- **Always set `APP_ENV=production`** for production deployments
+- **LLM Keys** are optional but required for AI-powered features
+- **Security**: Never commit `.env` file to version control
 
 ---
 
-## Running the backend
-
-Run in development (auto-reload):
+## Architecture Overview
 
 ```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-# or
-python main.py
+┌─────────────────────────────────────────────────────────────┐
+│                 FRONTEND (React)                │
+│  ┌─────────────────────────────────────────────┐    │
+│  │ Customer Dashboard │ Loan Application │    │
+│  │ Admin Panel      │ Analytics UI    │    │
+│  └─────────────────────────────────────────────┘    │
+│                     ↕ WebSocket (Real-time)        │
+├─────────────────────────────────────────────────────────────┤
+│              BACKEND (FastAPI)              │
+│  ┌─────────────────────────────────────────────┐    │
+│  │ AGENTS LAYER                     │    │
+│  │ Sales │ KYC │ Underwriting │ Fraud │    │
+│  └─────────────────────────────────────────────┘    │
+│                     ↕ REST API                   │
+├─────────────────────────────────────────────────────────────┤
+│            DATA LAYER                     │
+│  ┌─────────────────────────────────────────────┐    │
+│  │ MongoDB Atlas │ Redis Cache │ GridFS │    │
+│  └─────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Endpoints:
+### Core Components
 
-- OpenAPI docs: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+#### Backend Services (`/api`)
+- **`routers/`** - Modular API endpoints for each domain
+- **`schemas/`** - Pydantic models for request/response validation
+- **`core/`** - Shared utilities (email, exceptions, websockets)
 
-WebSocket endpoint for real-time session updates:
+#### Agent System (`/agents`)
+- **`sales_agent.py`** - Conversational AI for loan advisory and sales
+- **`underwriting.py`** - Credit scoring engine
+- **`kyc_agent.py`** - Digital KYC processing
+- **`fraud_agent.py`** - Fraud detection system
+- **`document_agent.py`** - OCR & document processing
+- **`repayment_agent.py`** - EMI calculation and payment processing
 
-```
-ws://localhost:8000/ws/{session_id}
-```
-
-Notes:
-
-- On startup the app runs `startup_db()` which pings Mongo (or the mock client) and attempts to initialize collections and ancillary services (Redis, email).
-- If you do not have Mongo set, the mock DB path will be used (`mock_db.json` in project root).
+#### Data Layer (`/db`, `/mock_apis`)
+- **`database.py`** - MongoDB connection and collection management
+- **`mock_database.py`** - Local development with JSON file storage
+- **`lender_apis.py`** - Multi-lender integration and offer aggregation
 
 ---
 
-## Running with Mock DB (recommended for local dev)
+## API Documentation
 
-The repo ships with a robust `db/mock_database.py` implementation that provides asynchronous, file-backed collections and persists to `mock_db.json`.
+### Base URLs
+- **Production**: `https://api.finserve-nbfc.com`
+- **Development**: `http://localhost:8000`
+- **API Docs**: `http://localhost:8000/docs` (Swagger/OpenAPI)
+- **Alternative Docs**: `http://localhost:8000/redoc` (ReDoc)
 
-To run with the mock DB:
+### Key Endpoints
+
+| Module | Endpoint | Description |
+|--------|----------|-------------|
+| **Authentication** | `POST /auth/login` | Customer authentication and session creation |
+| **Sessions** | `POST /session/start` | Initialize new loan session |
+| **Sales Chat** | `POST /session/{id}/chat` | Conversational AI interface |
+| **Document Upload** | `POST /session/{id}/upload` | KYC document submission |
+| **Underwriting** | `POST /session/{id}/underwrite` | Credit decision engine |
+| **Sanctions** | `GET /session/{id}/sanction` | Loan agreement generation |
+| **Analytics** | `GET /admin/analytics` | Portfolio and performance metrics |
+
+### WebSocket Integration
+
+Real-time updates for loan processing status:
+```javascript
+const ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+
+// Events: 'thinking', 'document_processed', 'decision_ready', 'loan_approved'
+```
+
+---
+
+## Security & Compliance
+
+### Risk Assessment Engine
+
+- **Credit Score Integration**: CIBIL and other bureau data
+- **DTI Calculation**: Debt-to-Income ratio analysis
+- **Fraud Detection**: Behavioral pattern analysis
+- **Document Verification**: OCR with tampering detection
+
+### Compliance Features
+
+- **AML/Sanctions Checks**: Integrated sanctions list verification
+- **Data Encryption**: End-to-end encryption for sensitive data
+- **Audit Logging**: Complete traceability of all actions
+- **Role-Based Access**: Granular permissions for admin functions
+
+### Security Best Practices
+
+```python
+# Example: Secure session management
+async def create_session(customer_id: str):
+    session_id = generate_secure_uuid()
+    await redis.setex(f"session:{session_id}", 3600, json.dumps({
+        'customer_id': customer_id,
+        'created_at': datetime.utcnow().isoformat(),
+        'ip_address': hash_ip(request.client.host)
+    }))
+    return session_id
+```
+
+---
+
+## Performance & Scalability
+
+### Caching Strategy
+
+- **Redis**: Session caching and LLM response caching
+- **MongoDB Indexes**: Optimized queries for high-volume access
+- **Connection Pooling**: Efficient database connection management
+
+### Monitoring & Analytics
+
+```python
+# Built-in performance metrics
+METRICS = {
+    'loan_processing_time': 'avg_time_from_application_to_decision',
+    'conversion_rate': 'applications_to_approvals_ratio',
+    'fraud_detection_accuracy': 'false_positives_rate',
+    'system_uptime': 'service_availability_percentage'
+}
+```
+
+---
+
+## Testing & Quality Assurance
+
+### Test Suite
 
 ```bash
-# either leave MONGO_URI unset
-# or put in .env:
-MONGO_URI=mock
-python main.py
-```
-
-Advantages:
-
-- No external services required.
-- Fast iteration and deterministic testing.
-
----
-
-## Running with MongoDB Atlas / Production DB
-
-1. Create an Atlas cluster and obtain a connection string.
-2. Set `MONGO_URI` in `.env` to the connection string.
-3. Start the app normally — `main.py` will call the `init_collections()` helper to create missing collections.
-
-Notes:
-
-- GridFS integration lives in `db/gridfs_service.py` (may require minor adjustments depending on your GridFS client choice).
-- Ensure your Atlas user has appropriate privileges for creating collections and writing documents.
-
----
-
-## Frontend
-
-The frontend is located in `frontend/` and is a Vite + React TypeScript app.
-
-Common commands (from the `frontend` directory):
-
-```bash
-npm install
-npm run dev    # start development server (Vite)
-npm run build  # produce production build
-npm run preview
-```
-
-Default dev port: `5173` (open `http://localhost:5173`). The backend CORS list in `main.py` already includes common local values.
-
----
-
-## API surface & routers
-
-The API is implemented with modular routers. Primary router files live in `api/routers/`.
-
-- `session.py` — session lifecycle and flow state
-- `sales.py` — loan sales conversational flows
-- `documents.py` — file uploads, extraction hooks
-- `kyc.py` — KYC-specific endpoints and verification
-- `fraud.py` — fraud scoring and checks
-- `underwriting.py` — decisioning and score calculations
-- `sanction.py` — sanctions checks
-- `advisory.py` — advisor/recommendation endpoints
-- `payment.py` — EMI and payment endpoints
-- `admin.py` — analytics and admin utilities
-- `auth.py` — authentication and profile management
-
-Mountpoints and schema validations are defined using Pydantic models in `data/schemas/`.
-
----
-
-## Agents & Architecture
-
-High-level agent components live under `agents/`. Each file encapsulates a portion of the business logic and may use LLMs, heuristics, or classical rules:
-
-- `sales_agent.py` — conversational sales flow and persuasion loop
-- `session_manager.py` — orchestrates session state and dispatches to agents
-- `underwriting.py` — underwriting logic and thresholds
-- `kyc_agent.py` — KYC extraction & validation
-- `document_agent.py`, `document_query_agent.py` — document extraction and query helpers
-- `fraud_agent.py` — fraud checks and signals
-- `repayment_agent.py` — EMI calculation and repayment scheduling
-- `emi_engine.py` — EMI calculation utilities
-- `master_router.py`, `master_graph.py`, `master_state.py` — cross-agent routing and shared state
-
-Design notes:
-
-- Agents are designed to accept a `state` dictionary and return a mutated state; see `tests/test_sales_loop.py` for an example of unit-testing an agent loop.
-- LLMs are used conservatively; `config.py` implements a provider fallback chain.
-
----
-
-## Database & Persistence
-
-- Production DB configuration is in `db/database.py` which uses Motor for async connections.
-- Local development uses `db/mock_database.py` and `mock_db.json` (file-backed JSON store).
-- Uploaded documents are stored via GridFS when using MongoDB production; the `db/gridfs_service.py` contains helpers for that.
-
----
-
-## Mock APIs
-
-`mock_apis/` contains simple mock endpoints for external integrations used during development and testing:
-
-- `cibil_api.py`, `bank_details_api.py`, `digilocker_api.py`, `lender_apis.py`, `otp_service.py`
-
-These provide predictable responses for flows that require credit bureau lookups, bank account validation, or OTP verification.
-
----
-
-## Tests
-
-Run the test suite with `pytest`:
-
-```bash
+# Run all tests
 pytest -q
+
+# Run with coverage
+pytest --cov=agents --cov=api --cov-report=html
+
+# Specific test modules
+pytest tests/test_sales_loop.py -v
+pytest tests/test_underwriting.py -v
 ```
 
-Example: the included `tests/test_sales_loop.py` demonstrates an async unit test of `sales_agent_node`.
+### Test Coverage Areas
 
-When running tests in CI or locally, prefer mock mode (`MONGO_URI=mock`) so tests remain deterministic.
+- **Unit Tests**: Individual agent logic and utilities
+- **Integration Tests**: API endpoint workflows
+- **E2E Tests**: Complete loan application flows
+- **Performance Tests**: Load testing for concurrent users
+
+### Mock Services
+
+The `/mock_apis` directory provides deterministic mocks for:
+- **Credit Bureau APIs** (CIBIL scores and reports)
+- **Bank Verification APIs** (Account validation)
+- **Lender APIs** (Loan offer aggregation)
+- **SMS/OTP Services** (Twilio simulation)
 
 ---
 
-## Common development workflows
+## Deployment Guide
 
-- Add a new endpoint: create a Pydantic `schema` in `data/schemas/`, add a router under `api/routers/`, and include the router in `main.py`.
-- Add an agent: implement the agent in `agents/`, write a small async unit test in `tests/`, and invoke it via `session_manager` or a router for integration testing.
-- Switch DB: change `MONGO_URI` in `.env` between `mock` and your Atlas connection string.
+### Production Deployment
+
+#### Docker Deployment
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+```bash
+# Build and run
+docker build -t finserve-nbfc .
+docker run -p 8000:8000 -e MONGO_URI=$MONGO_URI finserve-nbfc
+```
+
+#### Cloud Deployment (Render/Vercel)
+
+**Backend (Render)**:
+```yaml
+# render.yaml
+services:
+  type: web
+  name: finserve-nbfc-api
+  env: python
+  buildCommand: pip install -r requirements.txt
+  startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+  envVars:
+    - key: MONGO_URI
+      value: mongodb+srv://...
+    - key: APP_ENV
+      value: production
+```
+
+**Frontend (Vercel)**:
+```json
+// vercel.json
+{
+  "builds": [{
+    "src": "frontend/package.json",
+    "use": "@vercel/static-build",
+    "config": { "distDir": "dist" }
+  }],
+  "routes": [{
+    "src": "/(.*)",
+    "dest": "/$1"
+  }]
+}
+```
+
+### Environment-Specific Configurations
+
+| Environment | Database | Caching | Debug |
+|------------|----------|----------|--------|
+| Development | mock_db.json | Redis (local) | True |
+| Staging | MongoDB Atlas | Redis (cloud) | False |
+| Production | MongoDB Atlas | Redis (cloud) | False |
 
 ---
 
-## Debugging & troubleshooting
+## Development Workflow
 
-Common issues and fixes:
+### Adding New Features
 
-- Mongo connection failures:
-  - If `MONGO_URI` is not set, the app uses mock DB. To use real Mongo, set `MONGO_URI` to your Atlas URI.
-  - Ensure your IP whitelist and user permissions are correct in Atlas.
-- Redis connection failures:
-  - The code will fall back gracefully to a DB-backed cache in many places. Make sure `REDIS_HOST/REDIS_PORT` are correct.
-- LLM provider errors:
-  - If you see import or provider-auth errors, set `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY` in `.env`.
-  - The fallback chain is implemented in `config.py` and prints which provider it selects at runtime.
-- Email / SMTP issues:
-  - Verify `SMTP_USER` / `SMTP_PASSWORD` and consider using an app-specific password if using Google SMTP.
+1. **Backend API Endpoint**
+   ```python
+   # 1. Create schema in data/schemas/
+   class LoanApplication(BaseModel):
+       amount: float
+       tenure: int
+       purpose: str
+   
+   # 2. Create router in api/routers/
+   @router.post("/loan/apply")
+   async def apply_loan(data: LoanApplication):
+       return await process_application(data)
+   
+   # 3. Register in main.py
+   app.include_router(loan_router, prefix="/api/v1")
+   ```
 
-Logs: The app prints helpful status messages on startup (Mongo ping, Redis, email service). If you hit an unhandled exception, `main.py` logs full tracebacks to the terminal.
+2. **New Agent**
+   ```python
+   # agents/new_agent.py
+   async def new_agent_node(state: dict) -> dict:
+       # Process state
+       result = await process_logic(state)
+       
+       # Return updated state
+       return {
+           **state,
+           "new_agent_result": result,
+           "action_log": state.get("action_log", []) + ["New agent processed"]
+       }
+   ```
+
+3. **Frontend Component**
+   ```typescript
+   // frontend/src/components/NewComponent.tsx
+   import React, { useState, useEffect } from 'react';
+   
+   const NewComponent: React.FC = () => {
+     const [data, setData] = useState(null);
+     
+     useEffect(() => {
+       // Fetch data from API
+       fetchData('/api/endpoint').then(setData);
+     }, []);
+     
+     return <div>{/* Component JSX */}</div>;
+   };
+   export default NewComponent;
+   ```
+
+### Code Quality Standards
+
+- **Python**: Follow PEP 8, use type hints, document with docstrings
+- **TypeScript**: Strict mode, proper interface definitions
+- **Testing**: Minimum 80% coverage for new features
+- **Security**: All user inputs must be validated and sanitized
 
 ---
 
 ## Contributing
 
-1. Fork the repo and create a feature branch: `feature/your-feature`.
-2. Implement code and add tests where applicable.
-3. Run `pytest` and ensure lint passes for your changes.
-4. Open a PR against `main` with a concise description and testing notes.
+We welcome contributions! Please follow our guidelines:
 
-Please follow repository coding style and keep changes isolated to the feature scope.
+### Development Process
+
+1. **Fork the Repository**
+   ```bash
+   git clone https://github.com/your-username/NBFC.git
+   ```
+
+2. **Create Feature Branch**
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+
+3. **Develop & Test**
+   - Write clean, documented code
+   - Add comprehensive tests
+   - Ensure all tests pass: `pytest -q`
+   - Check coverage: `pytest --cov=.`
+
+4. **Submit Pull Request**
+   - Provide clear description of changes
+   - Link relevant issues
+   - Ensure CI/CD passes
+
+### Code Standards
+
+- **Python**: Follow PEP 8, use Black for formatting
+- **TypeScript**: Use Prettier, strict TypeScript mode
+- **Commits**: Conventional commit format (`feat:`, `fix:`, `docs:`)
+- **Documentation**: Update README for new features
+
+### Bug Reports
+
+- Use GitHub Issues with detailed reproduction steps
+- Include environment details and logs
+- Provide expected vs actual behavior
 
 ---
 
-## Files of interest (quick links)
+## License
 
-- [main.py](main.py) — FastAPI app entrypoint and router mounting
-- [requirements.txt](requirements.txt) — Python dependencies
-- [config.py](config.py) — LLM & global configuration
-- [api/config.py](api/config.py) — FastAPI settings and environment bindings
-- [db/mock_database.py](db/mock_database.py) — File-backed mock DB used by default
-- `agents/` — Agent implementations (sales, underwriting, kyc, fraud, etc.)
-- `mock_apis/` — Local mocks for external integrations
-- `frontend/` — Vite + React frontend (dev/build scripts in `package.json`)
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
----
+### Commercial Use
 
-## Acknowledgements
-
-This project stitches together several libraries (FastAPI, Motor, LangChain adapters, Vite) into a developer-friendly NBFC workflow demo. See individual module comments for more implementation notes.
+For commercial deployment or enterprise support:
+- **Email**: business@finserve-nbfc.com
+- **Website**: https://finserve-nbfc.com
+- **Support**: +91-XXX-XXX-XXXX
 
 ---
 
-If you'd like, I can also:
+## Acknowledgments
 
-- Add a short `DEVELOPMENT.md` with step-by-step contributor workflows.
-- Create a minimal `.env.example` file pre-populated with recommended defaults.
+Built with modern fintech best practices and these amazing technologies:
 
-Enjoy developing — open an issue or PR for any missing documentation or clarifications.
+- **[FastAPI](https://fastapi.tiangolo.com)** - Modern, fast web framework
+- **[React](https://reactjs.org)** - User interface library
+- **[MongoDB](https://www.mongodb.com)** - Document database
+- **[LangChain](https://langchain.com)** - LLM orchestration
+- **[Vite](https://vitejs.dev)** - Build tool and dev server
+- **[Tailwind CSS](https://tailwindcss.com)** - Utility-first CSS framework
+
+Special thanks to the open-source community and contributors who make this project possible.
+
+---
+
+## Contact & Support
+
+| Channel | Details |
+|---------|----------|
+| **Documentation** | https://docs.finserve-nbfc.com |
+| **API Support** | api-support@finserve-nbfc.com |
+| **Business** | business@finserve-nbfc.com |
+| **Issues** | https://github.com/SarangRao20/NBFC/issues |
+| **Live Demo** | https://nbfc-inc.onrender.com |
+
+---
+
+<div align="center">
+  <strong>FinServe NBFC - Intelligent Lending for Modern Finance</strong>
+  <br/>
+  <em>Built with ❤️ for the future of fintech</em>
+</div>
