@@ -77,9 +77,11 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://0.0.0.0:5173",
+        # Add your Vercel frontend URL here after deployment
+        "https://*.vercel.app",  # Allow all Vercel domains
+        "https://your-project-name.vercel.app",  # Replace with your actual URL
     ],
     allow_credentials=True,
-
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
