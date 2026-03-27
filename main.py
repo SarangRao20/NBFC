@@ -77,11 +77,10 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://0.0.0.0:5173",
-        # Add your Vercel frontend URL here after deployment
+        # Production Vercel URLs
         "https://*.vercel.app",  # Allow all Vercel domains
         "https://nbfc-inc.vercel.app",  # Your actual Vercel URL
-        # Allow all origins for development (remove in production)
-        "*"  # Temporary fix for local development
+        "https://nbfc-inc.onrender.com",  # Allow Render to access itself
     ],
     allow_credentials=True,
     allow_methods=["*"],
