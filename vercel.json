@@ -8,5 +8,9 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "VITE_API_URL": "https://nbfc-inc.onrender.com",
+    "NODE_ENV": "production"
+  }
 }
