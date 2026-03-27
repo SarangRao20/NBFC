@@ -3,6 +3,8 @@ const BASE_URL = import.meta.env?.VITE_API_URL || 'https://nbfc-inc.onrender.com
 // Debug environment variables
 console.log('BASE_URL:', BASE_URL);
 console.log('VITE_API_URL:', import.meta.env?.VITE_API_URL);
+console.log('NODE_ENV:', import.meta.env?.NODE_ENV);
+console.log('MODE:', import.meta.env?.MODE);
 
 const checkResponse = async (res: Response, url: string) => {
   if (!res.ok) {
