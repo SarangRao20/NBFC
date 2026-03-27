@@ -365,13 +365,63 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
       ))}
     </AnimatePresence>
     <div ref={messagesEndRef} />
-  </div>
+    {/* NBFC Offer Buttons - Rendered when all loan fields are complete and offers available */}
+    {(() => {
+      const hasOffers = appState.eligible_offers && appState.eligible_offers.length > 0;
+      
+      console.log('ChatPane render check:', {
+        eligible_offers: appState.eligible_offers,
+        offersLength: appState.eligible_offers?.length,
+        shouldRender: hasOffers
+      });
+      return hasOffers;
+    })() && (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-4 p-5 bg-gradient-to-br from-emerald-50 to-cyan-50 border border-emerald-200 rounded-2xl"
+      >
+        <h3 className="text-sm font-bold text-emerald-900 mb-4 flex items-center">
+          <span className="w-2 h-2 bg-emerald-500 rounded-full mr-2"></span>
+          Select Your Preferred NBFC
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {appState.eligible_offers.map((offer: any, idx: number) => (
+            <motion.button
+              key={offer.lender_id || idx}
+              whileHover={{ scale: 1.02, boxShadow: "0 10px 25px rgba(16, 185, 129, 0.2)" }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                // Select this lender
+                if (appState.sessionId && onSendMessage) {
+                  console.log('Selected NBFC:', offer.lender_name);
+                  onSendMessage(`I select ${offer.lender_name} at ${offer.interest_rate}% interest rate.`);
+                }
+              }}
+              className="p-4 bg-white border-2 border-emerald-100 rounded-xl hover:border-emerald-400 hover:bg-emerald-50/30 transition-all shadow-sm text-left"
+            >
+              <div className="font-bold text-emerald-700 text-sm mb-2">{offer.lender_name}</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-emerald-50 p-2 rounded-lg">
+                  <div className="text-emerald-600 font-bold">{offer.interest_rate}%</div>
+                  <div className="text-slate-500 text-[11px]">Interest</div>
+                </div>
+                <div className="bg-cyan-50 p-2 rounded-lg">
+                  <div className="text-cyan-600 font-bold">₹{Math.round(offer.emi).toLocaleString()}</div>
+                  <div className="text-slate-500 text-[11px]">Monthly</div>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      </motion.div>
+    )}  </div>
 
   {/* Input Area */}
   <div className="p-4 px-8 border-t border-slate-100 bg-white">
     {/* Document Upload Cards - shown above input when needed */}
     <AnimatePresence>
-      {appState.needsDocument && (
+      {appState.needsDocument && !appState.documents_uploaded && (
         <motion.div
           key="dropzone"
           initial={{ opacity: 0, height: 0, scale: 0.95 }}

@@ -10,6 +10,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Feature flags
+# Disable usage of DTI score in decisioning when False
+USE_DTI_SCORE = False
+
 
 # ── Redis LLM Cache (Memurai / Redis on Windows) ─────────────────────────────
 def _setup_redis_cache():

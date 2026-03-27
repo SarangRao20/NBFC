@@ -13,7 +13,7 @@ from db.database import users_collection, client, init_collections
 from api.config import get_settings
 from api.routers import (
     session, sales, documents, kyc, fraud,
-    underwriting, persuasion, sanction, advisory, payment, comparison, admin
+    underwriting, sanction, advisory, payment, admin
 )
 from api.routers.auth import router as auth_router
 
@@ -192,12 +192,10 @@ async def delete_user(user_id: str):
 
 app.include_router(session.router)       # Steps 1, 4, 18
 app.include_router(sales.router)         # Steps 2, 3
-app.include_router(comparison.router)    # Loan comparison (Phase 4)
 app.include_router(documents.router)     # Steps 5, 6, 7, 8
 app.include_router(kyc.router)           # Step 9
 app.include_router(fraud.router)         # Step 10
 app.include_router(underwriting.router)  # Step 11
-app.include_router(persuasion.router)    # Steps 12, 13, 14, 15
 app.include_router(sanction.router)      # Step 16
 app.include_router(advisory.router)      # Step 17
 app.include_router(payment.router)       # EMI Payments
