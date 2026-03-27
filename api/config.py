@@ -15,40 +15,43 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "data/uploads"
     SANCTION_DIR: str = "data/sanctions"
 
+    # MongoDB Configuration
+    MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017/nbfc")
+    
     # Redis Configuration
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_PASSWORD: str = ""
-    REDIS_CACHE_TTL: int = 3600  # 1 hour
-
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_CACHE_TTL: int = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour
+    
     # Email Configuration
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    EMAIL_FROM: str = "noreply@finserve-nbfc.com"
-    EMAIL_FROM_NAME: str = "FinServe NBFC"
-
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "noreply@finserve-nbfc.com")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "FinServe NBFC")
+    
+    # AI API Keys
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    
     # Development Settings
-    DISABLE_OTP: bool = False  # Toggle for development/testing
-    DEV_OTP: str = "123456"  # Default OTP for development
+    DISABLE_OTP: bool = os.getenv("DISABLE_OTP", "false").lower() == "true"
+    DEV_OTP: str = os.getenv("DEV_OTP", "123456")  # Default OTP for development
 
     # Underwriting thresholds
-    MIN_CREDIT_SCORE: int = 700
-    # DTI and exposure defaults — use realistic safe defaults
-    MAX_DTI_RATIO: float = 0.50  # 50% maximum DTI
-    # Toggle whether DTI/FOIR should be used in underwriting decisions
-    USE_DTI_SCORE: bool = False
-    MAX_EXPOSURE_MULTIPLIER: float = 2.0  # Allow up to 2× pre-approved by default
-
+    MIN_CREDIT_SCORE: int = int(os.getenv("MIN_CREDIT_SCORE", "700"))
+    MAX_DTI_RATIO: float = float(os.getenv("MAX_DTI_RATIO", "0.50"))  # 50% maximum DTI
+    MAX_EXPOSURE_MULTIPLIER: float = float(os.getenv("MAX_EXPOSURE_MULTIPLIER", "2.0"))  # Allow up to 2× pre-approved by default
+    
     # Persuasion loop
-    MAX_NEGOTIATION_ROUNDS: int = 3
-
+    MAX_NEGOTIATION_ROUNDS: int = int(os.getenv("MAX_NEGOTIATION_ROUNDS", "3"))
+    
     # Profile completeness
     REQUIRED_PROFILE_FIELDS: list = [
-        "name", "phone", "email", "city", "salary", 
-        "credit_score", "existing_emi_total"
+        "name", "phone", "email", "city", "salary", "credit_score", "existing_emi_total"
     ]
 
     class Config:

@@ -1,11 +1,10 @@
-"""Authentication Service - Enhanced with Redis caching, OTP management, and profile completeness."""
+"""Authentication Service — Customer identification and session management."""
 
-import json
 import os
-import random
-import string
+import json
+import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any, Optional
 from api.core.redis_cache import get_cache, RedisCache
 from api.core.email_service import get_email_service, EmailService
 from api.core.state_manager import get_session, update_session

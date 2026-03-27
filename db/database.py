@@ -1,13 +1,17 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 from dotenv import load_dotenv
+from api.config import get_settings
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI")
+settings = get_settings()
+
+# Use MongoDB URI from settings
+MONGO_URI = settings.MONGO_URI
 
 # Use mock database if no MongoDB URI is provided
-if not MONGO_URI or MONGO_URI == "mock":
+if not MONGO_URI or MONGO_URI == "mongodb://localhost:27017/nbfc":
     from .mock_database import (
         client, database, users_collection, sessions_collection,
         loan_applications_collection, chat_sessions_collection,
@@ -15,7 +19,7 @@ if not MONGO_URI or MONGO_URI == "mock":
     )
     print("🔧 Using mock database for development")
 else:
-    # ── ASYNCHRONOUS MOTOR CLIENT ──────────────────────────────────────────────
+    # ── ASYNCHRONOUS MOTOR CLIENT ──────────────────────────────────────
     client = AsyncIOMotorClient(MONGO_URI)
     database = client["nbfc_db"]   # Master Database
 
