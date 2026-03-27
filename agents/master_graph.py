@@ -289,23 +289,6 @@ def compile_master_graph():
     workflow.add_node("document_query_agent",   node_wrapper(document_query_agent_node, "document_query_agent"))
     workflow.add_node("emi_engine",             node_wrapper(emi_engine_node, "emi_engine"))
     workflow.add_node("repayment_agent",        node_wrapper(repayment_agent_node, "repayment_agent"))
-    # ── Register nodes ──────────────────────────────────────────────────────
-    workflow.add_node("load_session", cast(Any, load_session_node))
-    workflow.add_node("supervisor", cast(Any, supervisor_node))
-    workflow.add_node("intent_agent", cast(Any, intent_node))
-    workflow.add_node("sales_agent", cast(Any, sales_agent_node))
-    workflow.add_node("document_agent", cast(Any, document_agent_node))
-    workflow.add_node("verification_agent", cast(Any, verification_agent_node))
-    workflow.add_node("fraud_agent", cast(Any, fraud_agent_node))
-    workflow.add_node("join_verification",join_verification_node)
-    workflow.add_node("underwriting_agent", cast(Any, underwriting_agent_node))
-    workflow.add_node("sanction_agent", cast(Any, sanction_agent_node))
-    workflow.add_node("persuasion_agent", cast(Any, persuasion_agent_node))
-    workflow.add_node("emi_agent", cast(Any, emi_agent_node))
-    workflow.add_node("document_query_agent", cast(Any, document_query_agent_node))
-    workflow.add_node("emi_engine", cast(Any, emi_engine_node))
-    workflow.add_node("repayment_agent", cast(Any, repayment_agent_node))
-
     # 🟢 Add the new Disbursement Subgraph as a single node
     workflow.add_node("disbursement_process", disbursement_subgraph)
 
@@ -330,26 +313,14 @@ def compile_master_graph():
             "emi_engine": "emi_engine",
             "repayment_agent": "repayment_agent",
             "disbursement_process": "disbursement_process",
-            "END": END
-            "__end__": END
+            END: END
         }
     )
 
-    # ── ALL nodes - Chain back to supervisor to continue processing ──────────
-    # (Router handles END logic based on state change/human messages)
-    workflow.add_edge("intent_agent",           "supervisor")
-    workflow.add_edge("sales_agent",            "supervisor")
-    workflow.add_edge("document_agent",         "supervisor")
-    workflow.add_edge("document_query_agent",   "supervisor")
-    workflow.add_edge("repayment_agent",        "supervisor")
-    workflow.add_edge("underwriting_agent",     "supervisor")
-    workflow.add_edge("sanction_agent",         "supervisor")
     # ── CHAT nodes — always END (pause, wait for next user message) ──────────
     workflow.add_conditional_edges("intent_agent", route_after_intent)
     workflow.add_edge("sales_agent",        END)
-    workflow.add_edge("persuasion_agent",   END)
     workflow.add_edge("document_query_agent", END)
-    workflow.add_edge("emi_agent",          END) 
     workflow.add_edge("repayment_agent",    END)
 
     workflow.add_edge("disbursement_process", END)

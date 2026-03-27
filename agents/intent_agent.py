@@ -65,19 +65,7 @@ async def intent_node(state: dict):
             user_msg = getattr(m, 'content', str(m))
             break
 
-    # 🟢 PERSUASION LOOP INTERCEPT (CRITICAL)
-    if state.get("next_expected_action") == "user_choice_persuasion" and user_msg:
-        log.append("🤝 Detected persuasion loop response. Routing to Persuasion Handler...")
-
-        from agents.persuasion_agent import process_persuasion_response
-        result = process_persuasion_response(user_msg, state)
-
-        # Merge logs safely
-        result["action_log"] = log + result.get("action_log", [])
-
-        return result
-
-    # 🟢 2. HYBRID DISBURSEMENT INTERCEPT (Final Step)
+    # 🟢 HYBRID DISBURSEMENT INTERCEPT (Final Step)
     # Triggered when user clicks "Execute Direct Bank Transfer" in the frontend
     user_lower = user_msg.lower()
     if ("signed" in user_lower and "kfs" in user_lower) or ("authorized" in user_lower and "e-nach" in user_lower):
