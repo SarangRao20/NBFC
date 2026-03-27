@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
+import useAdminAPI from '../hooks/useAdminAPI';
 import AdminAnalytics from './AdminAnalytics';
 import LenderManagement from './LenderManagement';
 import PerformanceMetrics from './PerformanceMetrics';

@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
-import { AdminTrendsResponse, LoanAnalyticsResponse } from '../../types/admin';
+import useAdminAPI from '../hooks/useAdminAPI';
+import type { AdminTrendsResponse, LoanAnalyticsResponse } from '../types/admin';
 
 interface AdminAnalyticsProps {
   periodDays: number;

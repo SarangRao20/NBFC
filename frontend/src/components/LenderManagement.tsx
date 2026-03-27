@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
-import { LendersListResponse, LenderPerformanceData } from '../../types/admin';
+import useAdminAPI from '../hooks/useAdminAPI';
+import type { LendersListResponse, LenderPerformanceData } from '../types/admin';
 
 interface LenderManagementProps {}
 

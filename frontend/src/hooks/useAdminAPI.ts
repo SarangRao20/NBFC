@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import {
+import type {
   AdminStatsOverviewResponse,
   LendersListResponse,
   LenderInfoRequest,

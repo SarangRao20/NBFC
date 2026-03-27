@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
+import useAdminAPI from '../hooks/useAdminAPI';
 
 interface ReportsPanelProps {}
 

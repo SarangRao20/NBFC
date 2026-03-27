@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
-import { PerformanceMetricsResponse } from '../../types/admin';
+import useAdminAPI from '../hooks/useAdminAPI';
+import type { PerformanceMetricsResponse } from '../types/admin';
 
 interface PerformanceMetricsProps {
   periodDays?: number;
