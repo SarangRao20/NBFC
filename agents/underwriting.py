@@ -56,6 +56,14 @@ async def underwriting_agent_node(state: dict) -> dict:
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
     docs = state.get("documents", {})
+    
+    # ✅ NEW: Check for selected lender (Phase 5 integration)
+    selected_lender_id = state.get("selected_lender_id")
+    selected_lender_name = state.get("selected_lender_name")
+    selected_rate = state.get("selected_interest_rate")
+    
+    if selected_lender_id:
+        print(f"✅ [LENDER SELECTED] Using {selected_lender_name} (ID: {selected_lender_id}) at {selected_rate}% rate")
 
     salary = customer.get("salary", 0)
     score = customer.get("credit_score", customer.get("score", 0))
@@ -74,7 +82,7 @@ async def underwriting_agent_node(state: dict) -> dict:
             "current_phase": "sales"
         }
     
-    rate = float(terms.get("rate", 12.0))  # Default 12.0% annual rate
+    rate = selected_rate if selected_rate else float(terms.get("rate", 12.0))  # Use selected or default rate
     tenure = terms.get("tenure", 12)  # Default 12 months
     fraud_score = state.get("fraud_score", 0.0)
     max_affordable_principal = terms.get("max_affordable_principal", 0)
@@ -232,10 +240,11 @@ async def underwriting_agent_node(state: dict) -> dict:
     # Rule 9: Explainability Layer Output Generator
     # ── Arjun's Human-Centric Decisioning ──
     if decision == "approve":
+        lender_text = f" with {selected_lender_name}" if selected_lender_name else ""
         msg = (f"🎉 **EXCELLENT NEWS!**\n\n"
-               f"I've personally reviewed your request, and your application for ₹{principal:,} is **FULLY APPROVED**. "
+               f"I've personally reviewed your request, and your application for ₹{principal:,} is **FULLY APPROVED** {lender_text}. "
                f"Your disciplined credit profile and consistent history make you a preferred customer for us. "
-               f"We're offering this at our best rate of {rate:.1f}% p.a.")
+               f"We're offering this at {rate:.1f}% p.a.")
     
     elif decision == "pending_docs":
         missing = "Salary Slip" if principal > pre_approved else "KYC Documents"
@@ -283,6 +292,11 @@ async def underwriting_agent_node(state: dict) -> dict:
         "reasons": reasons,
         "messages": [AIMessage(content=msg)],
         "current_phase": "underwriting",
+        
+        # ✅ NEW: Persist selected lender information
+        "selected_lender_id": selected_lender_id,
+        "selected_lender_name": selected_lender_name,
+        "selected_interest_rate": selected_rate,
         
         # ✅ Add EMI tracking fields
         "loan_terms": {

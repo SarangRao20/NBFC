@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     MIN_CREDIT_SCORE: int = 700
     # DTI and exposure defaults — use realistic safe defaults
     MAX_DTI_RATIO: float = 0.50  # 50% maximum DTI
+    # Toggle whether DTI/FOIR should be used in underwriting decisions
+    USE_DTI_SCORE: bool = False
     MAX_EXPOSURE_MULTIPLIER: float = 2.0  # Allow up to 2× pre-approved by default
 
     # Persuasion loop

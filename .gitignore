@@ -137,13 +137,15 @@ LICENSEStep
 FRONTEND_SPEC.md
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GENERATED DOCUMENTATION
+# GENERATED DOCUMENTATION & TEMP NOTES
 # ═══════════════════════════════════════════════════════════════════════════════
-*.md
-!README.md
-!README*.md
+# Avoid pushing personal scratch notes, but ALLOW architectural/setup markdown files
 AGENT_*.md
 OPTIONAL_*.md
 *_SUMMARY.md
 *_ANALYSIS.md
 *_FIXES.md
+temp_*.md
+todo.md
+notes.md
+.planning/

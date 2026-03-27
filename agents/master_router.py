@@ -99,28 +99,31 @@ def route_next_agent(state: MasterState):
 
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
-        # Always prioritize Arjun (Sales) for a human conversation unless terms are fully confirmed
+        # 4a. Collect and verify terms (Amount, Tenure, Purpose)
         if not state.get("loan_confirmed"):
-            return "sales_agent", "Arjun must engage in goal-discovery and verify terms with the user."
-        
-        # 4b. EMI Visualization & Confirmation (Only after Arjun has talked)
-        # We can still show the slider if Arjun explicitly moved us here, but usually Arjun handles it.
+            return "sales_agent", "Gathering loan requirements one variable at a time."
+            
+        # 4b. If terms confirmed but NO lender selected, stay in sales for lender selection
+        if not state.get("selected_lender_id"):
+            return "sales_agent", "Terms confirmed. Presenting lender options for user selection."
 
     # ─── PHASE 5: DOCUMENT UPLOAD (KYC & Income) ───────────────────────────
-    if intent == "loan":
-        # Always require KYC documents (PAN/Aadhaar) even for small loans
+    # We only enter document collection if:
+    # 1. Lender is selected
+    # 2. Preliminary decision is 'approve' (or similar positive state)
+    # 3. Documents are still missing
+    if intent == "loan" and state.get("selected_lender_id") and decision == "approve":
         docs_missing = not state.get("documents_uploaded") or not state.get("document_paths")
-        kyc_not_verified = kyc == "pending"
-        
-        if not state.get("esign_completed") and (docs_missing or kyc_not_verified):
-            return "document_agent", "Mandatory KYC verification required for regulatory compliance."
+        if not state.get("esign_completed") and docs_missing:
+            return "document_agent", "Mandatory KYC verification required after lender selection."
 
     # ─── PHASE 6: KYC & FRAUD (Parallel Verification) ────────────────────────
-    if intent == "loan":
+    if intent == "loan" and state.get("selected_lender_id"):
         if kyc == "pending" or fraud == -1:
-            # Note: Graph parallelization handles the double-fire
-            if kyc == "pending": return "verification_agent", "Running KYC verification."
-            return "fraud_agent", "Performing fraud analysis."
+            if kyc == "pending" and state.get("documents_uploaded"):
+                return "verification_agent", "Proceeding to KYC verification."
+            if fraud == -1:
+                return "fraud_agent", "Performing automated fraud analysis."
 
     # ─── PHASE 7: UNDERWRITING (Credit Decision) ─────────────────────────────
     if intent == "loan":
@@ -130,7 +133,22 @@ def route_next_agent(state: MasterState):
             else:
                 return "verification_agent", "Awaiting KYC completion before underwriting."
 
-    # ─── GLOBAL FALLBACK ───────────────────────────────────────────────────────
+    # ─── PHASE 8: SANCTION & ADVICE (Priya - Now via Sales Agent advisor mode) ──
+    if intent == "unclear" or intent == "unclear_greeting":
+        return "__end__", "Waiting for user clarification (unclear intent)."
+
+    if decision in ("approve", "soft_reject", "hard_reject"):
+        # If soft_reject, we stay in sales (Arjun) for negotiation until agreement
+        if decision == "soft_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
+            # Only go to sanction if the user has accepted the negotiation (this would be set by Arjun)
+            if not state.get("negotiation_signed_off"):
+                return "sales_agent", "Loan soft-rejected. Arjun is handling the persuasion/negotiation loop."
+        
+        if not state.get("sanction_pdf"):
+            return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
+        return "sales_agent", "Documentation complete. Providing post-sanction orientation via advisor mode."
+
+    # GLOBAL FALLBACK
     if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):
         return "sales_agent", "Continuing loan conversation with Arjun to ensure human-first support."
     

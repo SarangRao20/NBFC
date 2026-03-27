@@ -316,6 +316,9 @@ async def chat_with_agent(session_id: str, user_message: str, history: Optional[
         print(f"📊 [DEBUG] Messages count before graph: {len(clean_state['messages'])}")
         final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 100})  # type: ignore
         print("✅ [SALES SERVICE] Graph run complete.")
+        print(f"📊 [DEBUG] final_state keys: {list(final_state.keys())}")
+        print(f"📊 [DEBUG] eligible_offers in final_state: {final_state.get('eligible_offers', 'NOT_FOUND')}")
+        print(f"📊 [DEBUG] sales_output in final_state: {final_state.get('sales_output', 'NOT_FOUND')}")
 
         # CRITICAL: Filter out ALL dict messages from final_state - only allow LangChain message objects
         filtered_final_messages = []
@@ -420,15 +423,23 @@ async def chat_with_agent(session_id: str, user_message: str, history: Optional[
                 print(f"✅ [SALES SERVICE] Loan logged for {loan_doc['name']}")
             except Exception as le:
                 print(f"⚠️ [SALES SERVICE] Failed to log loan: {le}")
-        return _clean_dict({
+        response_data = _clean_dict({
             "reply": reply,
             "all_replies": new_ai,
             "next_agent": final_state.get("next_agent", "unknown"),
+            "current_phase": final_state.get("current_phase", "unknown"),
             "intent": final_state.get("intent", "none"),
             "is_authenticated": final_state.get("is_authenticated", False),
             "loan_terms": final_state.get("loan_terms", {}),
             "customer_data": final_state.get("customer_data", {}),
+            "eligible_offers": final_state.get("eligible_offers", []),
+            "required_documents": final_state.get("required_documents", []),
+            "documents_uploaded": final_state.get("documents_uploaded", False),
+            "sales_output": final_state.get("sales_output", {}),
         })
+        print(f"📊 [DEBUG] Response keys: {list(response_data.keys())}")
+        print(f"📊 [DEBUG] eligible_offers in response: {len(response_data.get('eligible_offers', []))}")
+        return response_data
 
         
     except Exception as e:

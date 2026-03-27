@@ -19,6 +19,13 @@ async def sanction_agent_node(state: dict):
     customer = state.get("customer_data", {}) or {}
     terms = state.get("loan_terms", {}) or {}
     decision = state.get("decision", "approve")
+    
+    # ✅ NEW: Retrieve selected lender information (Phase 5 integration)
+    selected_lender_id = state.get("selected_lender_id")
+    selected_lender_name = state.get("selected_lender_name")
+    selected_rate = state.get("selected_interest_rate")
+    
+    print(f"📜 [SANCTION AGENT] Processing for lender: {selected_lender_name or 'N/A'}")
 
     # 1. ADDRESS GATHERING (If approved but no address)
     if decision == "approve" and not customer.get("address"):
@@ -54,12 +61,13 @@ async def sanction_agent_node(state: dict):
     print("📜 [SANCTION AGENT] Generating final sanction letter...")
     
     log = list(state.get("action_log") or [])
-    log.append("📜 Drafting legally-compliant Sanction Letter and Loan Agreement...")
+    log.append(f"📜 Drafting legally-compliant Sanction Letter for {selected_lender_name or 'approved lender'}...")
 
     current_date = datetime.datetime.now().strftime("%B %d, %Y")
     
     principal = terms.get("principal", 0)
-    rate = terms.get("rate", 0.10)
+    # ✅ Use selected rate if available, otherwise fall back to terms rate
+    rate = selected_rate if selected_rate else terms.get("rate", 0.10)
     tenure = terms.get("tenure", 12)
     emi = terms.get("emi", 0)
     cust_name = customer.get("name", "Applicant")
@@ -86,18 +94,27 @@ async def sanction_agent_node(state: dict):
         styles = getSampleStyleSheet()
         elements = []
 
+        reg_details = state.get("selected_lender_reg_details", {}) or {}
+        lender_cin = reg_details.get("cin", "L65910PN2007PLC130076")
+        lender_office = reg_details.get("office", "FinServe complex, Mumbai-Pune Road, Pune - 411035")
+        lender_web = reg_details.get("web", "www.finserve-nbfc.com")
+
         # Header
-        elements.append(Paragraph("<b>FinServe NBFC Ltd.</b>", styles["Title"]))
+        elements.append(Paragraph(f"<b>{selected_lender_name or 'FinServe NBFC Ltd.'}</b>", styles["Title"]))
+        elements.append(Paragraph(f"<font size=8>CIN: {lender_cin} | Registered Office: {lender_office}</font>", styles["Normal"]))
+        elements.append(Paragraph(f"<font size=8>Website: {lender_web}</font>", styles["Normal"]))
+        elements.append(Spacer(1, 10))
         elements.append(Paragraph(f"<b>{letter_label.upper()} LETTER</b>", styles["Heading2"]))
         elements.append(Paragraph(f"Date: {current_date}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
         # Applicant Table
         app_data = [
-            ["Name", cust_name],
-            ["Address", Paragraph(cust_addr, styles["Normal"])],
-            ["Phone", cust_phone],
-            ["Status", status_text],
+            ["Lender", selected_lender_name or "FinServe NBFC Ltd."],
+            ["Applicant Name", cust_name],
+            ["Communication Addr", Paragraph(cust_addr, styles["Normal"])],
+            ["Registered Phone", cust_phone],
+            ["Application Status", status_text],
         ]
         table = Table(app_data, colWidths=[120, 330])
         table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey)]))
@@ -123,17 +140,34 @@ async def sanction_agent_node(state: dict):
         filepath = filepath.replace(".pdf", ".txt")
         with open(filepath, "w") as f: f.write(f"Sanction Letter\nName: {cust_name}\nAmount: {principal}")
 
-    msg = (f"📜 **Your Sanction Letter is Ready!**\n\n"
-           f"I've generated your official agreement (ID: {filename}).\n\n"
-           f"**NEXT STEP**: Please click the button below to **E-sign** and authorize the disbursement of ₹{principal:,} to your linked account.")
+    if is_approved:
+        msg = (f"📜 **Your Sanction Letter is Ready!**\n\n"
+               f"I've generated your official agreement (ID: {filename}).\n\n"
+               f"**Lender**: {selected_lender_name or 'FinServe NBFC'}\n"
+               f"**Rate**: {rate:.1f}% p.a.\n"
+               f"**Amount**: ₹{principal:,}\n\n"
+               f"**NEXT STEP**: Please click the button below to **E-sign** and authorize the disbursement of ₹{principal:,} to your linked account.")
+        options = ["✍️ E-sign & Disburse", "📄 View Letter", "Talk to Arjun"]
+        phase = "sanction_esign"
+    else:
+        msg = (f"📜 **Rejection Letter Generated**\n\n"
+               f"I've generated a formal letter (ID: {filename}) explaining our decision.\n\n"
+               f"**Lender**: {selected_lender_name or 'FinServe NBFC'}\n"
+               f"**Status**: Not Approved\n\n"
+               f"You can view the letter below. I recommend reviewing the suggestions to improve your eligibility for future applications.")
+        options = ["📄 View Letter", "Talk to Arjun"]
+        phase = "loan_rejected"
     
     updates = {
         "decision": decision,
         "sanction_pdf": filepath, 
+        "selected_lender_id": selected_lender_id,  # ✅ Persist lender info
+        "selected_lender_name": selected_lender_name,  # ✅ Persist lender info
+        "selected_interest_rate": selected_rate,  # ✅ Persist lender info
         "messages": [AIMessage(content=msg)],
         "action_log": log,
-        "options": ["✍️ E-sign & Disburse", "📄 View Letter", "Talk to Arjun"],
-        "current_phase": "sanction_esign",
+        "options": options,
+        "current_phase": phase,
         "customer_data": customer
     }
     
@@ -179,6 +213,10 @@ async def sanction_agent_node(state: dict):
             "payments_made": 0,
             "remaining_balance": round(principal, 2),
             "pdf_path": filepath,
+            # ✅ NEW: Include selected lender information
+            "lender_id": selected_lender_id,
+            "lender_name": selected_lender_name,
+            "lender_rate": selected_rate,
         }
         await loan_applications_collection.insert_one(loan_record)
         print(f"📊 [SANCTION AGENT] Loan persisted: {cust_name} — {'Approved' if is_approved else 'Rejected'} — ₹{principal:,}")

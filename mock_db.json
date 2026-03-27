@@ -164,6 +164,81 @@
         "\ud83e\udde0 Brain Decision: final_advisor_agent"
       ],
       "routing_reasoning": "The user has expressed interest in discussing the offer, indicating a need for post-approval support or general advice. The intent is not explicitly 'advice' or 'sign', but given the context, the final advisor agent is the most suitable choice."
+    },
+    "3fece47e-b899-422b-980c-9b87cefd7564": {
+      "session_id": "3fece47e-b899-422b-980c-9b87cefd7564",
+      "created_at": "2026-03-26T18:24:07.230994",
+      "current_phase": "session_started",
+      "phase_history": [
+        {
+          "phase": "session_started",
+          "timestamp": "2026-03-26T18:24:07.230994"
+        }
+      ],
+      "customer_id": "",
+      "customer_data": {
+        "name": "",
+        "phone": "",
+        "email": "",
+        "city": "",
+        "salary": 0,
+        "credit_score": 0,
+        "pre_approved_limit": 0,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "past_records": "",
+        "drop_off_history": "",
+        "occupation": "",
+        "employer_name": "",
+        "residence_type": ""
+      },
+      "is_existing_customer": false,
+      "loan_terms": {
+        "loan_type": "",
+        "requested_amount": 0,
+        "principal": 0,
+        "rate": 0.0,
+        "tenure": 0,
+        "emi": 0.0
+      },
+      "documents": {
+        "salary_slip_path": "",
+        "salary_extracted": 0.0,
+        "gross_salary_extracted": 0.0,
+        "employer_name": "",
+        "document_type": "",
+        "document_number": "",
+        "confidence": 0.0,
+        "verified": false,
+        "tampered": false,
+        "tamper_reason": "",
+        "name_extracted": ""
+      },
+      "required_documents": [],
+      "kyc_status": "",
+      "kyc_issues": [],
+      "fraud_score": -1.0,
+      "fraud_signals": 0,
+      "fraud_details": [],
+      "decision": "",
+      "dti_ratio": 0.0,
+      "risk_level": "",
+      "alternative_offer": 0.0,
+      "reasons": [],
+      "is_authenticated": false,
+      "otp_sent": false,
+      "intent": "none",
+      "next_agent": "registration_agent",
+      "negotiation_round": 0,
+      "persuasion_options": [],
+      "persuasion_status": "",
+      "sanction_pdf": "",
+      "advisory_message": "",
+      "action_log": [],
+      "options": [],
+      "status": "active",
+      "_id": "3fece47e-b899-422b-980c-9b87cefd7564"
     }
   },
   "loan_applications": {},

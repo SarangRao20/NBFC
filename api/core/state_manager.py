@@ -48,7 +48,11 @@ def _default_state() -> dict:
             "rate": 0.0,
             "tenure": 0,
             "emi": 0.0,
+            "loan_purpose": "",
         },
+        
+        # Eligible NBFC offers (Phase 2 → Sales)
+        "eligible_offers": [],
 
         # Document verification (Phase 3)
         "documents": {

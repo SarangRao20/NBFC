@@ -11,6 +11,7 @@ from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
 from db.database import documents_collection, MONGO_URI
 from db.gridfs_service import upload_file_to_gridfs
+from mock_apis.lender_apis import aggregate_lender_offers
 
 settings = get_settings()
 
@@ -138,6 +139,15 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
     # Call document agent for processing
     try:
         from agents.document_agent import document_agent_node
+        # Include selected lender info if present so document_agent won't short-circuit
+        selected_lender_id = state.get("selected_lender_id") or state.get("selected_nbfc") or state.get("selected_lender")
+        selected_lender_name = (
+            state.get("selected_lender_name")
+            or state.get("selected_nbfc_name")
+            or state.get("selected_lender_name")
+            or (state.get("loan_terms", {}) or {}).get("nbfc")
+        )
+
         agent_state = {
             "session_id": session_id,
             "documents": {
@@ -145,7 +155,9 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
                 "file_name": file_name
             },
             "customer_data": state.get("customer_data", {}),
-            "loan_terms": state.get("loan_terms", {})
+            "loan_terms": state.get("loan_terms", {}),
+            "selected_lender_id": selected_lender_id,
+            "selected_lender_name": selected_lender_name,
         }
         agent_result = await document_agent_node(agent_state)
         
@@ -225,7 +237,7 @@ async def extract_ocr(session_id: str, file_path: str, file_name: str) -> dict:
         "confidence": extracted.get("confidence", 0.0),
         "document_id": doc_id,
         "gridfs_file_id": gridfs_file_id,
-        "message": f"Document processed. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "message": f"Document processed. Confidence: {(extracted.get('confidence') or 0.0):.2f}"
     }
 
 async def extract_ocr_batch(session_id: str, files: list[dict]) -> dict:
@@ -278,7 +290,7 @@ async def extract_ocr_fallback(session_id: str, file_path: str, file_name: str) 
         "extracted_data": extracted,
         "confidence": extracted.get("confidence", 0.0),
         "document_id": None,
-        "message": f"Document processed with fallback OCR. Confidence: {extracted.get('confidence', 0.0):.2f}"
+        "message": f"Document processed with fallback OCR. Confidence: {(extracted.get('confidence') or 0.0):.2f}"
     }
 
 
@@ -354,6 +366,33 @@ async def verify_income(session_id: str) -> dict:
         income_match = True
 
     await advance_phase(session_id, "income_verified")
+    # After income verification, run lender comparison to surface eligible lenders
+    try:
+        terms = state.get("loan_terms", {})
+        principal = terms.get("principal") or terms.get("requested_amount") or 0
+        tenure = terms.get("tenure") or 12
+        credit_score = (state.get("customer_data", {}) or {}).get("credit_score") or 700
+        monthly_salary = (state.get("customer_data", {}) or {}).get("salary") or extracted
+
+        comp = await aggregate_lender_offers(
+            principal=float(principal),
+            tenure=int(tenure),
+            credit_score=int(credit_score),
+            monthly_income=float(monthly_salary)
+        )
+
+        # Persist eligible offers and default selection (best offer) into session
+        selected = comp.get("selected_lender_id")
+        
+        await update_session(session_id, {
+            "eligible_offers": comp.get("eligible_offers", []),
+            "options": [o.get("lender_name") for o in comp.get("eligible_offers", [])],
+            "selected_lender_id": selected,
+            "selected_lender_name": comp.get("selected_lender_name"),
+            "selected_interest_rate": comp.get("selected_interest_rate")
+        })
+    except Exception as e:
+        print(f"⚠️ Comparison after income verification failed: {e}")
 
     return {
         "income_verified": True,

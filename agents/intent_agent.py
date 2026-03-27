@@ -158,11 +158,11 @@ async def intent_node(state: dict):
         # Check if they have past loans to acknowledge
         past_loans = cust.get("past_loans", [])
         if past_loans and not state.get("messages"):
-             greeting_prompt = f"Greet the user {name if name else ''} warmly. Acknowledge that they are a valued returning customer. Mention you see their history and can help with new loans, payments, or just advice. Keep it human and warm."
+             greeting_prompt = f"Welcome back {name if name else ''}! I see your past history with us. How can I help you today? Loans, payments, or some advice?"
         else:
-             greeting_prompt = f"Greet the user {name if name else ''} warmly. Mention you can help with loans, advice, KYC, or payments. Keep it human and ask what's on their mind. Limit to 2 sentences."
+             greeting_prompt = f"Hi {name if name else 'there'}! I'm Arjun, your loan specialist. How can I help you today? We offer loans, financial advice, and KYC support."
         
-        res = await llm.ainvoke([SystemMessage(content=greeting_prompt)])
+        res = await llm.ainvoke([SystemMessage(content=greeting_prompt + " Keep it to exactly one warm sentence.")])
         msg = res.content
 
         return {

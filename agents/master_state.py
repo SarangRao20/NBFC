@@ -82,7 +82,13 @@ class MasterState(TypedDict):
     
     # ─── Loan Terms Negotiation ────────────────────────────────────────────────
     loan_terms: LoanTerms
-    loan_confirmed: bool  
+    loan_confirmed: bool  # ✅ Added: True when user accepts final terms
+    
+    # ─── Loan Comparison & Selection (Phase 5) ──────────────────────────────────
+    selected_lender_id: Optional[str]  # ✅ NEW: e.g., "bank_a", "nbfc_x"
+    selected_lender_name: Optional[str]  # ✅ NEW: e.g., "HDFC Bank"
+    selected_interest_rate: Optional[float]  # ✅ NEW: Selected loan's interest rate
+    comparison_result: Optional[Dict]  # ✅ NEW: Full comparison response from engine
     
     # ─── Document Processing & Tracking ────────────────────────────────────────
     documents: DocumentData
@@ -120,6 +126,10 @@ class MasterState(TypedDict):
     
     # ─── Routing & Logging ─────────────────────────────────────────────────────
     next_agent: str
+    previous_agent: Optional[str]  # ✅ Added: Internal tracker to prevent loops
     routing_reasoning: str
-    action_log: List[str]  
-    options: List[str]
+    action_log: List[str]  # human-readable step log for UI + advisor
+    options: List[str]  # interaction buttons
+    eligible_offers: List[Dict] # ✅ NEW: NBFC offers for selection
+    sales_output: Dict # ✅ NEW: Structured sales data for UI
+

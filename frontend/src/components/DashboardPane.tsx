@@ -12,6 +12,7 @@ interface Props {
   onNewChat?: () => void;
   onPayEmi?: () => void;
   onDeleteSession?: (sessionId: string) => void;
+  onSelectLender?: (lenderId: string) => void;
 }
 
 export default function DashboardPane({ appState, onLoadSession, onNewChat, onPayEmi, onDeleteSession }: Props) {
@@ -23,7 +24,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
       const rect = badgeRef.current.getBoundingClientRect();
       const x = (rect.left + rect.width / 2) / window.innerWidth;
       const y = (rect.top + rect.height / 2) / window.innerHeight;
-      
+
       confetti({
         particleCount: 120,
         spread: 70,
@@ -33,12 +34,16 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
     }
   }, [appState.underwritingStatus]);
 
+  function onSelectLender(_lender_id: any): void {
+    throw new Error('Function not implemented.');
+  }
+
   return (
     <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col h-screen z-10 overflow-hidden">
       {/* Scrollable Content */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide p-5">
         {/* Header: User Profile - Clickable */}
-        <button 
+        <button
           onClick={() => setShowProfileDropdown(!showProfileDropdown)}
           className="w-full flex items-center justify-between mb-6 pt-1.5 hover:bg-slate-100 px-2 py-2 rounded-lg transition-colors"
         >
@@ -78,24 +83,24 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
             <MetricCard label="Salary" value={appState.salary || 0} prefix="₹" />
             <MetricCard label="Credit Score" value={appState.creditScore || 0} />
           </div>
-          
+
           {/* Minimal summary only. Removed redundant repayment summary as per user request. */}
-          
+
           {/* Payment CTA */}
           {appState.underwritingStatus === 'Approved' && appState.emi > 0 && (
             <div className="mt-4 p-3 bg-emerald-50 rounded-lg border border-emerald-100">
-               <div className="flex justify-between items-center mb-2">
-                 <span className="text-[10px] font-bold text-emerald-800 uppercase">Active Repayment</span>
-                 <span className="text-[10px] font-bold text-emerald-600">
-                   {appState.loan_terms?.payments_made || 0} / {appState.tenure} Paid
-                 </span>
-               </div>
-               <button 
-                 onClick={onPayEmi}
-                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold flex items-center justify-center transition-all shadow-sm"
-               >
-                 <CreditCard size={14} className="mr-2" /> Pay Next EMI
-               </button>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase">Active Repayment</span>
+                <span className="text-[10px] font-bold text-emerald-600">
+                  {appState.loan_terms?.payments_made || 0} / {appState.tenure} Paid
+                </span>
+              </div>
+              <button
+                onClick={onPayEmi}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold flex items-center justify-center transition-all shadow-sm"
+              >
+                <CreditCard size={14} className="mr-2" /> Pay Next EMI
+              </button>
             </div>
           )}
         </div>
@@ -159,6 +164,31 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
           </div>
         )}
 
+        {/* Eligible Lenders */}
+        {appState.eligible_offers && appState.eligible_offers.length > 0 && (
+          <div className="p-4 border-t border-slate-200">
+            <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-3">Eligible Lenders</h3>
+            <div className="space-y-2">
+              {appState.eligible_offers.map((offer: any) => (
+                <div key={offer.lender_id} className="flex items-center justify-between p-2 bg-white rounded-md border border-slate-100">
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">{offer.lender_name}</div>
+                    <div className="text-[9px] text-slate-500">Rate: {offer.interest_rate}% • EMI: ₹{Number(offer.emi).toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => onSelectLender?.(offer.lender_id)}
+                      className="text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded"
+                    >
+                      Select
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {appState.pastRecords && (
           <div className="px-3 py-2 bg-amber-50/50 rounded-lg border border-amber-100/50 italic text-[10px] text-amber-800 mb-3">
             <strong>Note:</strong> {appState.pastRecords}
@@ -178,7 +208,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
           >
             <div className="sticky top-0 bg-white border-b border-slate-100 px-3 py-2 flex justify-between items-center">
               <h3 className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Previous Chats</h3>
-              <button 
+              <button
                 onClick={onNewChat}
                 className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold hover:bg-emerald-700 transition-colors flex items-center"
               >
@@ -188,7 +218,7 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
             <div className="space-y-1.5 p-2">
               {appState.pastSessions.map((session, i) => (
                 <div key={i} className="flex space-x-1.5 group">
-                  <button 
+                  <button
                     onClick={() => {
                       onLoadSession?.(session.session_id);
                       setShowProfileDropdown(false);
@@ -209,14 +239,14 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
                       <span className={clsx(
                         "inline-block px-1.5 py-0.5 rounded font-semibold",
                         session.display_status === 'approved' ? "bg-emerald-100 text-emerald-700" :
-                        session.display_status === 'in_process' ? "bg-blue-100 text-blue-700" :
-                        session.display_status === 'rejected' ? "bg-red-100 text-red-700" :
-                        "bg-slate-100 text-slate-600"
+                          session.display_status === 'in_process' ? "bg-blue-100 text-blue-700" :
+                            session.display_status === 'rejected' ? "bg-red-100 text-red-700" :
+                              "bg-slate-100 text-slate-600"
                       )}>
                         {session.display_status === 'approved' ? 'Approved' :
-                         session.display_status === 'in_process' ? 'In Process' :
-                         session.display_status === 'rejected' ? 'Rejected' :
-                         'Pending'}
+                          session.display_status === 'in_process' ? 'In Process' :
+                            session.display_status === 'rejected' ? 'Rejected' :
+                              'Pending'}
                       </span>
                     </div>
                   </button>
