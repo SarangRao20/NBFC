@@ -52,10 +52,58 @@ def api_execution_node(state: MasterState):
     return {"action_log": current_log}
 
 def direct_transfer_node(state: MasterState):
-    """Step 5: RBI Compliant Transfer"""
+    """Step 5: RBI Compliant Transfer via RazorpayX Payout"""
     net_amt = state.get("net_disbursement_amount", 0)
+    session_id = state.get("session_id", "")
     current_log = state.get("action_log", [])
-    current_log.append(f"> Initiating RTGS/NEFT Transfer for ₹{net_amt:,.2f}... SUCCESS")
+    payout_id = state.get("razorpay_payout_id", "")
+
+    if payout_id:
+        # Payout already initiated in sanction_service.py, just log it
+        current_log.append(f"> RazorpayX Payout already initiated: {payout_id} for ₹{net_amt:,.2f}")
+    else:
+        # Check if we should initiate payout here (fallback case)
+        try:
+            import asyncio
+            from api.services.payout_service import initiate_disbursement
+            from api.services.razorpay_service import get_razorpay_service
+            
+            razorpay = get_razorpay_service()
+            if razorpay.is_configured and net_amt > 0:
+                # Create a mock beneficiary for fallback (in production, this would come from KYC)
+                from api.services.payout_service import create_beneficiary
+                customer = state.get("customer_data", {})
+                
+                # This is a fallback - normally beneficiary is created in sanction_service
+                beneficiary = asyncio.run(create_beneficiary(
+                    name=customer.get("name", "Customer"),
+                    account_number=customer.get("bank_account", "0000000000"),
+                    ifsc=customer.get("ifsc", "HDFC0000000"),
+                    email=customer.get("email", ""),
+                    phone=customer.get("phone", "")
+                ))
+                
+                if beneficiary.get("fund_account_id"):
+                    payout_result = asyncio.run(initiate_disbursement(
+                        fund_account_id=beneficiary["fund_account_id"],
+                        amount=net_amt,
+                        session_id=session_id,
+                        mode="IMPS",
+                        narration="Loan Disbursement"
+                    ))
+                    
+                    if payout_result.get("success"):
+                        payout_id = payout_result.get("payout_id", "")
+                        current_log.append(f"> RazorpayX Payout initiated: {payout_id} for ₹{net_amt:,.2f}")
+                    else:
+                        current_log.append(f"> RazorpayX Payout failed: {payout_result.get('message', 'Unknown error')}")
+                else:
+                    current_log.append(f"> Failed to create beneficiary for payout")
+            else:
+                current_log.append(f"> Initiating RTGS/NEFT Transfer for ₹{net_amt:,.2f}... SUCCESS")
+        except Exception as e:
+            current_log.append(f"> Payout service error: {e} - falling back to RTGS/NEFT simulation")
+
     return {"action_log": current_log}
 
 def cooling_off_node(state: MasterState):

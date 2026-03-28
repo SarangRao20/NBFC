@@ -13,9 +13,10 @@ interface Props {
   onPayEmi?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onSelectLender?: (lenderId: string) => void;
+  isProcessingPayment?: boolean;
 }
 
-export default function DashboardPane({ appState, onLoadSession, onNewChat, onPayEmi, onDeleteSession }: Props) {
+export default function DashboardPane({ appState, onLoadSession, onNewChat, onPayEmi, onDeleteSession, onSelectLender, isProcessingPayment = false }: Props) {
   const badgeRef = useRef<HTMLDivElement>(null);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
@@ -33,10 +34,6 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
       });
     }
   }, [appState.underwritingStatus]);
-
-  function onSelectLender(_lender_id: any): void {
-    throw new Error('Function not implemented.');
-  }
 
   return (
     <div className="w-72 border-r border-slate-200 bg-slate-50 flex flex-col h-screen z-10 overflow-hidden">
@@ -97,9 +94,24 @@ export default function DashboardPane({ appState, onLoadSession, onNewChat, onPa
               </div>
               <button
                 onClick={onPayEmi}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold flex items-center justify-center transition-all shadow-sm"
+                disabled={isProcessingPayment}
+                className={clsx(
+                  "w-full py-2 rounded-md text-[11px] font-bold flex items-center justify-center transition-all shadow-sm",
+                  isProcessingPayment 
+                    ? "bg-emerald-400 cursor-not-allowed" 
+                    : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                )}
               >
-                <CreditCard size={14} className="mr-2" /> Pay Next EMI
+                {isProcessingPayment ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full mr-2 animate-spin"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={14} className="mr-2" /> Pay Next EMI
+                  </>
+                )}
               </button>
             </div>
           )}

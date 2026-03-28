@@ -60,6 +60,7 @@ function App() {
   const [currentUser] = useState<UserData | null>(null);
   // @ts-ignore - chatPhase is currently unused but kept for state consistency
   const [chatPhase, setChatPhase] = useState<ChatPhase>('init');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const greetingStarted = useRef(false);
 
   // Persistence: Check for existing session on mount
@@ -234,9 +235,11 @@ function App() {
                 emi: o.emi || o.monthly_payment || 0
               })),
               documents_uploaded: fullState.documents_uploaded || prev.documents_uploaded || false,
-              disbursement_step: fullState.disbursement_step,
-              net_disbursement_amount: fullState.net_disbursement_amount,
-              needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document'),
+              disbursement_step: fullState.disbursement_step === "ui_paused" || fullState.disbursement_step === "completed" || prev.disbursement_step === "ui_paused"
+                ? (fullState.disbursement_step || prev.disbursement_step)
+                : fullState.disbursement_step,
+              net_disbursement_amount: fullState.net_disbursement_amount !== undefined ? fullState.net_disbursement_amount : prev.net_disbursement_amount,
+              needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document') && fullState.current_phase !== 'disbursement',
               requiredDocuments: fullState.required_documents || prev.requiredDocuments,
             }));
           }
@@ -281,17 +284,49 @@ function App() {
       }));
 
       // Display the agent's negotiation response
-      if (res?.messages && res.messages.length > 0) {
-        for (const msg of res.messages) {
-          const content = typeof msg === 'string' ? msg : msg.content || msg.text || '';
-          if (content) pushAgentMessage(content);
+      if (res?.all_replies && res.all_replies.length > 0) {
+        // Handle structured message types from backend
+        for (const msg of res.all_replies) {
+          if (typeof msg === 'string') {
+            pushAgentMessage(msg, 'text');
+          } else if (msg && typeof msg === 'object') {
+            const msgType = msg.type || 'text';
+            const content = msg.content || msg.text || '';
+            
+            if (msgType === 'emi_slider') {
+              // Inject EMI slider message with loan terms from backend
+              const loanTerms = msg.loan_terms || res?.loan_terms || {};
+              setChatHistory(prev => [...prev, {
+                id: `msg-${Date.now()}-${Math.random()}`,
+                sender: 'agent',
+                type: 'emi_slider',
+                content: content || "Adjust your loan tenure to see how the monthly EMI changes:",
+                timestamp: new Date(),
+              }]);
+              // Update app state with counter-offer terms
+              if (loanTerms.principal) {
+                setAppState(prev => ({
+                  ...prev,
+                  requestedAmount: loanTerms.principal,
+                  tenure: loanTerms.tenure || prev.tenure,
+                  roi: loanTerms.rate || prev.roi,
+                  emi: loanTerms.emi || prev.emi,
+                  loan_terms: loanTerms
+                }));
+              }
+            } else if (msgType === 'text' && content) {
+              pushAgentMessage(content, 'text');
+            } else if (content) {
+              pushAgentMessage(content, msgType);
+            }
+          }
         }
       } else if (res?.reply) {
         pushAgentMessage(res.reply);
       } else if (res?.message) {
         pushAgentMessage(res.message);
       } else {
-        pushAgentMessage("The agent is reviewing your options. Please continue the conversation.");
+        pushAgentMessage("I've analyzed your profile and prepared a counter-offer. Please review the adjusted terms below.");
       }
 
       // Update state from response if available
@@ -300,6 +335,39 @@ function App() {
           ...prev,
           options: res.options,
         }));
+      }
+
+      // If loan_terms came back in response, update them
+      if (res?.loan_terms && res.loan_terms.principal) {
+        setAppState(prev => ({
+          ...prev,
+          requestedAmount: res.loan_terms.principal,
+          tenure: res.loan_terms.tenure || prev.tenure,
+          roi: res.loan_terms.rate || prev.roi,
+          emi: res.loan_terms.emi || prev.emi,
+          loan_terms: res.loan_terms
+        }));
+        
+        // Only inject EMI slider for EMI affordability rejections
+        const currentRejectionType = appState.rejectionType;
+        if (currentRejectionType === 'emi_affordability') {
+          setChatHistory(prev => [...prev, {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: 'agent',
+            type: 'emi_slider',
+            content: "🤝 I've prepared a counter-offer based on your profile. Adjust the tenure to see how your monthly EMI changes:",
+            timestamp: new Date(),
+          }]);
+        } else {
+          // For exposure limit, LTV, cashflow - show reduced principal offer without slider
+          setChatHistory(prev => [...prev, {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: 'agent',
+            type: 'text',
+            content: `💡 **Counter-offer available:** I've adjusted the loan amount to fit within your risk profile. You can now proceed with ₹${res.loan_terms.principal.toLocaleString()}.`,
+            timestamp: new Date(),
+          }]);
+        }
       }
 
       setChatPhase('negotiate');
@@ -313,6 +381,8 @@ function App() {
             requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
             tenure: fullState.loan_terms?.tenure || prev.tenure,
             emi: fullState.loan_terms?.emi || prev.emi,
+            roi: fullState.loan_terms?.rate || prev.roi,
+            loan_terms: fullState.loan_terms || prev.loan_terms,
           }));
         }
       } catch (_) { /* non-critical */ }
@@ -346,6 +416,8 @@ function App() {
         thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Underwriting Agent'),
         activeAgent: null,
         underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
+        rejectionType: uwResult.rejection_type || null,
+        negotiationApproach: uwResult.negotiation_approach || null,
       }));
 
       if (uwResult.decision === 'approve') {
@@ -636,6 +708,8 @@ function App() {
           creditScore: state.customer_data?.credit_score || 0,
           preApprovedLimit: state.customer_data?.pre_approved_limit || 0,
           underwritingStatus: state.decision === 'approve' ? 'Approved' : (state.decision === 'soft_reject' ? 'Soft-Rejected' : 'Pending Evaluation'),
+          rejectionType: state.rejection_type,
+          negotiationApproach: state.negotiation_approach,
           activeAgent: state.current_phase,
           actionLog: state.action_log || [],
           options: state.options || [],
@@ -646,7 +720,7 @@ function App() {
           },
           pastLoans: state.customer_data?.past_loans,
           salary: state.customer_data?.salary || 0,
-          needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document'),
+          needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document') && state.current_phase !== 'disbursement',
           requiredDocuments: state.required_documents || [],
           eligible_offers: (state.eligible_offers || []).map((o: any) => ({
             lender_id: o.lender_id || o.id || o.lenderId || o.nbfc_id || o.nbfcId,
@@ -754,7 +828,7 @@ function App() {
 
     // Intercept common UI actions: negotiate or request rejection letter
     const normalized = text.trim().toLowerCase();
-    if (normalized.includes('negotiate')) {
+    if (normalized === 'negotiate' || normalized.includes('negotiate') || normalized.includes('counter-offer') || normalized.includes('counter offer')) {
       await runNegotiation();
       return;
     }
@@ -841,15 +915,19 @@ function App() {
             emi: fullState.loan_terms?.emi || prev.emi,
             creditScore: fullState.customer_data?.credit_score || prev.creditScore,
             preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
-            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
+            underwritingStatus: fullState.decision === 'approve' ? 'Approved' : fullState.decision === 'soft_reject' ? 'Soft-Rejected' : prev.underwritingStatus,
             pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
             loan_terms: fullState.loan_terms || prev.loan_terms,
             salary: fullState.customer_data?.salary || prev.salary,
             eligible_offers: fullState.eligible_offers || prev.eligible_offers || [],
-            disbursement_step: fullState.disbursement_step,
-            net_disbursement_amount: fullState.net_disbursement_amount,
-            needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document'),
+            disbursement_step: fullState.disbursement_step === "ui_paused" || fullState.disbursement_step === "completed" || prev.disbursement_step === "ui_paused"
+              ? (fullState.disbursement_step || prev.disbursement_step)
+              : fullState.disbursement_step,
+            net_disbursement_amount: fullState.net_disbursement_amount !== undefined ? fullState.net_disbursement_amount : prev.net_disbursement_amount,
+            rejectionType: fullState.rejection_type !== undefined ? fullState.rejection_type : prev.rejectionType,
+            negotiationApproach: fullState.negotiation_approach !== undefined ? fullState.negotiation_approach : prev.negotiationApproach,
+            needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document') && fullState.current_phase !== 'disbursement',
             requiredDocuments: fullState.required_documents || prev.requiredDocuments,
           }));
         }
@@ -860,10 +938,15 @@ function App() {
       // Update Phase based on intent/decision/next_agent
       try {
         const isDocPhase = fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document';
+        const isDisbursementPhase = fullState?.current_phase === 'disbursement' || fullState?.disbursement_step === 'ui_paused' || fullState?.disbursement_step === 'completed';
         const allUploaded = fullState?.documents_uploaded === true;
 
         if (fullState?.decision === 'soft_reject') {
           setChatPhase('negotiate');
+          setAppState(prev => ({ ...prev, needsDocument: false }));
+        } else if (isDisbursementPhase) {
+          // Don't show document upload during disbursement
+          setChatPhase('accepted');
           setAppState(prev => ({ ...prev, needsDocument: false }));
         } else if (isDocPhase && !allUploaded) {
           setChatPhase('document');
@@ -903,22 +986,86 @@ function App() {
 
   const handlePayEmi = async () => {
     if (!sessionId) return;
+    
+    setIsProcessingPayment(true);
+    
     try {
-      const res = await apiClient.payEmi(sessionId);
-      if (res.success) {
-        pushAgentMessage(`✅ ${res.message}`, 'text');
-        // State will sync via the PHASE_UPDATE broadcast, but let's force a sync here too
-        const fullState = await apiClient.getSession(sessionId);
-        if (fullState) {
-          setAppState(prev => ({
-            ...prev,
-            loan_terms: fullState.loan_terms
-          }));
-        }
+      // Step 1: Create Razorpay order
+      console.log('🚀 Starting EMI payment for session:', sessionId);
+      const orderResponse = await apiClient.createEmiOrder(sessionId);
+      
+      console.log('📦 Order Response:', JSON.stringify(orderResponse, null, 2));
+      
+      if (!orderResponse.success) {
+        console.error('❌ Order creation failed:', orderResponse.message);
+        throw new Error(orderResponse.message || 'Failed to create payment order');
       }
-    } catch (err) {
-      console.error("Payment failed:", err);
-      pushAgentMessage("❌ Payment failed. Please try again.", 'text');
+
+      console.log('✅ Order created successfully:', orderResponse.order_id);
+
+      // Step 2: Open Razorpay Checkout
+      const options = {
+        key: orderResponse.key_id,
+        amount: orderResponse.amount_paise,
+        currency: orderResponse.currency || 'INR',
+        name: 'FinServe NBFC',
+        description: orderResponse.description,
+        order_id: orderResponse.order_id,
+        prefill: {
+          name: orderResponse.customer_name,
+          email: orderResponse.customer_email,
+          contact: orderResponse.customer_phone,
+        },
+        theme: {
+          color: '#10b981',
+        },
+        modal: {
+          ondismiss: function() {
+            setIsProcessingPayment(false);
+            pushAgentMessage('Payment cancelled. You can try again anytime.', 'text');
+          },
+        },
+        handler: async function(response: any) {
+          try {
+            // Step 3: Verify payment signature
+            const verifyResponse = await apiClient.verifyEmiPayment(
+              sessionId,
+              response.razorpay_payment_id,
+              response.razorpay_order_id,
+              response.razorpay_signature
+            );
+
+            if (verifyResponse.success) {
+              pushAgentMessage(`✅ ${verifyResponse.message}`, 'text');
+              
+              // Sync state
+              const fullState = await apiClient.getSession(sessionId);
+              if (fullState) {
+                setAppState(prev => ({
+                  ...prev,
+                  loan_terms: fullState.loan_terms,
+                  creditScore: fullState.customer_data?.credit_score || prev.creditScore
+                }));
+              }
+            } else {
+              throw new Error(verifyResponse.message || 'Payment verification failed');
+            }
+          } catch (error) {
+            console.error('Payment verification failed:', error);
+            pushAgentMessage('❌ Payment verification failed. Please contact support.', 'text');
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+      };
+
+      const razorpay = new (window as any).Razorpay(options);
+      razorpay.open();
+      
+    } catch (error) {
+      console.error('Payment failed:', error);
+      pushAgentMessage(`❌ ${error instanceof Error ? error.message : 'Payment failed. Please try again.'}`, 'text');
+      setIsProcessingPayment(false);
     }
   };
 
@@ -960,6 +1107,7 @@ function App() {
         onPayEmi={handlePayEmi}
         onDeleteSession={handleDeleteSession}
         onSelectLender={handleSelectLender}
+        isProcessingPayment={isProcessingPayment}
       />
       <ChatPane 
         appState={appState} 

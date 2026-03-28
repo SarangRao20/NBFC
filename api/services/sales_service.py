@@ -236,6 +236,23 @@ async def chat_with_agent(session_id: str, user_message: str, history: Optional[
 
     # Fast-path for EMI reminder queries using stored sanction/loan records.
     lowered = (user_message or "").lower()
+    
+    # ─── DETECT NEGOTIATION INTENT AFTER SOFT-REJECT ─────────────────────────
+    decision = state.get("decision", "")
+    is_negotiation_request = any(kw in lowered for kw in [
+        "negotiate", "counter", "counter-offer", "revised", "adjust", 
+        "lower amount", "reduce", "better terms", "restructure"
+    ])
+    
+    if decision == "soft_reject" and is_negotiation_request:
+        print(f"🤝 [SALES SERVICE] Negotiation request detected after soft-reject for session {session_id}")
+        # Trigger sales agent to generate counter-offer by setting flag
+        state["negotiation_requested"] = True
+        # Clear previous decision temporarily to allow re-evaluation
+        state["decision"] = None
+        await update_session(session_id, {"negotiation_requested": True, "decision": None})
+    # ────────────────────────────────────────────────────────────────────────
+    
     if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay", "previous loans", "past loans", "my loans", "history"]):
         try:
             from db.database import loan_applications_collection
@@ -344,6 +361,34 @@ async def chat_with_agent(session_id: str, user_message: str, history: Optional[
                         new_ai.append(parsed)
                     except:
                         new_ai.append({"type": "text", "content": m.content})
+        
+        # ─── INJECT EMI SLIDER FOR COUNTER-OFFER NEGOTIATION ───────────────────
+        loan_terms = final_state.get("loan_terms", {})
+        is_negotiation = final_state.get("negotiation_requested") or (user_message and any(
+            kw in user_message.lower() for kw in ["negotiate", "counter", "revised", "adjust"]
+        ))
+        
+        if is_negotiation and loan_terms and loan_terms.get("principal") and loan_terms.get("tenure"):
+            # Check if this is a counter-offer scenario (soft-reject recovery)
+            emi_slider_msg = {
+                "type": "emi_slider",
+                "content": "🤝 I've prepared a counter-offer based on your profile. Adjust the tenure to see how your monthly EMI changes:",
+                "loan_terms": {
+                    "principal": loan_terms.get("principal"),
+                    "tenure": loan_terms.get("tenure"),
+                    "rate": loan_terms.get("rate", 12),
+                    "emi": loan_terms.get("emi")
+                }
+            }
+            # Insert emi_slider after the first text message, or at the beginning
+            insert_idx = 0
+            for i, msg in enumerate(new_ai):
+                if isinstance(msg, dict) and msg.get("type") == "text":
+                    insert_idx = i + 1
+                    break
+            new_ai.insert(insert_idx, emi_slider_msg)
+            print(f"🎚️ [SALES SERVICE] Injected emi_slider for counter-offer: ₹{loan_terms.get('principal'):,.0f} @ {loan_terms.get('tenure')} months")
+        # ───────────────────────────────────────────────────────────────────────
         
         # Insert action log block before the final reply, if any steps were collected
         logs = final_state.get("action_log", [])

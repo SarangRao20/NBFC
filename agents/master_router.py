@@ -83,7 +83,7 @@ def route_next_agent(state: MasterState):
         return "disbursement_process", "Loan approved. Routing to 5-Step Disbursement Subgraph."
 
     # 🟡 2. The Soft-Reject Loop (Negotiation — handled by Sales Agent)
-    if decision == "soft_reject":
+    if decision == "soft_reject" or state.get("negotiation_requested"):
         accepted_offer = state.get("user_accepted_counter_offer", False)
         
         if not accepted_offer:

@@ -276,21 +276,88 @@ async def process_esign_acceptance(session_id: str) -> dict:
         bpi = 450.00                # Mock Broken Period Interest
         net_amount = principal - fee - gst - bpi
 
+        # ── Attempt RazorpayX Payout for real disbursement ────────────────────
+        payout_info = {}
+        is_simulated = False
+        try:
+            from api.services.payout_service import create_beneficiary, initiate_disbursement
+            from api.services.razorpay_service import get_razorpay_service
+
+            razorpay = get_razorpay_service()
+
+            if razorpay.is_payoutx_available:
+                # Create beneficiary (Contact + Fund Account)
+                beneficiary = await create_beneficiary(
+                    name=cust_name,
+                    account_number=customer.get("bank_account", ""),
+                    ifsc=customer.get("ifsc", ""),
+                    email=customer.get("email", ""),
+                    phone=customer.get("phone", ""),
+                )
+
+                if beneficiary.get("fund_account_id"):
+                    # Initiate payout
+                    payout_result = await initiate_disbursement(
+                        fund_account_id=beneficiary["fund_account_id"],
+                        amount=net_amount,
+                        session_id=session_id,
+                        mode="IMPS",
+                        narration=f"Loan Disb {session_id[:8]}",
+                    )
+                    payout_info = payout_result
+                    is_simulated = payout_result.get("simulated", False)
+                    print(f"💸 [SANCTION] Payout initiated: {payout_result.get('payout_id', 'N/A')} (Simulated: {is_simulated})")
+            else:
+                # PayoutX not available - trigger simulated disbursement
+                print("⚠️ [SANCTION] RazorpayX not available — using simulated disbursement")
+                payout_result = await initiate_disbursement(
+                    fund_account_id="simulated",
+                    amount=net_amount,
+                    session_id=session_id,
+                    mode="IMPS",
+                    narration=f"Loan Disb {session_id[:8]}",
+                )
+                payout_info = payout_result
+                is_simulated = True
+        except Exception as e:
+            print(f"⚠️ [SANCTION] Payout initiation failed (will simulate): {e}")
+            is_simulated = True
+
+        # Build thank you message
+        payout_id = payout_info.get("payout_id", "")
+        payout_status = payout_info.get("status", "pending")
+        
+        disbursement_line = ""
+        simulation_notice = ""
+        if payout_id:
+            if is_simulated:
+                simulation_notice = "\n⚠️ **Note:** Disbursement is in SIMULATION mode (RazorpayX Payout requires business activation). EMI payments still work with your standard Razorpay keys.\n"
+            else:
+                disbursement_line = f"\n📤 **Payout ID:** {payout_id}\n💳 **Transfer Mode:** {payout_info.get('mode', 'IMPS')}\n"
+        
         thank_you_msg = (
             f"🎉 **Congratulations {cust_name}!**\n\n"
             f"Your loan of ₹{principal:,.0f} has been successfully approved and e-signed!\n\n"
             f"💰 **Net Disbursement:** ₹{net_amount:,.2f}\n"
-            f"_(After deducting processing fee, GST, and broken period interest)_\n\n"
+            f"_(After deducting processing fee, GST, and broken period interest)_\n"
+            f"{disbursement_line}"
+            f"{simulation_notice}\n"
             f"Please complete the **RBI Compliance Checklist** below to authorize the final disbursement."
         )
 
         # Set disbursement_step to ui_paused so the frontend shows the compliance UI
-        await update_session(session_id, {
+        session_update = {
             "esign_completed": True,
             "net_disbursement_amount": net_amount,
             "disbursement_step": "ui_paused",
             "current_phase": "disbursement",
-        })
+            "disbursement_simulated": is_simulated,
+        }
+        if payout_id:
+            session_update["razorpay_payout_id"] = payout_id
+            session_update["razorpay_payout_status"] = payout_status
+
+        await update_session(session_id, session_update)
 
         return {
             "success": True,

@@ -1563,6 +1563,55 @@ async def _sales_mode(state: dict):
         else:
             log.append("🤝 Negotiation: Rate already at minimum viable. Explaining constraints.")
 
+    # ─── COUNTER-OFFER GENERATION FOR SOFT-REJECT NEGOTIATION ────
+    negotiation_requested = state.get("negotiation_requested", False)
+    counter_offer_generated = False
+    
+    if (decision == "soft_reject" or negotiation_requested) and (is_negotiating_rate or is_renegotiating_amount):
+        print(f"🤝 [SALES AGENT] Generating counter-offer for soft-rejected loan")
+        
+        # Get customer profile for eligibility calculation
+        salary = _safe_float(customer_context.get("salary"), 50000.0)
+        score = int(_safe_float(customer_context.get("credit_score"), 750.0))
+        existing_emi = _safe_float(customer_context.get("existing_emi_total"), 0)
+        
+        # Calculate max eligible amount based on DTI rules (typically 45-50% of salary)
+        max_dti = 0.45  # 45% debt-to-income ratio
+        available_for_emi = (salary * max_dti) - existing_emi
+        
+        if available_for_emi > 0 and tenure > 0:
+            # Calculate max principal based on available EMI capacity
+            r_monthly = rate_pa / 100 / 12
+            if r_monthly > 0:
+                max_principal = int(available_for_emi * ((1 + r_monthly) ** tenure - 1) / (r_monthly * (1 + r_monthly) ** tenure))
+            else:
+                max_principal = int(available_for_emi * tenure)
+            
+            # Set counter-offer to the lower of original request or max eligible
+            original_request = existing_terms.get("requested_amount", principal) or principal
+            # Use at least 80% of original or max eligible, whichever is higher but within limits
+            min_counter = min(int(original_request * 0.8), max_principal)
+            counter_principal = min(min_counter, max_principal)
+            
+            if counter_principal > 50000 and (counter_principal < principal or principal == 0):
+                principal = counter_principal
+                new_terms["principal"] = principal
+                counter_offer_generated = True
+                log.append(f"🎯 Counter-offer generated: ₹{principal:,.0f} (based on DTI eligibility)")
+                
+                # Add rate discount as goodwill gesture
+                current_rate = float(existing_terms.get("rate", 12.0))
+                benchmark_rate = float(state.get("benchmark_rate", 7.0))
+                if current_rate > benchmark_rate + 1.5:
+                    rate_pa = max(current_rate - 0.75, benchmark_rate + 1.5)
+                    new_terms["rate"] = rate_pa
+                    log.append(f"🎁 Rate discount applied: {current_rate}% → {rate_pa}%")
+        
+        # Clear the negotiation flag and decision to allow fresh underwriting
+        updates["negotiation_requested"] = False
+        updates["user_accepted_counter_offer"] = False
+    # ─────────────────────────────────────────────────────────────────────────────
+
     # Preserve requested_amount
     requested_amount = existing_terms.get("requested_amount", 0)
     

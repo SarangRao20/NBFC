@@ -10,6 +10,7 @@ It determines if the user wants:
 
 import json
 import re
+from datetime import datetime
 from config import get_extraction_llm
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -70,13 +71,40 @@ async def intent_node(state: dict):
     user_lower = user_msg.lower()
     if ("signed" in user_lower and "kfs" in user_lower) or ("authorized" in user_lower and "e-nach" in user_lower):
         log.append("✅ User digitally signed KFS and authorized e-NACH. Resuming Disbursement...")
+        
+        # Generate visual transaction receipt
+        terms = state.get("loan_terms", {})
+        principal = terms.get("principal", 0)
+        net_amount = state.get("net_disbursement_amount", principal * 0.98)  # Approximate if not set
+        payout_id = state.get("razorpay_payout_id", f"pout_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        utr = f"UTR{datetime.now().strftime('%Y%m%d%H%M%S')}SIM"
+        
+        is_simulated = state.get("disbursement_simulated", True)
+        simulation_badge = "🧪 SIMULATION MODE" if is_simulated else "✅ LIVE TRANSACTION"
+        
+        receipt_msg = f"""🎉 **DISBURSEMENT SUCCESSFUL!**
+
+━━━━━━━━━━━━━━━━━━━━━━
+💰 **Amount Disbursed:** ₹{net_amount:,.2f}
+🏦 **Transfer Mode:** IMPS (Instant)
+📋 **Payout ID:** {payout_id}
+🔗 **UTR Reference:** {utr}
+⏱️ **Processed At:** {datetime.now().strftime('%d %b %Y, %I:%M %p')}
+━━━━━━━━━━━━━━━━━━━━━━
+
+{simulation_badge}
+{"_EMI payments work with real Razorpay. Disbursement requires PayoutX activation._" if is_simulated else ""}
+
+Your loan amount has been transferred to your registered bank account. You will receive an SMS confirmation shortly."""
+        
         return {
             "intent": "loan",
             "current_phase": "disbursement",
             "kfs_signed": True, 
             "enach_setup": True,
             "esign_completed": True,
-            "disbursement_step": "compliance_verified",
+            "disbursement_step": "completed",
+            "messages": [AIMessage(content=receipt_msg)],
             "action_log": log
         }
     # 🟢 END INTERCEPT

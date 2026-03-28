@@ -1,14 +1,14 @@
 [
     {
         "id": "CUST003",
-        "name": "Sumit Arya",
+        "name": "Sumit Dhanraj Arya",
         "phone": "9309896256",
         "email": "aryasumit6217@gmail.com",
         "password": "sumit123",
         "city": "Unknown",
         "salary": 0,
         "credit_score": 700,
-        "pre_approved_limit": 300000,
+        "pre_approved_limit": 500000,
         "existing_emi_total": 0,
         "current_loans": [],
         "risk_flags": []
@@ -152,5 +152,23 @@
         "current_loans": [],
         "risk_flags": [],
         "created_at": "2026-03-26T19:27:28.297747"
+    },
+    {
+        "id": "CUST010",
+        "phone": "9999991234",
+        "email": "test@example.com",
+        "name": "John Doe",
+        "password": "password123",
+        "city": null,
+        "salary": 100000.0,
+        "dob": "1990-01-01",
+        "profession": "Software Engineer",
+        "address": "123 Main St, New York, NY 10001",
+        "credit_score": 648,
+        "pre_approved_limit": 200000,
+        "existing_emi_total": 0,
+        "current_loans": [],
+        "risk_flags": [],
+        "created_at": "2026-03-27T22:14:57.698856"
     }
 ]
