@@ -25,6 +25,9 @@ class PersuasionSuggestResponse(BaseModel):
     max_approvable_amount: float
     negotiation_round: int
     max_rounds: int
+    requires_salary: bool = False
+    requires_rejection_letter_consent: bool = False
+    rejection_reasons: list[str] = []
     message: str
 
 

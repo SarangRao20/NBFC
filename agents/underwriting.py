@@ -175,13 +175,46 @@ async def underwriting_agent_node(state: dict) -> dict:
             if dti > MAX_SAFE_DTI:
                 reasons.append(f"DTI Ratio ({dti:.2%}) exceeds safe limit ({MAX_SAFE_DTI:.0%}). Offering restructured terms.")
                 decision = "soft_reject"
-                # Calculate what we CAN offer
-                max_viable_emi = (MAX_SAFE_DTI * salary) - existing_emi
-                if max_viable_emi > 0:
-                    alternative_offer = max_viable_emi
-            else:
-                # DTI is acceptable → approve
-                decision = "approve"
+
+                # 🟢 NEW: Pre-calculate safe boundaries for persuasion (STEP-1)
+                # Max safe EMI based on 50% DTI rule
+                max_safe_emi = (MAX_SAFE_DTI * salary) - existing_emi
+
+                # Safety check
+                if max_safe_emi > 0:
+                # Offer extended tenure (fixed for hackathon simplicity)
+                    extended_tenure = 60
+
+                    r = rate / 12 / 100  # monthly interest rate
+
+                    if r == 0:
+                        safe_emi_60m = principal / extended_tenure
+                else:
+                    safe_emi_60m = principal * r * ((1 + r)**extended_tenure) / (((1 + r)**extended_tenure) - 1)
+
+                # 🟢 STORE FOR PERSUASION AGENT
+                state["persuasion_options"] = [{
+                    "type": "extend_tenure",
+                    "original_amount": principal,
+                    "suggested_tenure": extended_tenure,
+                    "suggested_emi": safe_emi_60m,
+                    "max_safe_emi": max_safe_emi
+                }]
+
+                # Optional logging (very useful for demo/debug)
+                log = state.get("action_log", [])
+                log.append(
+                    f"⚠️ Soft Reject Triggered | DTI: {dti:.2%} | Max Safe EMI: ₹{max_safe_emi:.2f} | Suggested Tenure: {extended_tenure}"
+                )
+                state["action_log"] = log
+
+                # # Calculate what we CAN offer
+                # max_viable_emi = (MAX_SAFE_DTI * salary) - existing_emi
+                # if max_viable_emi > 0:
+                #     alternative_offer = max_viable_emi
+                # else:
+                #     # DTI is acceptable → approve
+                #     decision = "approve"
         
         else:
             # Principal within pre-approved limit → approve
@@ -206,6 +239,31 @@ async def underwriting_agent_node(state: dict) -> dict:
 
     # Rule 9: Explainability Layer Output Generator
     # ── Arjun's Human-Centric Decisioning ──
+    
+    # Determine rejection/negotiation type for proper UI handling
+    rejection_type = None
+    negotiation_approach = None
+    
+    if decision == "soft_reject":
+        # Analyze reasons to determine the correct negotiation approach
+        reason_text = " ".join(reasons).lower()
+        
+        if "dti" in reason_text or "emi" in reason_text or "afford" in reason_text or "income" in reason_text:
+            rejection_type = "emi_affordability"
+            negotiation_approach = "tenure_adjustment"  # Show EMI slider
+        elif "ltv" in reason_text or "loan-to-value" in reason_text:
+            rejection_type = "ltv_limit"
+            negotiation_approach = "reduced_principal"  # Lower amount for asset loan
+        elif "exposure" in reason_text or "exceeds maximum" in reason_text or "pre-approved" in reason_text:
+            rejection_type = "exposure_limit"
+            negotiation_approach = "reduced_principal"  # Lower amount within limit
+        elif "velocity" in reason_text or "cash-flow" in reason_text:
+            rejection_type = "cashflow_insufficient"
+            negotiation_approach = "reduced_principal"  # Lower amount
+        else:
+            rejection_type = "general_risk"
+            negotiation_approach = "reduced_principal"  # Generic counter-offer
+    
     if decision == "approve":
         lender_text = f" with {selected_lender_name}" if selected_lender_name else ""
         msg = (f"🎉 **EXCELLENT NEWS!**\n\n"
@@ -221,10 +279,28 @@ async def underwriting_agent_node(state: dict) -> dict:
                f"Once you upload that, we can push this straight to sanction!")
 
     elif decision == "soft_reject":
-        msg = (f"🤝 **Let's work something out...**\n\n"
-               f"I see you're aiming for ₹{principal:,}. While our current underwriting rules for student/new profiles "
-               f"are a bit tight, I've managed to secure a revised offer of **₹{alternative_offer:,.0f}** for you instantly.\n\n"
-               f"Would you like to proceed with this amount, or should we discuss a different tenure?")
+        # Customize message based on rejection type
+        if rejection_type == "emi_affordability":
+            msg = (f"🤝 **Let's adjust your EMI burden...**\n\n"
+                   f"I see you're aiming for ₹{principal:,}. While the amount is within your pre-approved limit, "
+                   f"the monthly EMI of ₹{emi:,.0f} would put your DTI ratio at {dti:.0%}, which exceeds our safe lending threshold of 50%.\n\n"
+                   f"**Good news:** I can still approve this loan if we adjust the tenure to bring your EMI down. "
+                   f"Would you like to explore a longer tenure to reduce your monthly burden?")
+        elif rejection_type == "ltv_limit":
+            msg = (f"🤝 **Asset-backed loan adjustment needed...**\n\n"
+                   f"Your requested ₹{principal:,} exceeds the maximum Loan-to-Value (LTV) ratio for this {loan_purpose} purchase. "
+                   f"Based on the asset value, I can offer you **₹{alternative_offer:,.0f}** instead.\n\n"
+                   f"Would you like to proceed with this adjusted amount?")
+        elif rejection_type == "exposure_limit":
+            msg = (f"🤝 **Maximum exposure limit reached...**\n\n"
+                   f"Your requested ₹{principal:,} exceeds our maximum exposure limit of 2× your pre-approved amount (₹{pre_approved*2:,}).\n\n"
+                   f"However, I can instantly approve **₹{alternative_offer:,.0f}** which fits within your risk profile. "
+                   f"Would you like to proceed with this amount?")
+        else:
+            msg = (f"🤝 **Let's work something out...**\n\n"
+                   f"I see you're aiming for ₹{principal:,}. While our current underwriting rules for your profile "
+                   f"are a bit tight, I've managed to secure a revised offer of **₹{alternative_offer:,.0f}** for you instantly.\n\n"
+                   f"Would you like to proceed with this amount?")
 
     else:
         msg = (f"❌ **NOT THIS TIME (But don't give up!)**\n\n"
@@ -257,6 +333,8 @@ async def underwriting_agent_node(state: dict) -> dict:
         "risk_level": risk_level,
         "alternative_offer": alternative_offer,
         "reasons": reasons,
+        "rejection_type": rejection_type,
+        "negotiation_approach": negotiation_approach,
         "messages": [AIMessage(content=msg)],
         "current_phase": "underwriting",
         

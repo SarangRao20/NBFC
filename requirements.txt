@@ -18,3 +18,5 @@ pydantic-settings
 redis
 langchain-community
 pytest-asyncio
+razorpay
+hmac

@@ -41,6 +41,12 @@ export interface AppState {
   }>;
   pastRecords?: string;
   pastSessions?: SessionSummary[];
+  disbursement_step?: "pending" | "ui_paused" | "completed";
+  net_disbursement_amount?: number;
+  kfs_signed?: boolean;
+  enach_setup?: boolean;
+  rejectionType?: "emi_affordability" | "ltv_limit" | "exposure_limit" | "cashflow_insufficient" | "general_risk" | null;
+  negotiationApproach?: "tenure_adjustment" | "reduced_principal" | null;
 }
 
 export interface UserData {

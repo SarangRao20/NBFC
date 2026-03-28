@@ -13,7 +13,7 @@ from db.database import users_collection, client, init_collections
 from api.config import get_settings
 from api.routers import (
     session, sales, documents, kyc, fraud,
-    underwriting, sanction, advisory, payment, admin
+    underwriting, sanction, advisory, payment, admin, webhooks
 )
 from api.routers.auth import router as auth_router
 
@@ -208,6 +208,7 @@ app.include_router(advisory.router)      # Step 17
 app.include_router(payment.router)       # EMI Payments
 app.include_router(admin.router)         # Admin dashboard & analytics (Phase 5)
 app.include_router(auth_router)          # Authentication & Profile Management
+app.include_router(webhooks.router)      # Razorpay Webhooks
 
 @app.get("/", tags=["Root"])
 def root():

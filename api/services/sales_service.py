@@ -3,6 +3,7 @@
 import json
 import os
 import asyncio
+from typing import Any, Optional, Union
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.core.websockets import manager
 from mock_apis.loan_products import LOAN_PRODUCTS
@@ -18,7 +19,7 @@ def _normalize_phone(phone: str) -> str:
     return phone[-10:]
 
 
-def _clean_dict(d):
+def _clean_dict(d: Any) -> Any:
     """Recursively removes _id and other non-JSON-serializable types."""
     if isinstance(d, list):
         return [_clean_dict(v) for v in d]
@@ -28,7 +29,7 @@ def _clean_dict(d):
 
 
 
-async def _lookup_customer_by_phone(phone: str) -> dict | None:
+async def _lookup_customer_by_phone(phone: str) -> Optional[dict]:
     """CRM lookup by phone number using MongoDB."""
     from db.database import users_collection
     phone = _normalize_phone(phone)
@@ -39,7 +40,7 @@ async def _lookup_customer_by_phone(phone: str) -> dict | None:
     return None
 
 
-async def _lookup_customer_by_email(email: str, password: str) -> dict | None:
+async def _lookup_customer_by_email(email: str, password: str) -> Optional[dict]:
     """CRM lookup by email + password using MongoDB."""
     from db.database import users_collection
     email = email.strip().lower()
@@ -67,7 +68,7 @@ def _get_rate_for_product(loan_type: str) -> float:
     return 12.0
 
 
-async def identify_customer(session_id: str, phone: str, email: str = None, password: str = None) -> dict:
+async def identify_customer(session_id: str, phone: str, email: Optional[str] = None, password: Optional[str] = None) -> Optional[dict]:
     """Step 2: Identify Existing vs New User via DB lookup."""
     from api.core.state_manager import get_session
     state = await get_session(session_id)
@@ -175,12 +176,12 @@ async def identify_customer(session_id: str, phone: str, email: str = None, pass
 
         return _clean_dict({
             "is_existing_customer": False,
-            "customer_data": None,
+            "customer_data": {},
             "message": "New customer. Profile created with default values. Proceed to capture loan requirement."
         })
 
 
-async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount: float, tenure_months: int) -> dict:
+async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount: float, tenure_months: int) -> Optional[dict]:
     """Step 3: Capture Loan Requirement → compute EMI → State Update: Profile & Intent."""
     state = await get_session(session_id)
     if not state:
@@ -215,7 +216,7 @@ async def capture_loan_requirement(session_id: str, loan_type: str, loan_amount:
         "total_repayment": total_payment,
         "message": f"Loan captured: ₹{loan_amount:,.0f} at {rate}% for {tenure_months} months. EMI: ₹{emi:,.2f}/month."
     })
-async def chat_with_agent(session_id: str, user_message: str, history: list[dict] = None) -> dict:
+async def chat_with_agent(session_id: str, user_message: str, history: Optional[list[dict]] = None) -> Optional[dict]:
     """Conversational interface using the Master LangGraph."""
     from agents.master_graph import compile_master_graph
     from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -235,6 +236,23 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
 
     # Fast-path for EMI reminder queries using stored sanction/loan records.
     lowered = (user_message or "").lower()
+    
+    # ─── DETECT NEGOTIATION INTENT AFTER SOFT-REJECT ─────────────────────────
+    decision = state.get("decision", "")
+    is_negotiation_request = any(kw in lowered for kw in [
+        "negotiate", "counter", "counter-offer", "revised", "adjust", 
+        "lower amount", "reduce", "better terms", "restructure"
+    ])
+    
+    if decision == "soft_reject" and is_negotiation_request:
+        print(f"🤝 [SALES SERVICE] Negotiation request detected after soft-reject for session {session_id}")
+        # Trigger sales agent to generate counter-offer by setting flag
+        state["negotiation_requested"] = True
+        # Clear previous decision temporarily to allow re-evaluation
+        state["decision"] = None
+        await update_session(session_id, {"negotiation_requested": True, "decision": None})
+    # ────────────────────────────────────────────────────────────────────────
+    
     if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay", "previous loans", "past loans", "my loans", "history"]):
         try:
             from db.database import loan_applications_collection
@@ -314,7 +332,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         print(f"📊 [DEBUG] State keys before graph invocation: {list(clean_state.keys())}")
         print(f"📊 [DEBUG] customer_data keys: {list(clean_state.get('customer_data', {}).keys())}")
         print(f"📊 [DEBUG] Messages count before graph: {len(clean_state['messages'])}")
-        final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 100})
+        final_state = await graph.ainvoke(clean_state, config={"recursion_limit": 100})  # type: ignore
         print("✅ [SALES SERVICE] Graph run complete.")
         print(f"📊 [DEBUG] final_state keys: {list(final_state.keys())}")
         print(f"📊 [DEBUG] eligible_offers in final_state: {final_state.get('eligible_offers', 'NOT_FOUND')}")
@@ -340,10 +358,38 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
                     # Try to parse if it's already a JSON dict string
                     try:
                         import json
-                        parsed = json.loads(m.content)
+                        parsed = json.loads(str(m.content))
                         new_ai.append(parsed)
                     except:
                         new_ai.append({"type": "text", "content": m.content})
+        
+        # ─── INJECT EMI SLIDER FOR COUNTER-OFFER NEGOTIATION ───────────────────
+        loan_terms = final_state.get("loan_terms", {})
+        is_negotiation = final_state.get("negotiation_requested") or (user_message and any(
+            kw in user_message.lower() for kw in ["negotiate", "counter", "revised", "adjust"]
+        ))
+        
+        if is_negotiation and loan_terms and loan_terms.get("principal") and loan_terms.get("tenure"):
+            # Check if this is a counter-offer scenario (soft-reject recovery)
+            emi_slider_msg = {
+                "type": "emi_slider",
+                "content": "🤝 I've prepared a counter-offer based on your profile. Adjust the tenure to see how your monthly EMI changes:",
+                "loan_terms": {
+                    "principal": loan_terms.get("principal"),
+                    "tenure": loan_terms.get("tenure"),
+                    "rate": loan_terms.get("rate", 12),
+                    "emi": loan_terms.get("emi")
+                }
+            }
+            # Insert emi_slider after the first text message, or at the beginning
+            insert_idx = 0
+            for i, msg in enumerate(new_ai):
+                if isinstance(msg, dict) and msg.get("type") == "text":
+                    insert_idx = i + 1
+                    break
+            new_ai.insert(insert_idx, emi_slider_msg)
+            print(f"🎚️ [SALES SERVICE] Injected emi_slider for counter-offer: ₹{loan_terms.get('principal'):,.0f} @ {loan_terms.get('tenure')} months")
+        # ───────────────────────────────────────────────────────────────────────
         
         # Insert action log block before the final reply, if any steps were collected
         logs = final_state.get("action_log", [])
@@ -376,12 +422,13 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             lt = final_state.get("loan_terms", {})
             if lt and lt.get("principal") and lt.get("tenure") and lt.get("emi"):
                 reply = (
-                    "✅ Loan terms updated (policy-approved values):\n"
-                    f"- Loan amount: ₹{lt['principal']:,.2f}\n"
-                    f"- Tenure: {lt['tenure']} months\n"
-                    f"- Final interest rate: {(lt.get('rate') or 12):.2f}% p.a.\n"
-                    f"- Monthly EMI: ₹{lt['emi']:,.2f}\n\n"
-                    "(These values are taken from the underwriting engine and match the sidebar; if your request was out-of-policy, we adjusted accordingly.)"
+                    "✅ Loan terms updated (policy-approved values):\n\n"
+                    "| Term | Value |\n"
+                    "| --- | --- |\n"
+                    f"| Loan amount | ₹{lt['principal']:,.2f} |\n"
+                    f"| Tenure | {lt['tenure']} months |\n"
+                    f"| Final interest rate | {lt.get('rate', 12):.2f}% p.a. |\n"
+                    f"| Monthly EMI | ₹{lt['emi']:,.2f} |"
                 )
             else:
                 reply = "I'm here — what would you like to do next?"

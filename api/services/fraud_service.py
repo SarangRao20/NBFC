@@ -52,8 +52,8 @@ async def fraud_check(session_id: str) -> dict:
     })
 
     # Signal 2: Income inflation
-    claimed = customer.get("salary", 0)
-    extracted = docs.get("salary_extracted", 0)
+    claimed = float(customer.get("salary") or 0)
+    extracted = float(docs.get("salary_extracted") or 0)
     income_inflated = bool(extracted > 0 and claimed > (extracted * 1.20))
     if income_inflated:
         score += SIGNAL_WEIGHTS["income_inflation"]
@@ -62,7 +62,7 @@ async def fraud_check(session_id: str) -> dict:
         "signal_name": "Income Inflation",
         "weight": SIGNAL_WEIGHTS["income_inflation"],
         "triggered": income_inflated,
-        "detail": f"Claimed: ₹{claimed:,} vs Extracted: ₹{extracted:,}" if income_inflated else ""
+        "detail": f"Claimed: ₹{claimed:,.0f} vs Extracted: ₹{extracted:,.0f}" if income_inflated else ""
     })
 
     # Signal 3: Tampered document
@@ -78,7 +78,8 @@ async def fraud_check(session_id: str) -> dict:
     })
 
     # Signal 4: Low OCR confidence
-    confidence = float(docs.get("confidence", 1.0))
+    conf_val = docs.get("confidence")
+    confidence = float(conf_val) if conf_val is not None else 1.0
     low_conf = bool(confidence < 0.60)
     if low_conf:
         score += SIGNAL_WEIGHTS["low_ocr_confidence"]
@@ -104,7 +105,7 @@ async def fraud_check(session_id: str) -> dict:
     })
 
     # Signal 6: Abnormal loan-to-income ratio
-    principal = terms.get("principal", 0)
+    principal = float(terms.get("principal") or 0)
     abnormal = bool(claimed > 0 and principal > (claimed * 60))
     if abnormal:
         score += SIGNAL_WEIGHTS["abnormal_loan_ratio"]
@@ -113,7 +114,7 @@ async def fraud_check(session_id: str) -> dict:
         "signal_name": "Abnormal Loan-to-Income",
         "weight": SIGNAL_WEIGHTS["abnormal_loan_ratio"],
         "triggered": abnormal,
-        "detail": f"₹{principal:,} = {principal/claimed:.1f}× salary" if abnormal else ""
+        "detail": f"₹{principal:,.0f} = {principal/claimed:.1f}× salary" if abnormal else ""
     })
 
     # Bonus: Multiple signals

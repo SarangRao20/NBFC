@@ -59,6 +59,13 @@ class Settings(BaseSettings):
         "name", "phone", "email", "city", "salary", "credit_score", "existing_emi_total"
     ]
 
+    # Razorpay Configuration
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+    RAZORPAY_ACCOUNT_NUMBER: str = ""
+    RAZORPAY_PAYOUT_MODE: str = "test"  # "test" or "live"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

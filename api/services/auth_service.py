@@ -9,6 +9,7 @@ from api.core.redis_cache import get_cache, RedisCache
 from api.core.email_service import get_email_service, EmailService
 from api.core.state_manager import get_session, update_session
 from api.config import get_settings
+from utils.validators import normalize_phone
 from mock_apis.otp_service import send_otp as mock_send_otp, verify_otp as mock_verify_otp
 from mock_apis.cibil_api import get_cibil_score as mock_get_cibil_score
 
@@ -34,6 +35,17 @@ def save_mock_customers(customers: List[Dict]):
         json.dump(customers, f, indent=4)
 
 
+def find_mock_customer_by_phone(customers: List[Dict], phone: str) -> Optional[Dict[str, Any]]:
+    """Find a customer from customers.json using normalized phone comparison."""
+    normalized = normalize_phone(phone)
+    if len(normalized) != 10:
+        return None
+    return next(
+        (c for c in customers if normalize_phone(c.get("phone", "")) == normalized),
+        None,
+    )
+
+
 class AuthService:
     """Enhanced authentication service with caching and profile management"""
     
@@ -47,10 +59,18 @@ class AuthService:
             self.cache = await get_cache()
         if not self.email_service:
             self.email_service = await get_email_service()
-        
-        # Type narrowing for Pylance: guarantee both services are initialized
-        assert self.cache is not None, "Cache initialization failed"
-        assert self.email_service is not None, "Email service initialization failed"
+
+    def _cache_service(self) -> RedisCache:
+        """Return initialized cache service as non-optional for type checkers."""
+        if self.cache is None:
+            raise RuntimeError("Cache initialization failed")
+        return self.cache
+
+    def _email_service_client(self) -> EmailService:
+        """Return initialized email service as non-optional for type checkers."""
+        if self.email_service is None:
+            raise RuntimeError("Email service initialization failed")
+        return self.email_service
 
     @staticmethod
     def _derive_pre_approved_limit(credit_score: int, salary: Optional[float]) -> int:
@@ -90,6 +110,8 @@ class AuthService:
     ) -> Dict[str, Any]:
         """Fetch mock CIBIL/credit score and optionally persist it to customer profile."""
         await self._get_services()
+        cache = self._cache_service()
+        phone = normalize_phone(phone)
 
         try:
             result = mock_get_cibil_score(phone=phone, pan=pan, full_name=full_name, dob=dob)
@@ -100,7 +122,7 @@ class AuthService:
 
             if persist:
                 customers = load_mock_customers()
-                customer = next((c for c in customers if c.get("phone") == phone), None)
+                customer = find_mock_customer_by_phone(customers, phone)
 
                 updates: Dict[str, Any] = {"credit_score": score}
                 if customer:
@@ -115,10 +137,10 @@ class AuthService:
                 except Exception as db_err:
                     print(f"⚠️ Failed to persist credit score to MongoDB: {db_err}")
 
-                cached_customer = await self.cache.get_customer(phone)
+                cached_customer = await cache.get_customer(phone)
                 if cached_customer:
                     cached_customer.update(updates)
-                    await self.cache.set_customer(phone, cached_customer)
+                    await cache.set_customer(phone, cached_customer)
 
                 result["persisted"] = True
                 result["profile_updates"] = updates
@@ -137,11 +159,12 @@ class AuthService:
     async def generate_otp(self, phone: str) -> str:
         """Generate 6-digit OTP"""
         await self._get_services()
+        cache = self._cache_service()
         
         otp = ''.join(random.choices(string.digits, k=6))
         
         # Cache OTP with 5-minute expiry
-        await self.cache.set_otp(phone, otp)
+        await cache.set_otp(phone, otp)
         
         print(f"🔐 OTP generated for {phone}: {otp}")
         return otp
@@ -149,9 +172,10 @@ class AuthService:
     async def generate_dev_otp(self, phone: str, dev_otp: str) -> bool:
         """Generate development OTP"""
         await self._get_services()
+        cache = self._cache_service()
         
         # Cache development OTP with longer expiry for testing
-        await self.cache.set_otp(phone, dev_otp)
+        await cache.set_otp(phone, dev_otp)
         
         print(f"🛠️ Development OTP set for {phone}: {dev_otp}")
         return True
@@ -159,6 +183,9 @@ class AuthService:
     async def send_otp(self, phone: str, email: Optional[str] = None) -> Dict[str, Any]:
         """Send OTP using mock_apis/otp_service.py"""
         await self._get_services()
+        cache = self._cache_service()
+        email_service = self._email_service_client()
+        phone = normalize_phone(phone)
         try:
             # Generate and cache OTP centrally so both SMS and email use same code
             otp = await self.generate_otp(phone)
@@ -171,9 +198,9 @@ class AuthService:
             if email:
                 try:
                     # try to get customer's name for personalization
-                    customer = await self.cache.get_customer(phone) or {}
+                    customer = await cache.get_customer(phone) or {}
                     customer_name = customer.get("name", "Customer")
-                    email_sent = await self.email_service.send_otp_email(email, customer_name, otp)
+                    email_sent = await email_service.send_otp_email(email, customer_name, otp)
                 except Exception as ie:
                     print(f"❌ Email send failed: {ie}")
 
@@ -200,6 +227,7 @@ class AuthService:
     async def verify_otp(self, phone: str, otp: str) -> Dict[str, Any]:
         """Verify OTP using mock_apis/otp_service.py"""
         await self._get_services()
+        phone = normalize_phone(phone)
         
         try:
             result = mock_verify_otp(phone, otp)
@@ -219,10 +247,12 @@ class AuthService:
     async def check_profile_completeness(self, phone: str) -> Dict[str, Any]:
         """Check if customer profile is complete"""
         await self._get_services()
+        cache = self._cache_service()
+        phone = normalize_phone(phone)
         
         try:
             # Get customer data from cache first, then DB
-            customer_data = await self.cache.get_customer(phone)
+            customer_data = await cache.get_customer(phone)
             
             if not customer_data:
                 # Try to get from database
@@ -231,7 +261,7 @@ class AuthService:
                 
                 if customer_data:
                     # Cache for future use
-                    await self.cache.set_customer(phone, customer_data)
+                    await cache.set_customer(phone, customer_data)
             
             if not customer_data:
                 return {
@@ -294,23 +324,35 @@ class AuthService:
     async def create_login_session(self, phone: str) -> Dict[str, Any]:
         """Create session after successful login"""
         await self._get_services()
+        cache = self._cache_service()
+        phone = normalize_phone(phone)
         
         try:
             # Get customer data
-            customer_data = await self.cache.get_customer(phone)
+            customer_data = await cache.get_customer(phone)
             
             if not customer_data:
                 from db.database import users_collection
                 customer_data = await users_collection.find_one({"phone": phone})
                 
                 if customer_data:
-                    await self.cache.set_customer(phone, customer_data)
+                    await cache.set_customer(phone, customer_data)
             
             if not customer_data:
                 customers = load_mock_customers()
-                customer_data = next((c for c in customers if c.get("phone") == phone), None)
+                customer_data = find_mock_customer_by_phone(customers, phone)
                 if customer_data:
-                    await self.cache.set_customer(phone, customer_data)
+                    # Keep DB in sync for future DB-first lookups.
+                    try:
+                        from db.database import users_collection
+                        db_user = await users_collection.find_one({"phone": phone})
+                        if db_user:
+                            await users_collection.update_one({"phone": phone}, {"$set": customer_data})
+                        else:
+                            await users_collection.insert_one({"_id": phone, **customer_data, "phone": phone})
+                    except Exception as sync_err:
+                        print(f"⚠️ Failed to backfill MongoDB user during login session creation: {sync_err}")
+                    await cache.set_customer(phone, customer_data)
             
             if not customer_data:
                 raise Exception("Customer not found")
@@ -359,7 +401,7 @@ class AuthService:
             })
             
             # Cache session for performance
-            await self.cache.set_session(session_id, session)
+            await cache.set_session(session_id, session)
             
             print(f"✅ Login session created for {phone}: {session_id}")
             
@@ -376,14 +418,16 @@ class AuthService:
     async def update_customer_profile(self, phone: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Update customer profile fields"""
         await self._get_services()
+        cache = self._cache_service()
+        phone = normalize_phone(phone)
         
         try:
             # Get existing customer data
-            customer_data = await self.cache.get_customer(phone)
+            customer_data = await cache.get_customer(phone)
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({"phone": phone})
                 
                 if not customer_data:
                     return {
@@ -402,7 +446,7 @@ class AuthService:
             )
             
             # Update cache
-            await self.cache.set_customer(phone, updated_data)
+            await cache.set_customer(phone, updated_data)
             
             # Check if profile is now complete
             profile_check = await self.check_profile_completeness(phone)
@@ -425,10 +469,12 @@ class AuthService:
     async def get_customer_loan_history(self, phone: str) -> Dict[str, Any]:
         """Get customer's loan history with caching"""
         await self._get_services()
+        cache = self._cache_service()
+        phone = normalize_phone(phone)
         
         try:
             # Try cache first
-            cached_history = await self.cache.get_loan_history(phone)
+            cached_history = await cache.get_loan_history(phone)
             if cached_history:
                 print(f"🎯 Loan history cache HIT for {phone}")
                 return {
@@ -459,7 +505,7 @@ class AuthService:
             history.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             
             # Cache for 30 minutes
-            await self.cache.set_loan_history(phone, history)
+            await cache.set_loan_history(phone, history)
             
             print(f"⚡ Loan history cache MISS for {phone}")
             
@@ -480,18 +526,35 @@ class AuthService:
             }
     
     async def login_with_password(self, phone: str, password: str) -> Dict[str, Any]:
-        """Login with phone and password using MongoDB database."""
+        """Login with phone and password using MongoDB database with safe fallback."""
+        phone = normalize_phone(phone)
+        if len(phone) != 10:
+            return {"success": False, "message": "Invalid phone number"}
+        
         await self._get_services()
         
         try:
             # First check MongoDB
             from db.database import users_collection
             user = await users_collection.find_one({"phone": phone})
+            if not user:
+                user = await users_collection.find_one({"_id": phone})
             
             # If not found in MongoDB and in development mode, check mock customers
             if not user and get_settings().APP_ENV != "production":
                 customers = load_mock_customers()
-                user = next((c for c in customers if c.get("phone") == phone), None)
+                user = find_mock_customer_by_phone(customers, phone)
+                if user:
+                    user["phone"] = phone
+                    # Backfill to DB
+                    try:
+                        db_user = await users_collection.find_one({"phone": phone})
+                        if db_user:
+                            await users_collection.update_one({"phone": phone}, {"$set": user})
+                        else:
+                            await users_collection.insert_one({"_id": phone, **user})
+                    except Exception as sync_err:
+                        print(f"⚠️ Failed to backfill MongoDB user during login fallback: {sync_err}")
             
             if not user:
                 return {
@@ -499,9 +562,8 @@ class AuthService:
                     "message": "User not found"
                 }
             
-            # Check password (assuming plain text for now - should be hashed in production)
-            stored_password = user.get("password", "")
-            if stored_password != password:
+            # Check password
+            if user.get("password") != password:
                 return {
                     "success": False,
                     "message": "Invalid password"
@@ -514,7 +576,7 @@ class AuthService:
                 "success": True,
                 "message": "Login successful",
                 "user": user,
-                "customer_data": user,
+                "customer_data": session_result.get("customer_data", user),
                 "session_id": session_result["session_id"]
             }
             
@@ -526,13 +588,26 @@ class AuthService:
             }
 
     async def register_customer(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Register new customer and save to both mock JSON and MongoDB."""
-        phone = user_data.get("phone")
-        if not phone:
+        """Register new customer with DB-first persistence and mock sync fallback."""
+        phone = normalize_phone(user_data.get("phone", ""))
+        if len(phone) != 10:
             return {"success": False, "message": "Phone number required"}
+
+        user_data = {**user_data, "phone": phone}
+        if user_data.get("email"):
+            user_data["email"] = str(user_data["email"]).strip().lower()
+
+        # Check existence in DB first to avoid split-brain records.
+        try:
+            from db.database import users_collection
+            existing_db_user = await users_collection.find_one({"phone": phone})
+            if existing_db_user:
+                return {"success": False, "message": "User already exists"}
+        except Exception as e:
+            return {"success": False, "message": f"Registration failed: database unavailable ({str(e)})"}
             
         customers = load_mock_customers()
-        if any(c.get("phone") == phone for c in customers):
+        if any(normalize_phone(c.get("phone", "")) == phone for c in customers):
             return {"success": False, "message": "User already exists"}
 
         # Fetch mock CIBIL score if missing from input.
@@ -566,15 +641,18 @@ class AuthService:
             "risk_flags": [],
             "created_at": datetime.utcnow().isoformat()
         }
-        customers.append(new_user)
-        save_mock_customers(customers)
-        
-        # Also save to MongoDB users collection
         try:
-            from db.database import users_collection
+            # Write to DB first.
             await users_collection.insert_one({"_id": phone, **new_user})
         except Exception as e:
-            print(f"⚠️ Failed to save to MongoDB: {e}")
+            return {"success": False, "message": f"Registration failed: could not persist user ({str(e)})"}
+
+        # Sync mock JSON for legacy components that still read it.
+        try:
+            customers.append(new_user)
+            save_mock_customers(customers)
+        except Exception as sync_err:
+            print(f"⚠️ Failed to sync customers.json after DB registration: {sync_err}")
             
         return {"success": True, "message": "Registration successful", "customer_data": new_user}
 

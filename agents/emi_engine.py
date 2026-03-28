@@ -66,7 +66,8 @@ async def emi_engine_node(state: dict) -> dict:
                         "message": f"🚨 **Credit Score Impact**: Your score dropped to **{new_score}** due to {days_overdue} days delay in EMI."
                     })
 
-    # 2. Payment Simulation (triggered by user message 'pay my emi' - handled here for simplicity)
+    # 2. Payment Request Handling (triggered by user message 'pay my emi')
+    # Delegate to Razorpay service for real payment processing
     user_msg = ""
     for m in reversed(state.get("messages", [])):
         from langchain_core.messages import HumanMessage
@@ -76,62 +77,109 @@ async def emi_engine_node(state: dict) -> dict:
             
     is_pay_request = ("pay" in user_msg and "emi" in user_msg) or ("confirm" in user_msg and "payment" in user_msg)
     if is_pay_request and terms.get("emi", 0) > 0:
-        print("  💳 [PAYMENT] Simulating EMI payment...")
+        print("  💳 [PAYMENT] Delegating to Razorpay service...")
         
-        # Update Terms
-        new_payments_made = terms.get("payments_made", 0) + 1
-        tenure = terms.get("tenure", 0)
-        emi = terms.get("emi", 0)
-        
-        terms["payments_made"] = new_payments_made
-        terms["last_payment_date"] = datetime.now().strftime("%Y-%m-%d")
-        terms["remaining_balance"] = round(max(0, (tenure - new_payments_made) * emi), 2)
-        
-        # Calculate Next EMI Date (same day next month logic)
-        next_emi_str = terms.get("next_emi_date")
-        if next_emi_str and isinstance(next_emi_str, str):
-            try:
-                curr_date = datetime.strptime(next_emi_str, "%Y-%m-%d")
-                if curr_date.month == 12:
-                    next_date = curr_date.replace(year=curr_date.year + 1, month=1)
-                else:
-                    next_date = curr_date.replace(month=curr_date.month + 1)
-                terms["next_emi_date"] = next_date.strftime("%Y-%m-%d")
-            except:
-                terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        else:
-            terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-        
-        # Dynamic Credit Score Increase
-        old_score = customer.get("credit_score", 700)
-        new_score = min(old_score + 10, 850) # Increase by 10 for on-time payment
-        customer["credit_score"] = new_score
-        
-        log.append(f"💳 EMI Payment successful. Total payments: {new_payments_made}")
-        log.append(f"📈 Credit Score increased to {new_score}!")
-        
-        # ── SYNC TO DATABASE ────────────────────────────────────────────────
+        # Import Razorpay service for order creation
         try:
-            from db.database import loan_applications_collection
-            await loan_applications_collection.update_one(
-                {"session_id": session_id},
-                {"$set": {
-                    "payments_made": new_payments_made,
-                    "remaining_balance": terms.get("remaining_balance"),
-                    "next_emi_date": terms["next_emi_date"],
-                    "last_payment_date": terms["last_payment_date"]
-                }}
-            )
+            from api.services.payment_service import create_emi_order
+            order_result = await create_emi_order(session_id)
+            
+            if order_result and order_result.get("success"):
+                order_id = order_result.get("order_id")
+                amount = order_result.get("amount")
+                key_id = order_result.get("key_id")
+                mock_mode = order_result.get("mock", False)
+                
+                if mock_mode:
+                    # Mock mode - simulate payment for development
+                    print(f"  ⚠️ Razorpay mock mode - simulating payment for order {order_id}")
+                    
+                    # Update Terms (same as before for mock mode)
+                    new_payments_made = terms.get("payments_made", 0) + 1
+                    tenure = terms.get("tenure", 0)
+                    emi = terms.get("emi", 0)
+                    
+                    terms["payments_made"] = new_payments_made
+                    terms["last_payment_date"] = datetime.now().strftime("%Y-%m-%d")
+                    terms["remaining_balance"] = round(max(0, (tenure - new_payments_made) * emi), 2)
+                    
+                    # Calculate Next EMI Date
+                    next_emi_str = terms.get("next_emi_date")
+                    if next_emi_str and isinstance(next_emi_str, str):
+                        try:
+                            curr_date = datetime.strptime(next_emi_str, "%Y-%m-%d")
+                            if curr_date.month == 12:
+                                next_date = curr_date.replace(year=curr_date.year + 1, month=1)
+                            else:
+                                next_date = curr_date.replace(month=curr_date.month + 1)
+                            terms["next_emi_date"] = next_date.strftime("%Y-%m-%d")
+                        except:
+                            terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                    else:
+                        terms["next_emi_date"] = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                    
+                    # Dynamic Credit Score Increase
+                    old_score = customer.get("credit_score", 700)
+                    new_score = min(old_score + 10, 850)
+                    customer["credit_score"] = new_score
+                    
+                    log.append(f"💳 EMI Payment successful (mock). Total payments: {new_payments_made}")
+                    log.append(f"📈 Credit Score increased to {new_score}!")
+                    
+                    # Sync to Database
+                    try:
+                        from db.database import loan_applications_collection
+                        await loan_applications_collection.update_one(
+                            {"session_id": session_id},
+                            {"$set": {
+                                "payments_made": new_payments_made,
+                                "remaining_balance": terms.get("remaining_balance"),
+                                "next_emi_date": terms["next_emi_date"],
+                                "last_payment_date": terms["last_payment_date"]
+                            }}
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Failed to sync payment to DB: {e}")
+                    
+                    updates["messages"] = [AIMessage(content=(
+                        f"✅ **Payment Successful!** (Mock Mode)\n\n"
+                        f"Thank you for your payment of ₹{(terms.get('emi') or 0):,.2f}.\n"
+                        f"- Next Due Date: **{terms['next_emi_date']}**\n"
+                        f"- Your new Credit Score: **{new_score}** (↑ 10 pts)\n\n"
+                        f"Consistent payments help you qualify for lower rates in the future!"
+                    ))]
+                else:
+                    # Real Razorpay mode - provide checkout instructions
+                    log.append(f"💳 Razorpay order created: {order_id} for ₹{amount:,.2f}")
+                    
+                    updates["messages"] = [AIMessage(content=(
+                        f"💳 **Payment Initiated**\n\n"
+                        f"A payment order has been created for ₹{amount:,.2f}.\n\n"
+                        f"**Please complete the payment using the Razorpay checkout widget** "
+                        f"that will appear in your dashboard.\n\n"
+                        f"Order ID: `{order_id}`\n"
+                        f"Once you complete the payment, your EMI will be automatically processed."
+                    ))]
+            else:
+                # Order creation failed
+                error_msg = order_result.get("message", "Unknown error") if order_result else "Failed to create payment order"
+                log.append(f"❌ Payment order creation failed: {error_msg}")
+                
+                updates["messages"] = [AIMessage(content=(
+                    f"❌ **Payment Failed**\n\n"
+                    f"Unable to create payment order: {error_msg}\n\n"
+                    f"Please try again or contact support."
+                ))]
+                
         except Exception as e:
-            print(f"⚠️ Failed to sync payment to DB: {e}")
-        
-        updates["messages"] = [AIMessage(content=(
-            f"✅ **Payment Successful!**\n\n"
-            f"Thank you for your payment of ₹{(terms.get('emi') or 0):,.2f}.\n"
-            f"- Next Due Date: **{terms['next_emi_date']}**\n"
-            f"- Your new Credit Score: **{new_score}** (↑ 10 pts)\n\n"
-            f"Consistent payments help you qualify for lower rates in the future!"
-        ))]
+            print(f"❌ Razorpay service error: {e}")
+            log.append(f"❌ Payment service error: {str(e)}")
+            
+            updates["messages"] = [AIMessage(content=(
+                f"❌ **Payment Service Error**\n\n"
+                f"Unable to process payment request: {str(e)}\n\n"
+                f"Please try again later."
+            ))]
 
     # 3. Final Reimbursal/Tenure Completion Increase
     if terms.get("payments_made") == terms.get("tenure") and terms.get("tenure", 0) > 0:

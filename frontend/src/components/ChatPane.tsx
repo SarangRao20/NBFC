@@ -75,6 +75,8 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<Record<number, File>>({});
   const [isSigning, setIsSigning] = useState(false);
+  const [isProcessingDisbursement, setIsProcessingDisbursement] = useState(false);
+  const [disbursementStep, setDisbursementStep] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -245,8 +247,18 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                         if (!appState.sessionId) return;
                         setIsSigning(true);
                         try {
-                          await apiClient.esignAccept(appState.sessionId);
-                          onSendMessage("I accept the sanction letter and e-sign it.");
+                          const esignResult = await apiClient.esignAccept(appState.sessionId);
+                          // If the backend returns disbursement state, apply it immediately
+                          if (esignResult?.disbursement_step) {
+                            setAppState(prev => ({
+                              ...prev,
+                              disbursement_step: esignResult.disbursement_step,
+                              net_disbursement_amount: esignResult.net_disbursement_amount || prev.net_disbursement_amount,
+                            }));
+                          }
+                          if (esignResult?.message) {
+                            onSendMessage("I accept the sanction letter and e-sign it.");
+                          }
                         } catch (err) {
                           console.error('E-sign failed:', err);
                         } finally {
@@ -319,6 +331,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
           )}
 
           {msg.type === 'emi_slider' && (
+            <>
             <div className="bg-white border text-left border-emerald-100 shadow-xl shadow-emerald-900/5 rounded-2xl rounded-bl-[4px] p-5 max-w-[85%] w-[460px]">
               <p className="text-slate-800 text-[15px] font-medium leading-relaxed mb-6">
                 {msg.content}
@@ -357,6 +370,16 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
                 </div>
               </div>
             </div>
+
+            {/* 🟢 NEW: The Apply Button */}
+            <button onClick={() => {
+                // Send the exact revised terms back to the backend
+                onSendMessage(`I accept the revised offer: ${appState.tenure} months tenure.`);
+              }}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md transition-all active:scale-95 flex justify-center items-center">
+                Apply Revised Terms <CheckCircle2 size={18} className="ml-2" />
+            </button>
+            </>
           )}
           {msg.type === 'agent_steps' && (
             <AgentStepsBlock content={msg.content} />
@@ -364,6 +387,162 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
         </motion.div>
       ))}
     </AnimatePresence>
+    {/* 🟢 HYBRID DISBURSEMENT UI PAUSE INSERTION */}
+    <AnimatePresence>
+      {appState.disbursement_step === "ui_paused" && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-emerald-50 border-2 border-emerald-200 shadow-xl shadow-emerald-900/5 rounded-2xl p-6 max-w-[85%] w-[460px] mx-auto my-6 text-left"
+        >
+          <div className="flex items-center mb-4 pb-3 border-b border-emerald-100">
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white mr-3">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <h3 className="font-black text-[17px] text-emerald-900 uppercase tracking-tight">RBI Compliance Checklist</h3>
+              <p className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest">Final Authorization</p>
+            </div>
+          </div>
+
+          <div className="bg-white/60 p-4 rounded-xl mb-6 border border-emerald-100">
+            <div className="text-xs font-bold text-slate-500 uppercase mb-1">Net Disbursement to Bank</div>
+            <div className="text-3xl font-black text-emerald-600">
+              ₹{new Intl.NumberFormat('en-IN').format(appState.net_disbursement_amount || 0)}
+            </div>
+            <p className="text-[12px] text-slate-500 mt-2 leading-relaxed italic">
+              *Fees, GST, and Broken Period Interest have been deducted as per the KFS.
+            </p>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                id="kfs_check"
+                className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 transition-all cursor-pointer"
+              />
+              <span className="text-[14px] font-bold text-slate-700 group-hover:text-emerald-800 transition-colors">
+                I accept the Key Fact Statement (KFS)
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                id="enach_check"
+                className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 transition-all cursor-pointer"
+              />
+              <span className="text-[14px] font-bold text-slate-700 group-hover:text-emerald-800 transition-colors">
+                Authorize e-NACH Autopay via NetBanking
+              </span>
+            </label>
+          </div>
+
+          {/* Processing Steps Animation */}
+          {isProcessingDisbursement && (
+            <div className="mt-6 space-y-3">
+              <div className="h-1 bg-emerald-100 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-emerald-500"
+                  initial={{ width: "0%" }}
+                  animate={{ width: `${(disbursementStep / 5) * 100}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+              <div className="space-y-2">
+                {[
+                  { step: 1, icon: "🔐", text: "Validating e-NACH mandate..." },
+                  { step: 2, icon: "📋", text: "Verifying KFS acceptance..." },
+                  { step: 3, icon: "🏦", text: "Connecting to bank gateway..." },
+                  { step: 4, icon: "⚡", text: "Processing IMPS transfer..." },
+                  { step: 5, icon: "✅", text: "Transfer completed" },
+                ].map(({ step, icon, text }) => (
+                  <motion.div 
+                    key={step}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ 
+                      opacity: disbursementStep >= step ? 1 : 0.3, 
+                      x: 0,
+                      scale: disbursementStep === step ? 1.02 : 1
+                    }}
+                    className={`flex items-center gap-2 text-sm ${disbursementStep >= step ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}
+                  >
+                    <span className="w-5 h-5 flex items-center justify-center">
+                      {disbursementStep > step ? (
+                        <CheckCircle2 size={16} className="text-emerald-600" />
+                      ) : (
+                        <span className="text-xs">{icon}</span>
+                      )}
+                    </span>
+                    <span>{text}</span>
+                    {disbursementStep === step && (
+                      <motion.span 
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="ml-auto text-xs text-emerald-500"
+                      >
+                        processing...
+                      </motion.span>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button 
+            disabled={isProcessingDisbursement}
+            onClick={() => {
+              const kfs = (document.getElementById('kfs_check') as HTMLInputElement).checked;
+              const enach = (document.getElementById('enach_check') as HTMLInputElement).checked;
+              
+              if(kfs && enach) {
+                setIsProcessingDisbursement(true);
+                setDisbursementStep(0);
+                
+                // Simulate processing steps
+                const steps = [
+                  { delay: 500, step: 1 },   // Validating e-NACH mandate
+                  { delay: 1500, step: 2 },  // Verifying KFS acceptance
+                  { delay: 2500, step: 3 },  // Connecting to bank gateway
+                  { delay: 3500, step: 4 },  // Processing IMPS transfer
+                  { delay: 4500, step: 5 },  // Transfer completed
+                ];
+                
+                steps.forEach(({ delay, step }) => {
+                  setTimeout(() => setDisbursementStep(step), delay);
+                });
+                
+                // Complete and send message
+                setTimeout(() => {
+                  setIsProcessingDisbursement(false);
+                  onSendMessage("I have signed the KFS and authorized e-NACH.");
+                }, 5000);
+              } else {
+                alert("Please complete all compliance checkboxes to authorize disbursement.");
+              }
+            }}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-black py-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all active:scale-[0.98] flex justify-center items-center gap-2 group"
+          >
+            {isProcessingDisbursement ? (
+              <>
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                  <BrainCircuit size={18} />
+                </motion.div>
+                Processing Transfer...
+              </>
+            ) : (
+              <>
+                Execute Direct Bank Transfer
+                <Send size={18} className="group-hover:translate-x-1 transition-transform" />
+              </>
+            )}
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    {/* 🟢 END OF INSERTION */}
     <div ref={messagesEndRef} />
     {/* NBFC Offer Buttons - Rendered when all loan fields are complete and offers available */}
     {(() => {
@@ -421,7 +600,7 @@ export default function ChatPane({ appState, setAppState, chatHistory, onSendMes
   <div className="p-4 px-8 border-t border-slate-100 bg-white">
     {/* Document Upload Cards - shown above input when needed */}
     <AnimatePresence>
-      {appState.needsDocument && !appState.documents_uploaded && (
+      {appState.needsDocument && !appState.documents_uploaded && appState.disbursement_step !== "ui_paused" && appState.disbursement_step !== "completed" && (
         <motion.div
           key="dropzone"
           initial={{ opacity: 0, height: 0, scale: 0.95 }}

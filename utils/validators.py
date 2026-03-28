@@ -3,8 +3,17 @@
 import re
 
 
+def normalize_phone(phone: str) -> str:
+    """Normalize phone input to a 10-digit Indian mobile number when possible."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if len(digits) > 10:
+        # Handle +91/91 prefixes and generic country codes by keeping the last 10 digits.
+        digits = digits[-10:]
+    return digits
+
+
 def validate_phone(phone: str) -> tuple[bool, str]:
-    phone = phone.strip()
+    phone = normalize_phone(phone)
     if not re.fullmatch(r"\d{10}", phone):
         return False, "Phone must be exactly 10 digits."
     return True, ""

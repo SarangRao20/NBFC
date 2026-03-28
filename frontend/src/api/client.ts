@@ -191,6 +191,25 @@ export const apiClient = {
     return checkResponse(res, `/session/${sessionId}/pay-emi`);
   },
 
+  // Razorpay Payment Methods
+  async createEmiOrder(sessionId: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/create-emi-order`, { method: 'POST' });
+    return checkResponse(res, `/session/${sessionId}/create-emi-order`);
+  },
+
+  async verifyEmiPayment(sessionId: string, razorpayPaymentId: string, razorpayOrderId: string, razorpaySignature: string) {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/verify-emi-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_signature: razorpaySignature
+      }),
+    });
+    return checkResponse(res, `/session/${sessionId}/verify-emi-payment`);
+  },
+
   async deleteSession(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' });
     return checkResponse(res, `/session/${sessionId}`);

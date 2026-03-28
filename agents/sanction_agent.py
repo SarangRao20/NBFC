@@ -159,6 +159,7 @@ async def sanction_agent_node(state: dict):
         phase = "loan_rejected"
     
     updates = {
+        "decision": decision,
         "sanction_pdf": filepath, 
         "selected_lender_id": selected_lender_id,  # ✅ Persist lender info
         "selected_lender_name": selected_lender_name,  # ✅ Persist lender info
