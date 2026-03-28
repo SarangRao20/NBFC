@@ -1111,9 +1111,9 @@ function App() {
         isProcessingPayment={isProcessingPayment}
       />
       <ChatPane 
-        appState={appState} 
-        setAppState={setAppState} 
-        chatHistory={chatHistory} 
+        appState={appState}
+        setAppState={setAppState}
+        chatHistory={chatHistory}
         onSendMessage={handleSendMessage} 
         onFileUpload={handleFileUpload}
         onBatchFileUpload={handleBatchFileUpload}
