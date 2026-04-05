@@ -700,8 +700,11 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('nbfc_session_id');
     localStorage.removeItem('nbfc_customer_name');
+    localStorage.removeItem('nbfc_customer_phone');
     setSessionId(null);
     setIsAuthenticated(false);
+    setUserType('customer');
+    setNbfcData(null);
     setAppState(INITIAL_APP_STATE);
     setChatHistory(INITIAL_CHAT_HISTORY);
     greetingStarted.current = false;
@@ -906,18 +909,6 @@ function App() {
       console.error("❌ Failed to delete session:", err);
       pushAgentMessage("Error: Failed to delete the chat session.");
     }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setUserType('customer');
-    setNbfcData(null);
-    setSessionId(null);
-    setAppState(INITIAL_APP_STATE);
-    setChatHistory(INITIAL_CHAT_HISTORY);
-    localStorage.removeItem('nbfc_session_id');
-    localStorage.removeItem('nbfc_customer_name');
-    localStorage.removeItem('nbfc_customer_phone');
   };
 
   // Show AuthWrapper if not authenticated, otherwise show main app
