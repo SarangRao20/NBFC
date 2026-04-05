@@ -1517,20 +1517,24 @@ async def _sales_mode(state: dict):
     tenure = existing_terms.get("tenure", 0) or 0
     rate_pa = float(existing_terms.get("rate", 12.0) or 12.0)
     pending_q = state.get("pending_question")
+    
     # ─── DETERMINISTIC EXTRACTION (Regex Fallback) ────
-    # If values are missing in existing_terms, try to parse them from the CURRENT user message.
-    # This acts as a safety layer before the LLM.
-    if principal == 0:
-        p_amt = _parse_amount_inr(user_msg)
-        if p_amt:
-            principal = p_amt
-            log.append(f"🔢 Deterministically extracted amount: ₹{principal:,.0f}")
+    # ALWAYS try to extract amount & tenure from CURRENT user message
+    # If found, OVERRIDE any existing values (current message takes precedence)
+    p_amt = _parse_amount_inr(user_msg)
+    if p_amt and p_amt > 0:
+        principal = p_amt  # Override with new amount
+        log.append(f"🔢 Extracted NEW amount from user message: ₹{principal:,.0f}")
+    elif principal == 0:
+        # No new amount in message AND no existing principal - fallback done above
+        log.append(f"📝 No amount found in message, existing principal: ₹{principal:,.0f}")
             
-    if tenure == 0:
-        p_ten = _parse_tenure_months(user_msg)
-        if p_ten:
-            tenure = p_ten
-            log.append(f"📅 Deterministically extracted tenure: {tenure} months")
+    p_ten = _parse_tenure_months(user_msg)
+    if p_ten and p_ten > 0:
+        tenure = p_ten  # Override with new tenure
+        log.append(f"📅 Extracted NEW tenure from user message: {tenure} months")
+    elif tenure == 0:
+        log.append(f"📝 No tenure found in message, existing: {tenure} months")
 
     # ─── DETECT CONFIRMATION (User agreeing to terms) ────
     user_clean = (user_msg or "").strip().lower()
