@@ -63,14 +63,18 @@ def fetch_lender_offer(
         print(f"🔍 [LENDER DEBUG] REJECTED: Loan amount {loan_amount} not in range [{lender['min_loan_amount']}, {lender['max_loan_amount']}]")
         return None
     
+    # ─── FLEXIBLE TENURE MATCHING ──────────────────────────────
+    # If exact tenure not available, find closest match (prefer slightly higher tenure)
+    actual_tenure = tenure_months
     if tenure_months not in lender["tenure_options"]:
-        print(f"🔍 [LENDER DEBUG] REJECTED: Tenure {tenure_months} not in options {lender['tenure_options']}")
-        # Allow slight flexibility in tenure for mock purposes if it's close? 
-        # No, let's stick to defined options for consistency.
-        return None
+        options = sorted(lender["tenure_options"])
+        # Find closest: prefer higher tenure if equidistant (e.g., 7→8 not 7→6)
+        closest = min(options, key=lambda x: (abs(x - tenure_months), x if x < tenure_months else float('inf')))
+        print(f"🔍 [LENDER DEBUG] Tenure {tenure_months} adjusted to {closest} (closest available from {options})")
+        actual_tenure = closest
     
     # Calculate FOIR (Fixed Obligation to Income Ratio)
-    emi = _calculate_emi(loan_amount, _calculate_interest_rate(lender["base_rate"], credit_score), tenure_months)
+    emi = _calculate_emi(loan_amount, _calculate_interest_rate(lender["base_rate"], credit_score), actual_tenure)
     monthly_foir = emi / monthly_salary if monthly_salary > 0 else 1.0
     
     print(f"🔍 [LENDER DEBUG] EMI={emi}, FOIR={monthly_foir}, limit={lender['foir_limit']}")
@@ -88,6 +92,7 @@ def fetch_lender_offer(
         "processing_fee": loan_amount * (lender["processing_fee_percent"] / 100),
         "max_loan_amount": lender["max_loan_amount"],
         "tenure_options": lender["tenure_options"],
+        "approved_tenure": actual_tenure,  # ← Actual tenure after flexible matching
         "risk_profile": lender["risk_profile"],
         "approval_probability": lender["approval_probability"],
         "settlement_days": lender["settlement_days"],

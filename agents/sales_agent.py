@@ -821,6 +821,16 @@ async def _sales_mode(state: dict):
             offers = comp.get("offers", [])
             updates["eligible_offers"] = offers
             
+            
+            # ─── CHECK IF ANY OFFER HAS ADJUSTED TENURE ───────────────────
+            if offers and offers[0].get("approved_tenure"):
+                approved_tenure = offers[0]["approved_tenure"]
+                if approved_tenure != new_terms["tenure"]:
+                    log.append(f"📝 Tenure adjusted from {new_terms['tenure']} to {approved_tenure} months (closest available)")
+                    new_terms["tenure"] = approved_tenure
+                    # Sync all offers with the approved tenure
+                    for offer in offers:
+                        offer["approved_tenure"] = approved_tenure
             # If user already selected a lender via button:
             selected_lender_name = ""
             for offer in offers:
@@ -1704,6 +1714,16 @@ async def _sales_mode(state: dict):
             offers = comp.get("offers", [])
             updates["eligible_offers"] = offers
             
+            
+            # ─── CHECK IF ANY OFFER HAS ADJUSTED TENURE ───────────────────
+            if offers and offers[0].get("approved_tenure"):
+                approved_tenure = offers[0]["approved_tenure"]
+                if approved_tenure != new_terms["tenure"]:
+                    log.append(f"📝 Tenure adjusted from {new_terms['tenure']} to {approved_tenure} months (closest available)")
+                    new_terms["tenure"] = approved_tenure
+                    # Sync all offers with the approved tenure
+                    for offer in offers:
+                        offer["approved_tenure"] = approved_tenure
             # If user already selected a lender via button:
             selected_lender_name = ""
             for offer in offers:

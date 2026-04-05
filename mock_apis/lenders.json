@@ -70,12 +70,12 @@
       "processing_fee_percent": 1.5,
       "max_loan_amount": 3000000,
       "min_loan_amount": 50000,
-      "tenure_options": [12, 24, 36, 48, 60],
+      "tenure_options": [6, 7, 8, 12, 24, 36, 48, 60],
       "min_credit_score": 650,
       "foir_limit": 0.50,
       "approval_probability": 0.95,
       "risk_profile": "medium",
-      "characteristics": "Market leader in NBFC approvals. Most flexible eligibility criteria and fastest disbursal (often within 2 hours of document verification).",
+      "characteristics": "Market leader in NBFC approvals. Most flexible eligibility criteria and fastest disbursal (often within 2 hours of document verification). Perfect for short-term needs.",
       "settlement_days": 2
     },
     {
@@ -96,12 +96,12 @@
       "processing_fee_percent": 1.0,
       "max_loan_amount": 2000000,
       "min_loan_amount": 50000,
-      "tenure_options": [6, 12, 24, 36, 48],
+      "tenure_options": [6, 7, 8, 12, 24, 36, 48],
       "min_credit_score": 600,
       "foir_limit": 0.55,
       "approval_probability": 0.90,
       "risk_profile": "medium",
-      "characteristics": "Legacy institution with high trust. Excellent for quick personal loans with minimal friction, especially for returning customers.",
+      "characteristics": "Legacy institution with high trust. Excellent for quick personal loans with minimal friction, especially for returning customers. Flexible short-term tenure options.",
       "settlement_days": 1
     },
     {
