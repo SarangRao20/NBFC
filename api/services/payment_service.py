@@ -25,9 +25,9 @@ async def create_emi_order(session_id: str) -> Optional[dict]:
 
     terms = state.get("loan_terms", {})
     customer = state.get("customer_data", {})
-    emi = terms.get("emi", 0)
-    payments_made = terms.get("payments_made", 0)
-    tenure = terms.get("tenure", 0)
+    emi = terms.get("emi") or 0
+    payments_made = terms.get("payments_made") or 0
+    tenure = terms.get("tenure") or 0
 
     if payments_made >= tenure:
         return {"success": False, "message": "Loan is already fully repaid."}
@@ -137,9 +137,9 @@ async def verify_emi_payment(
     terms = state.get("loan_terms", {})
     customer = state.get("customer_data", {})
 
-    payments_made = terms.get("payments_made", 0)
-    tenure = terms.get("tenure", 0)
-    emi = terms.get("emi", 0)
+    payments_made = terms.get("payments_made") or 0
+    tenure = terms.get("tenure") or 0
+    emi = terms.get("emi") or 0
 
     if payments_made >= tenure:
         return {"success": False, "message": "Loan is already fully repaid.", "payment_id": razorpay_payment_id}
@@ -271,10 +271,10 @@ async def process_emi_payment(session_id: str) -> dict:
         return None
 
     terms = state.get("loan_terms", {})
-    principal = terms.get("principal", 0)
-    emi = terms.get("emi", 0)
-    payments_made = terms.get("payments_made", 0)
-    tenure = terms.get("tenure", 0)
+    principal = terms.get("principal") or 0
+    emi = terms.get("emi") or 0
+    payments_made = terms.get("payments_made") or 0
+    tenure = terms.get("tenure") or 0
     
     if payments_made >= tenure:
         return {"success": False, "message": "Loan is already fully repaid."}

@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react';
-import useAdminAPI from '../../hooks/useAdminAPI';
+import useAdminAPI from '../hooks/useAdminAPI';
 
 interface ReportsPanelProps {}
 
@@ -29,9 +29,9 @@ const ReportsPanel: React.FC<ReportsPanelProps> = () => {
 
     try {
       const report = await generateReport({
-        report_type: reportType,
-        start_date: dateRange.from,
-        end_date: dateRange.to,
+        report_type: reportType as 'daily' | 'weekly' | 'monthly',
+        export_format: 'json',
+        email_to: undefined,
       });
       setGeneratedReport(report);
     } catch (err) {

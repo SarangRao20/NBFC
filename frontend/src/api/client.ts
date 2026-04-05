@@ -1,4 +1,10 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env?.VITE_API_URL || 'https://nbfc-inc.onrender.com';
+
+// Debug environment variables
+console.log('BASE_URL:', BASE_URL);
+console.log('VITE_API_URL:', import.meta.env?.VITE_API_URL);
+console.log('NODE_ENV:', import.meta.env?.NODE_ENV);
+console.log('MODE:', import.meta.env?.MODE);
 
 const checkResponse = async (res: Response, url: string) => {
   if (!res.ok) {
@@ -183,25 +189,6 @@ export const apiClient = {
   async payEmi(sessionId: string) {
     const res = await fetch(`${BASE_URL}/session/${sessionId}/pay-emi`, { method: 'POST' });
     return checkResponse(res, `/session/${sessionId}/pay-emi`);
-  },
-
-  // Razorpay Payment Methods
-  async createEmiOrder(sessionId: string) {
-    const res = await fetch(`${BASE_URL}/session/${sessionId}/create-emi-order`, { method: 'POST' });
-    return checkResponse(res, `/session/${sessionId}/create-emi-order`);
-  },
-
-  async verifyEmiPayment(sessionId: string, razorpayPaymentId: string, razorpayOrderId: string, razorpaySignature: string) {
-    const res = await fetch(`${BASE_URL}/session/${sessionId}/verify-emi-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        razorpay_payment_id: razorpayPaymentId,
-        razorpay_order_id: razorpayOrderId,
-        razorpay_signature: razorpaySignature
-      }),
-    });
-    return checkResponse(res, `/session/${sessionId}/verify-emi-payment`);
   },
 
   async deleteSession(sessionId: string) {

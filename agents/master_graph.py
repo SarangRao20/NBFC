@@ -16,9 +16,10 @@ Advisor has full context: current_phase, docs, messages, action_log.
 
 import os
 import sys
-from typing import Annotated, TypedDict, Sequence, Optional, Any, cast
+from typing import Annotated, TypedDict, Sequence, Optional
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END, START
+from langgraph.graph.message import add_messages
 
 # Import agent nodes (registration removed since users authenticate via onboarding UI)
 from agents.intent_agent import intent_node
@@ -34,10 +35,6 @@ from agents.repayment_agent import repayment_agent_node
 from agents.master_state import MasterState
 from agents.master_router import route_next_agent
 from agents.session_manager import SessionManager
-from agents.subgraphs import disbursement_subgraph
-
-from api.core.websockets import manager
-
 
 from api.core.websockets import manager
 from langchain_core.messages import HumanMessage, AIMessage
@@ -289,8 +286,6 @@ def compile_master_graph():
     workflow.add_node("document_query_agent",   node_wrapper(document_query_agent_node, "document_query_agent"))
     workflow.add_node("emi_engine",             node_wrapper(emi_engine_node, "emi_engine"))
     workflow.add_node("repayment_agent",        node_wrapper(repayment_agent_node, "repayment_agent"))
-    # 🟢 Add the new Disbursement Subgraph as a single node
-    workflow.add_node("disbursement_process", disbursement_subgraph)
 
     # ── Entry: Load session first, then engine, then supervisor ──────────────
     workflow.add_edge(START, "load_session")
@@ -312,31 +307,24 @@ def compile_master_graph():
             "document_query_agent": "document_query_agent",
             "emi_engine": "emi_engine",
             "repayment_agent": "repayment_agent",
-            "disbursement_process": "disbursement_process",
-            END: END
+            "__end__": END
         }
     )
 
-    # ── CHAT nodes — always END (pause, wait for next user message) ──────────
-    workflow.add_conditional_edges("intent_agent", route_after_intent)
-    workflow.add_edge("sales_agent",        END)
-    workflow.add_edge("document_query_agent", END)
-    workflow.add_edge("repayment_agent",    END)
-
-    workflow.add_edge("disbursement_process", END)
-
-    # ── AUTOMATIC processor nodes — Chain back to supervisor to continue ─────
-    workflow.add_edge("document_agent",     END) 
+    # ── ALL nodes - Chain back to supervisor to continue processing ──────────
+    # (Router handles END logic based on state change/human messages)
+    workflow.add_edge("intent_agent",           "supervisor")
+    workflow.add_edge("sales_agent",            "supervisor")
+    workflow.add_edge("document_agent",         "supervisor")
+    workflow.add_edge("document_query_agent",   "supervisor")
+    workflow.add_edge("repayment_agent",        "supervisor")
+    workflow.add_edge("underwriting_agent",     "supervisor")
+    workflow.add_edge("sanction_agent",         "supervisor")
     
     # Parallel verification join still goes back to supervisor
     workflow.add_edge("verification_agent", "join_verification")
     workflow.add_edge("fraud_agent",        "join_verification")
     workflow.add_edge("join_verification",  "supervisor")
-
-    workflow.add_edge("underwriting_agent", "supervisor")
-    
-    # ── Sanction chains back to supervisor to trigger disbursement_process ──
-    workflow.add_edge("sanction_agent",     "supervisor")
 
     return workflow.compile()
 

@@ -91,3 +91,75 @@ export interface ChatMessage {
   options?: string[];
   timestamp: Date;
 }
+
+// ============================================================================
+// NBFC Dashboard Types
+// ============================================================================
+
+export type NBFCView = 'overview' | 'applications' | 'products' | 'performance' | 'disbursements' | 'risk';
+
+export interface NBFCDashboardProps {
+  nbfcId?: string;
+  nbfcName?: string;
+  userRole?: 'manager' | 'underwriter' | 'viewer';
+  onLogout?: () => void;
+}
+
+export interface LoanApplication {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  amount_requested: number;
+  tenure_months: number;
+  purpose: string;
+  credit_score: number;
+  monthly_income: number;
+  status: 'pending' | 'under_review' | 'approved' | 'rejected' | 'disbursed';
+  applied_date: string;
+  risk_score?: number;
+  documents_verified: boolean;
+}
+
+export interface LoanProduct {
+  id: string;
+  name: string;
+  type: 'personal' | 'business' | 'home' | 'vehicle' | 'education';
+  min_amount: number;
+  max_amount: number;
+  min_tenure: number;
+  max_tenure: number;
+  interest_rate_min: number;
+  interest_rate_max: number;
+  processing_fee_percent: number;
+  prepayment_charges: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DisbursementRecord {
+  id: string;
+  application_id: string;
+  customer_name: string;
+  amount_disbursed: number;
+  disbursement_date: string;
+  emi_amount: number;
+  total_emis: number;
+  emis_paid: number;
+  emis_pending: number;
+  next_emi_date: string;
+  status: 'active' | 'closed' | 'defaulted';
+}
+
+export interface NBFCStats {
+  total_applications: number;
+  pending_review: number;
+  approved_count: number;
+  rejected_count: number;
+  disbursed_count: number;
+  total_disbursed_amount: number;
+  total_outstanding: number;
+  total_emis_collected: number;
+  avg_loan_amount: number;
+  avg_interest_rate: number;
+  conversion_rate: number;
+}

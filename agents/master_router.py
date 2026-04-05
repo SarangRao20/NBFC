@@ -71,32 +71,6 @@ def route_next_agent(state: MasterState):
     if intent == "document_request":
         return "sanction_agent", "User requesting official loan documentation (Sanction/Rejection)."
 
-    # ─── PHASE 8: HYBRID DISBURSEMENT & NEGOTIATION LOOP ───────────────────────
-    
-    # 🟢 1. The Disbursement Hook (Approved)
-    if decision == "approve":
-        # If the 5-step disbursement is totally finished, route to the final advisor greeting
-        if state.get("disbursement_step") == "completed":
-            return "sales_agent", "Disbursement complete. Providing post-sanction orientation."
-            
-        # Otherwise, hand off to our new Subgraph!
-        return "disbursement_process", "Loan approved. Routing to 5-Step Disbursement Subgraph."
-
-    # 🟡 2. The Soft-Reject Loop (Negotiation — handled by Sales Agent)
-    if decision == "soft_reject" or state.get("negotiation_requested"):
-        accepted_offer = state.get("user_accepted_counter_offer", False)
-        
-        if not accepted_offer:
-            # Route to Sales Agent (Arjun) who now handles negotiation/persuasion
-            return "sales_agent", "Soft reject detected. Routing to Sales Agent for counter-offer negotiation."
-        else:
-            # User clicked 'Accept' on the UI or typed yes. Route back to Underwriting to formalize the new math.
-            return "underwriting_agent", "User accepted counter-offer. Re-running underwriting math for final approval."
-
-    # 🔴 3. The Hard Reject (Advisory)
-    if decision == "hard_reject":
-        return "sales_agent", "Hard reject. Providing alternative financial wellness advice."
-
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
         # 4a. Collect and verify terms (Amount, Tenure, Purpose)
@@ -137,9 +111,9 @@ def route_next_agent(state: MasterState):
     if intent == "unclear" or intent == "unclear_greeting":
         return "__end__", "Waiting for user clarification (unclear intent)."
 
-    if decision in ("approve", "soft_reject", "hard_reject"):
-        # If soft_reject, we stay in sales (Arjun) for negotiation until agreement
-        if decision == "soft_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
+    if decision in ("approve", "hard_reject"):
+        # If hard reject, we stay in sales (Arjun) for final communication
+        if decision == "hard_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
             # Only go to sanction if the user has accepted the negotiation (this would be set by Arjun)
             if not state.get("negotiation_signed_off"):
                 return "sales_agent", "Loan soft-rejected. Arjun is handling the persuasion/negotiation loop."

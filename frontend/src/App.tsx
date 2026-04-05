@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import DashboardPane from './components/DashboardPane';
 import ChatPane from './components/ChatPane';
 import AuthWrapper from './components/AuthWrapper';
+import NBFCDashboard from './components/NBFCDashboard';
 import type { AppState, ChatMessage, MessageType } from './types';
 import { apiClient } from './api/client';
 import { wsClient } from './api/websocket';
@@ -56,11 +57,12 @@ function App() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(INITIAL_CHAT_HISTORY);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userType, setUserType] = useState<'customer' | 'nbfc'>('customer');
+  const [nbfcData, setNbfcData] = useState<{ id: string; name: string } | null>(null);
   // @ts-ignore - currentUser is currently unused but kept for future features
   const [currentUser] = useState<UserData | null>(null);
   // @ts-ignore - chatPhase is currently unused but kept for state consistency
   const [chatPhase, setChatPhase] = useState<ChatPhase>('init');
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const greetingStarted = useRef(false);
 
   // Persistence: Check for existing session on mount
@@ -235,12 +237,6 @@ function App() {
                 emi: o.emi || o.monthly_payment || 0
               })),
               documents_uploaded: fullState.documents_uploaded || prev.documents_uploaded || false,
-              disbursement_step: fullState.disbursement_step === "ui_paused" || fullState.disbursement_step === "completed" || prev.disbursement_step === "ui_paused"
-                ? (fullState.disbursement_step || prev.disbursement_step)
-                : fullState.disbursement_step,
-              net_disbursement_amount: fullState.net_disbursement_amount !== undefined ? fullState.net_disbursement_amount : prev.net_disbursement_amount,
-              needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document') && fullState.current_phase !== 'disbursement',
-              requiredDocuments: fullState.required_documents || prev.requiredDocuments,
             }));
           }
         });
@@ -265,7 +261,7 @@ function App() {
 
   const runNegotiation = async () => {
     if (!sessionId) return;
-    const thinkingId = pushAgentMessage('Negotiation in progress...', 'thinking');
+    const thinkingId = pushAgentMessage('Persuasion loop activated...', 'thinking');
     setAppState(prev => ({ 
       ...prev, 
       thinkingAgents: [...prev.thinkingAgents, 'Sales Agent'],
@@ -273,8 +269,8 @@ function App() {
     }));
     
     try {
-      // Use the main chat endpoint — sales agent now handles negotiation/persuasion
-      const res = await apiClient.chat(sessionId, 'I would like to negotiate a counter-offer for my soft-rejected loan. Please suggest restructured options.', chatHistory);
+      await apiClient.analyzeRejection(sessionId);
+      const suggestion = await apiClient.suggestFix(sessionId);
 
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
       setAppState(prev => ({ 
@@ -283,113 +279,15 @@ function App() {
         activeAgent: null 
       }));
 
-      // Display the agent's negotiation response
-      if (res?.all_replies && res.all_replies.length > 0) {
-        // Handle structured message types from backend
-        for (const msg of res.all_replies) {
-          if (typeof msg === 'string') {
-            pushAgentMessage(msg, 'text');
-          } else if (msg && typeof msg === 'object') {
-            const msgType = msg.type || 'text';
-            const content = msg.content || msg.text || '';
-            
-            if (msgType === 'emi_slider') {
-              // Inject EMI slider message with loan terms from backend
-              const loanTerms = msg.loan_terms || res?.loan_terms || {};
-              setChatHistory(prev => [...prev, {
-                id: `msg-${Date.now()}-${Math.random()}`,
-                sender: 'agent',
-                type: 'emi_slider',
-                content: content || "Adjust your loan tenure to see how the monthly EMI changes:",
-                timestamp: new Date(),
-              }]);
-              // Update app state with counter-offer terms
-              if (loanTerms.principal) {
-                setAppState(prev => ({
-                  ...prev,
-                  requestedAmount: loanTerms.principal,
-                  tenure: loanTerms.tenure || prev.tenure,
-                  roi: loanTerms.rate || prev.roi,
-                  emi: loanTerms.emi || prev.emi,
-                  loan_terms: loanTerms
-                }));
-              }
-            } else if (msgType === 'text' && content) {
-              pushAgentMessage(content, 'text');
-            } else if (content) {
-              pushAgentMessage(content, msgType);
-            }
-          }
-        }
-      } else if (res?.reply) {
-        pushAgentMessage(res.reply);
-      } else if (res?.message) {
-        pushAgentMessage(res.message);
+      if (suggestion.options && suggestion.options.length > 0) {
+        setChatPhase('negotiate');
+        pushAgentMessage("We've built a restructured offer. Adjust the slider to select your preferred terms, then type 'accept' to finalize.", 'emi_slider');
       } else {
-        pushAgentMessage("I've analyzed your profile and prepared a counter-offer. Please review the adjusted terms below.");
+        pushAgentMessage("Unfortunately, we cannot offer a restructured loan at this time.");
       }
-
-      // Update state from response if available
-      if (res?.options) {
-        setAppState(prev => ({
-          ...prev,
-          options: res.options,
-        }));
-      }
-
-      // If loan_terms came back in response, update them
-      if (res?.loan_terms && res.loan_terms.principal) {
-        setAppState(prev => ({
-          ...prev,
-          requestedAmount: res.loan_terms.principal,
-          tenure: res.loan_terms.tenure || prev.tenure,
-          roi: res.loan_terms.rate || prev.roi,
-          emi: res.loan_terms.emi || prev.emi,
-          loan_terms: res.loan_terms
-        }));
-        
-        // Only inject EMI slider for EMI affordability rejections
-        const currentRejectionType = appState.rejectionType;
-        if (currentRejectionType === 'emi_affordability') {
-          setChatHistory(prev => [...prev, {
-            id: `msg-${Date.now()}-${Math.random()}`,
-            sender: 'agent',
-            type: 'emi_slider',
-            content: "🤝 I've prepared a counter-offer based on your profile. Adjust the tenure to see how your monthly EMI changes:",
-            timestamp: new Date(),
-          }]);
-        } else {
-          // For exposure limit, LTV, cashflow - show reduced principal offer without slider
-          setChatHistory(prev => [...prev, {
-            id: `msg-${Date.now()}-${Math.random()}`,
-            sender: 'agent',
-            type: 'text',
-            content: `💡 **Counter-offer available:** I've adjusted the loan amount to fit within your risk profile. You can now proceed with ₹${res.loan_terms.principal.toLocaleString()}.`,
-            timestamp: new Date(),
-          }]);
-        }
-      }
-
-      setChatPhase('negotiate');
-
-      // Sync full state for sidebar updates
-      try {
-        const fullState = await apiClient.getSession(sessionId);
-        if (fullState) {
-          setAppState(prev => ({
-            ...prev,
-            requestedAmount: fullState.loan_terms?.principal || prev.requestedAmount,
-            tenure: fullState.loan_terms?.tenure || prev.tenure,
-            emi: fullState.loan_terms?.emi || prev.emi,
-            roi: fullState.loan_terms?.rate || prev.roi,
-            loan_terms: fullState.loan_terms || prev.loan_terms,
-          }));
-        }
-      } catch (_) { /* non-critical */ }
-
     } catch (e) {
       setChatHistory(prev => prev.filter(m => m.id !== thinkingId));
-      pushAgentMessage("Error generating counter offer. Please try again.");
+      pushAgentMessage("Error generating counter offer.");
       setAppState(prev => ({ 
         ...prev, 
         thinkingAgents: [],
@@ -416,8 +314,6 @@ function App() {
         thinkingAgents: prev.thinkingAgents.filter(a => a !== 'Underwriting Agent'),
         activeAgent: null,
         underwritingStatus: uwResult.decision === 'approve' ? 'Approved' : 'Soft-Rejected',
-        rejectionType: uwResult.rejection_type || null,
-        negotiationApproach: uwResult.negotiation_approach || null,
       }));
 
       if (uwResult.decision === 'approve') {
@@ -708,8 +604,6 @@ function App() {
           creditScore: state.customer_data?.credit_score || 0,
           preApprovedLimit: state.customer_data?.pre_approved_limit || 0,
           underwritingStatus: state.decision === 'approve' ? 'Approved' : (state.decision === 'soft_reject' ? 'Soft-Rejected' : 'Pending Evaluation'),
-          rejectionType: state.rejection_type,
-          negotiationApproach: state.negotiation_approach,
           activeAgent: state.current_phase,
           actionLog: state.action_log || [],
           options: state.options || [],
@@ -720,7 +614,7 @@ function App() {
           },
           pastLoans: state.customer_data?.past_loans,
           salary: state.customer_data?.salary || 0,
-          needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document') && state.current_phase !== 'disbursement',
+          needsDocument: (state.current_phase === 'kyc_verification' || state.current_phase === 'document'),
           requiredDocuments: state.required_documents || [],
           eligible_offers: (state.eligible_offers || []).map((o: any) => ({
             lender_id: o.lender_id || o.id || o.lenderId || o.nbfc_id || o.nbfcId,
@@ -728,8 +622,6 @@ function App() {
             interest_rate: o.interest_rate || o.rate || o.rate_percent || o.r,
             emi: o.emi || o.monthly_payment || 0
           })),
-          disbursement_step: state.disbursement_step,
-          net_disbursement_amount: state.net_disbursement_amount,
         };
         setAppState(sData);
         if (state.customer_data?.phone) {
@@ -828,7 +720,7 @@ function App() {
 
     // Intercept common UI actions: negotiate or request rejection letter
     const normalized = text.trim().toLowerCase();
-    if (normalized === 'negotiate' || normalized.includes('negotiate') || normalized.includes('counter-offer') || normalized.includes('counter offer')) {
+    if (normalized.includes('negotiate')) {
       await runNegotiation();
       return;
     }
@@ -915,20 +807,12 @@ function App() {
             emi: fullState.loan_terms?.emi || prev.emi,
             creditScore: fullState.customer_data?.credit_score || prev.creditScore,
             preApprovedLimit: fullState.customer_data?.pre_approved_limit || prev.preApprovedLimit,
-            underwritingStatus: fullState.decision === 'approve' ? 'Approved' : fullState.decision === 'soft_reject' ? 'Soft-Rejected' : prev.underwritingStatus,
+            underwritingStatus: fullState.decision ? (fullState.decision.charAt(0).toUpperCase() + fullState.decision.slice(1).replace('_', ' ')) : prev.underwritingStatus,
             pastLoans: fullState.customer_data?.past_loans || prev.pastLoans,
             pastRecords: fullState.customer_data?.past_records || prev.pastRecords,
             loan_terms: fullState.loan_terms || prev.loan_terms,
             salary: fullState.customer_data?.salary || prev.salary,
             eligible_offers: fullState.eligible_offers || prev.eligible_offers || [],
-            disbursement_step: fullState.disbursement_step === "ui_paused" || fullState.disbursement_step === "completed" || prev.disbursement_step === "ui_paused"
-              ? (fullState.disbursement_step || prev.disbursement_step)
-              : fullState.disbursement_step,
-            net_disbursement_amount: fullState.net_disbursement_amount !== undefined ? fullState.net_disbursement_amount : prev.net_disbursement_amount,
-            rejectionType: fullState.rejection_type !== undefined ? fullState.rejection_type : prev.rejectionType,
-            negotiationApproach: fullState.negotiation_approach !== undefined ? fullState.negotiation_approach : prev.negotiationApproach,
-            needsDocument: (fullState.current_phase === 'kyc_verification' || fullState.current_phase === 'document') && fullState.current_phase !== 'disbursement',
-            requiredDocuments: fullState.required_documents || prev.requiredDocuments,
           }));
         }
       } catch (err) {
@@ -938,15 +822,10 @@ function App() {
       // Update Phase based on intent/decision/next_agent
       try {
         const isDocPhase = fullState?.current_phase === 'kyc_verification' || fullState?.current_phase === 'document';
-        const isDisbursementPhase = fullState?.current_phase === 'disbursement' || fullState?.disbursement_step === 'ui_paused' || fullState?.disbursement_step === 'completed';
         const allUploaded = fullState?.documents_uploaded === true;
 
         if (fullState?.decision === 'soft_reject') {
           setChatPhase('negotiate');
-          setAppState(prev => ({ ...prev, needsDocument: false }));
-        } else if (isDisbursementPhase) {
-          // Don't show document upload during disbursement
-          setChatPhase('accepted');
           setAppState(prev => ({ ...prev, needsDocument: false }));
         } else if (isDocPhase && !allUploaded) {
           setChatPhase('document');
@@ -986,86 +865,22 @@ function App() {
 
   const handlePayEmi = async () => {
     if (!sessionId) return;
-    
-    setIsProcessingPayment(true);
-    
     try {
-      // Step 1: Create Razorpay order
-      console.log('🚀 Starting EMI payment for session:', sessionId);
-      const orderResponse = await apiClient.createEmiOrder(sessionId);
-      
-      console.log('📦 Order Response:', JSON.stringify(orderResponse, null, 2));
-      
-      if (!orderResponse.success) {
-        console.error('❌ Order creation failed:', orderResponse.message);
-        throw new Error(orderResponse.message || 'Failed to create payment order');
+      const res = await apiClient.payEmi(sessionId);
+      if (res.success) {
+        pushAgentMessage(`✅ ${res.message}`, 'text');
+        // State will sync via the PHASE_UPDATE broadcast, but let's force a sync here too
+        const fullState = await apiClient.getSession(sessionId);
+        if (fullState) {
+          setAppState(prev => ({
+            ...prev,
+            loan_terms: fullState.loan_terms
+          }));
+        }
       }
-
-      console.log('✅ Order created successfully:', orderResponse.order_id);
-
-      // Step 2: Open Razorpay Checkout
-      const options = {
-        key: orderResponse.key_id,
-        amount: orderResponse.amount_paise,
-        currency: orderResponse.currency || 'INR',
-        name: 'FinServe NBFC',
-        description: orderResponse.description,
-        order_id: orderResponse.order_id,
-        prefill: {
-          name: orderResponse.customer_name,
-          email: orderResponse.customer_email,
-          contact: orderResponse.customer_phone,
-        },
-        theme: {
-          color: '#10b981',
-        },
-        modal: {
-          ondismiss: function() {
-            setIsProcessingPayment(false);
-            pushAgentMessage('Payment cancelled. You can try again anytime.', 'text');
-          },
-        },
-        handler: async function(response: any) {
-          try {
-            // Step 3: Verify payment signature
-            const verifyResponse = await apiClient.verifyEmiPayment(
-              sessionId,
-              response.razorpay_payment_id,
-              response.razorpay_order_id,
-              response.razorpay_signature
-            );
-
-            if (verifyResponse.success) {
-              pushAgentMessage(`✅ ${verifyResponse.message}`, 'text');
-              
-              // Sync state
-              const fullState = await apiClient.getSession(sessionId);
-              if (fullState) {
-                setAppState(prev => ({
-                  ...prev,
-                  loan_terms: fullState.loan_terms,
-                  creditScore: fullState.customer_data?.credit_score || prev.creditScore
-                }));
-              }
-            } else {
-              throw new Error(verifyResponse.message || 'Payment verification failed');
-            }
-          } catch (error) {
-            console.error('Payment verification failed:', error);
-            pushAgentMessage('❌ Payment verification failed. Please contact support.', 'text');
-          } finally {
-            setIsProcessingPayment(false);
-          }
-        },
-      };
-
-      const razorpay = new (window as any).Razorpay(options);
-      razorpay.open();
-      
-    } catch (error) {
-      console.error('Payment failed:', error);
-      pushAgentMessage(`❌ ${error instanceof Error ? error.message : 'Payment failed. Please try again.'}`, 'text');
-      setIsProcessingPayment(false);
+    } catch (err) {
+      console.error("Payment failed:", err);
+      pushAgentMessage("❌ Payment failed. Please try again.", 'text');
     }
   };
 
@@ -1093,9 +908,130 @@ function App() {
     }
   };
 
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setUserType('customer');
+    setNbfcData(null);
+    setSessionId(null);
+    setAppState(INITIAL_APP_STATE);
+    setChatHistory(INITIAL_CHAT_HISTORY);
+    localStorage.removeItem('nbfc_session_id');
+    localStorage.removeItem('nbfc_customer_name');
+    localStorage.removeItem('nbfc_customer_phone');
+  };
+
   // Show AuthWrapper if not authenticated, otherwise show main app
   if (!isAuthenticated) {
-    return <AuthWrapper onAuthComplete={handleAuthComplete} />;
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Portal Selection Header */}
+        <div className="bg-emerald-700 text-white py-3 px-6">
+          <div className="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 className="text-xl font-bold">🏦 NBFC Loan Marketplace</h1>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setUserType('customer')}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                  userType === 'customer' ? 'bg-white text-emerald-700' : 'hover:bg-emerald-600'
+                }`}
+              >
+                Customer
+              </button>
+              <button
+                onClick={() => setUserType('nbfc')}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                  userType === 'nbfc' ? 'bg-white text-emerald-700' : 'hover:bg-emerald-600'
+                }`}
+              >
+                NBFC Partner
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Pass userType to AuthWrapper or handle NBFC login separately */}
+        {userType === 'customer' ? (
+          <AuthWrapper onAuthComplete={handleAuthComplete} />
+        ) : (
+          <div className="flex items-center justify-center h-[calc(100vh-60px)]">
+            <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">🏦</span>
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">NBFC Partner Login</h2>
+                <p className="text-gray-600 mt-2">Access your lender dashboard</p>
+              </div>
+              
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const nbfcId = formData.get('nbfcId') as string;
+                const nbfcName = formData.get('nbfcName') as string || 'Demo Finance Ltd.';
+                
+                setNbfcData({ id: nbfcId || 'NBFC-001', name: nbfcName });
+                setUserType('nbfc');
+                setIsAuthenticated(true);
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NBFC ID</label>
+                  <input
+                    type="text"
+                    name="nbfcId"
+                    placeholder="NBFC-001"
+                    defaultValue="NBFC-001"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NBFC Name</label>
+                  <input
+                    type="text"
+                    name="nbfcName"
+                    placeholder="Your NBFC Name"
+                    defaultValue="Demo Finance Ltd."
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors"
+                >
+                  Access Dashboard
+                </button>
+              </form>
+              
+              <button
+                onClick={() => setUserType('customer')}
+                className="w-full mt-4 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                ← Back to Customer Portal
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Render NBFC Dashboard
+  if (userType === 'nbfc' && nbfcData) {
+    return (
+      <NBFCDashboard
+        nbfcId={nbfcData.id}
+        nbfcName={nbfcData.name}
+        userRole="manager"
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (
@@ -1107,7 +1043,6 @@ function App() {
         onPayEmi={handlePayEmi}
         onDeleteSession={handleDeleteSession}
         onSelectLender={handleSelectLender}
-        isProcessingPayment={isProcessingPayment}
       />
       <ChatPane 
         appState={appState} 
