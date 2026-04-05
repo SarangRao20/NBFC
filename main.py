@@ -13,7 +13,7 @@ from db.database import users_collection, client, init_collections
 from api.config import get_settings
 from api.routers import (
     session, sales, documents, kyc, fraud,
-    underwriting, sanction, advisory, payment, admin, webhooks
+    underwriting, sanction, advisory, payment, admin, webhooks, persuasion
 )
 from api.routers.auth import router as auth_router
 
@@ -196,6 +196,7 @@ app.include_router(documents.router)     # Steps 5, 6, 7, 8
 app.include_router(kyc.router)           # Step 9
 app.include_router(fraud.router)         # Step 10
 app.include_router(underwriting.router)  # Step 11
+app.include_router(persuasion.router)    # Steps 12, 13, 14, 15 (Counter-offers)
 app.include_router(sanction.router)      # Step 16
 app.include_router(advisory.router)      # Step 17
 app.include_router(payment.router)       # EMI Payments

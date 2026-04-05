@@ -9,13 +9,19 @@ class LoanOption(BaseModel):
     amount: float
     tenure: int
     emi: float
+    total_interest: Optional[float] = None
+    description: Optional[str] = None
 
 # ── Step 12: POST /session/{id}/persuasion/analyze ────────────────────────────
 class PersuasionAnalyzeResponse(BaseModel):
     rejection_reasons: list[str]
     credit_score_ok: bool
+    credit_score: Optional[int] = None
     dti_current: float
     dti_threshold: float = 0.50
+    dti_exceeds: Optional[bool] = None
+    monthly_income: Optional[float] = None
+    existing_emi: Optional[float] = None
     message: str
 
 
@@ -25,6 +31,7 @@ class PersuasionSuggestResponse(BaseModel):
     max_approvable_amount: float
     negotiation_round: int
     max_rounds: int
+    original_request: Optional[float] = None
     requires_salary: bool = False
     requires_rejection_letter_consent: bool = False
     rejection_reasons: list[str] = []
