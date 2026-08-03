@@ -47,8 +47,14 @@ async def download_letter(session_id: str):
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Letter file not found")
     
+    filename = result.get("filename", f"letter_{session_id}.pdf")
     return FileResponse(
         path=file_path,
-        filename=result.get("filename", f"letter_{session_id}.pdf"),
-        media_type="application/pdf"
+        filename=filename,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/pdf",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        }
     )

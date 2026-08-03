@@ -128,8 +128,7 @@ async def load_session_node(state: MasterState):
     
     return {
         "action_log": ["🆕 New session started"],
-        "current_phase": "registration",
-        **state
+        "current_phase": state.get("current_phase") or "registration",
     }
 
 
@@ -202,7 +201,7 @@ def supervisor_router(state: MasterState):
     next_agent = state.get("next_agent", "sales_agent")
     
     # ── Parallel execution for verification ──────────────────────────────────
-    documents_verified = state.get("documents", {}).get("uploaded", False)
+    documents_verified = state.get("documents_uploaded", False)
     kyc_done = state.get("kyc_status") == "verified"
     fraud_checked = state.get("fraud_score", -1) != -1
     

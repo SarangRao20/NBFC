@@ -44,7 +44,7 @@ def fetch_lender_offer(
     credit_score: int,
     monthly_salary: float,
 ) -> Optional[Dict]:
-    """Generic fetch function for any lender."""
+    """Generic fetch function for any lender. Returns None if not found, otherwise returns eligibility result with reasons."""
     lenders = _load_lenders_data()
     lender = next((l for l in lenders["lenders"] if l["lender_id"] == lender_id), None)
     
@@ -54,30 +54,41 @@ def fetch_lender_offer(
         
     print(f"🔍 [LENDER DEBUG] Checking {lender['lender_name']}: amount={loan_amount}, tenure={tenure_months}, score={credit_score}, salary={monthly_salary}")
     
-    # Eligibility check
-    if credit_score < lender["min_credit_score"]:
-        print(f"🔍 [LENDER DEBUG] REJECTED: Credit score {credit_score} < min {lender['min_credit_score']}")
-        return None  # Not eligible
+    rejection_reasons = []
     
-    if loan_amount > lender["max_loan_amount"] or loan_amount < lender["min_loan_amount"]:
-        print(f"🔍 [LENDER DEBUG] REJECTED: Loan amount {loan_amount} not in range [{lender['min_loan_amount']}, {lender['max_loan_amount']}]")
-        return None
+    # Eligibility check — collect ALL reasons instead of returning on first failure
+    if credit_score < lender["min_credit_score"]:
+        reason = f"Credit score {credit_score} is below minimum requirement of {lender['min_credit_score']}"
+        print(f"🔍 [LENDER DEBUG] REJECTED: {reason}")
+        rejection_reasons.append(reason)
+    
+    if loan_amount > lender["max_loan_amount"]:
+        reason = f"Loan amount ₹{loan_amount:,.0f} exceeds maximum of ₹{lender['max_loan_amount']:,.0f}"
+        print(f"🔍 [LENDER DEBUG] REJECTED: {reason}")
+        rejection_reasons.append(reason)
+    elif loan_amount < lender["min_loan_amount"]:
+        reason = f"Loan amount ₹{loan_amount:,.0f} is below minimum of ₹{lender['min_loan_amount']:,.0f}"
+        print(f"🔍 [LENDER DEBUG] REJECTED: {reason}")
+        rejection_reasons.append(reason)
     
     if tenure_months not in lender["tenure_options"]:
-        print(f"🔍 [LENDER DEBUG] REJECTED: Tenure {tenure_months} not in options {lender['tenure_options']}")
-        # Allow slight flexibility in tenure for mock purposes if it's close? 
-        # No, let's stick to defined options for consistency.
-        return None
+        reason = f"Tenure {tenure_months} months not supported; available options: {', '.join(map(str, lender['tenure_options']))} months"
+        print(f"🔍 [LENDER DEBUG] REJECTED: {reason}")
+        rejection_reasons.append(reason)
     
-    # Calculate FOIR (Fixed Obligation to Income Ratio)
+    # Calculate FOIR (Fixed Obligation to Income Ratio) — only if other checks pass
     emi = _calculate_emi(loan_amount, _calculate_interest_rate(lender["base_rate"], credit_score), tenure_months)
     monthly_foir = emi / monthly_salary if monthly_salary > 0 else 1.0
     
     print(f"🔍 [LENDER DEBUG] EMI={emi}, FOIR={monthly_foir}, limit={lender['foir_limit']}")
     
     if monthly_foir > lender["foir_limit"]:
-        print(f"🔍 [LENDER DEBUG] REJECTED: FOIR {monthly_foir} > limit {lender['foir_limit']}")
-        return None
+        reason = f"EMI of ₹{emi:,.0f} would be {monthly_foir*100:.0f}% of income, exceeding {lender['foir_limit']*100:.0f}% FOIR limit"
+        print(f"🔍 [LENDER DEBUG] REJECTED: {reason}")
+        rejection_reasons.append(reason)
+    
+    if rejection_reasons:
+        return None  # Not eligible
     
     print(f"🔍 [LENDER DEBUG] APPROVED: {lender['lender_name']}")
     return {
@@ -128,8 +139,7 @@ async def aggregate_lender_offers(
     monthly_income: float,
     use_parallel: bool = True,
 ) -> Dict:
-    """Fetch offers from all lenders and return aggregated results."""
-    # Map back to internal names if needed
+    """Fetch offers from all lenders and return aggregated results with rejection details."""
     loan_amount = principal
     tenure_months = tenure
     monthly_salary = monthly_income
@@ -137,35 +147,61 @@ async def aggregate_lender_offers(
     
     lenders_data = _load_lenders_data()
     lender_ids = [l["lender_id"] for l in lenders_data["lenders"]]
+    lenders_map = {l["lender_id"]: l for l in lenders_data["lenders"]}
     
     offers = []
+    rejection_details = []  # Collect rejection reasons per lender
+    
+    def _process_lender(lid: str):
+        offer = fetch_lender_offer(lid, loan_amount, tenure_months, credit_score, monthly_salary)
+        lender = lenders_map.get(lid)
+        if offer:
+            return ("offer", offer)
+        else:
+            # Collect rejection reasons from lender data (diagnostic)
+            reasons = []
+            if lender:
+                if credit_score < lender["min_credit_score"]:
+                    reasons.append(f"Credit score {credit_score} < minimum {lender['min_credit_score']}")
+                if loan_amount > lender["max_loan_amount"]:
+                    reasons.append(f"Amount ₹{loan_amount:,.0f} > max ₹{lender['max_loan_amount']:,.0f}")
+                elif loan_amount < lender["min_loan_amount"]:
+                    reasons.append(f"Amount ₹{loan_amount:,.0f} < min ₹{lender['min_loan_amount']:,.0f}")
+                if tenure_months not in lender["tenure_options"]:
+                    reasons.append(f"Tenure {tenure_months}m not in options ({', '.join(map(str, lender['tenure_options']))}m)")
+                # FOIR check
+                est_emi = _calculate_emi(loan_amount, _calculate_interest_rate(lender["base_rate"], credit_score), tenure_months)
+                foir = est_emi / monthly_salary if monthly_salary > 0 else 1.0
+                if foir > lender["foir_limit"]:
+                    reasons.append(f"EMI ₹{est_emi:,.0f} = {foir*100:.0f}% of income > {lender['foir_limit']*100:.0f}% FOIR limit")
+            return ("rejection", {
+                "lender_id": lid,
+                "lender_name": lender["lender_name"] if lender else "Unknown",
+                "rejection_reasons": reasons,
+            })
     
     if use_parallel:
         with ThreadPoolExecutor(max_workers=len(lender_ids)) as executor:
             future_to_lender = {
-                executor.submit(
-                    fetch_lender_offer,
-                    lid,
-                    loan_amount,
-                    tenure_months,
-                    credit_score,
-                    monthly_salary
-                ): lid
+                executor.submit(_process_lender, lid): lid
                 for lid in lender_ids
             }
-            
             for future in as_completed(future_to_lender):
                 try:
-                    offer = future.result()
-                    if offer:
-                        offers.append(offer)
+                    result_type, data = future.result()
+                    if result_type == "offer":
+                        offers.append(data)
+                    else:
+                        rejection_details.append(data)
                 except Exception:
                     pass
     else:
         for lid in lender_ids:
-            offer = fetch_lender_offer(lid, loan_amount, tenure_months, credit_score, monthly_salary)
-            if offer:
-                offers.append(offer)
+            result_type, data = _process_lender(lid)
+            if result_type == "offer":
+                offers.append(data)
+            else:
+                rejection_details.append(data)
     
     fetch_time_ms = round((time.time() - start_time) * 1000, 2)
     
@@ -174,19 +210,19 @@ async def aggregate_lender_offers(
     
     # Proactive Eligibility: Suggest alternative if no offers
     max_eligible_amount = 0
+    best_tenure = tenure_months
     if not offers:
         all_lenders = lenders_data["lenders"]
         for l in all_lenders:
             if credit_score >= l["min_credit_score"]:
-                # Calculate max principal based on FOIR limit
+                lender_tenure = max(l["tenure_options"])
                 max_emi = monthly_salary * l["foir_limit"]
-                # Use base rate + 1.5 as a conservative estimate for rate
                 est_rate = l["base_rate"] + 1.5
-                est_principal = _calculate_max_principal_internal(max_emi, est_rate, tenure_months)
-                # Cap by lender's max amount
+                est_principal = _calculate_max_principal_internal(max_emi, est_rate, lender_tenure)
                 est_principal = min(est_principal, l["max_loan_amount"])
                 if est_principal > max_eligible_amount:
                     max_eligible_amount = int(est_principal // 1000) * 1000
+                    best_tenure = lender_tenure
 
     return {
         "offers": offers,
@@ -195,6 +231,7 @@ async def aggregate_lender_offers(
         "selected_lender_name": best_offer["lender_name"] if best_offer else None,
         "selected_interest_rate": best_offer["interest_rate"] if best_offer else None,
         "max_eligible_amount": max_eligible_amount,
+        "best_tenure": best_tenure,
         "applied_on": datetime.now().isoformat(),
         "fetch_time_ms": fetch_time_ms,
         "request_params": {
@@ -203,7 +240,34 @@ async def aggregate_lender_offers(
             "credit_score": credit_score,
             "monthly_salary": monthly_salary,
         },
+        # NEW: structured rejection + rules data for frontend explainability
+        "rejection_details": rejection_details,
+        "all_lender_rules": get_lender_rules_summary(),
     }
+
+def get_lender_rules_summary() -> list:
+    """Return all lender eligibility rules for display in the UI."""
+    lenders = _load_lenders_data()
+    rules = []
+    for l in lenders["lenders"]:
+        rules.append({
+            "lender_id": l["lender_id"],
+            "lender_name": l["lender_name"],
+            "lender_type": l["lender_type"],
+            "min_credit_score": l["min_credit_score"],
+            "min_loan_amount": l["min_loan_amount"],
+            "max_loan_amount": l["max_loan_amount"],
+            "tenure_options": l["tenure_options"],
+            "foir_limit": l["foir_limit"],
+            "base_rate": l["base_rate"],
+            "interest_rate_range": l["interest_rate_range"],
+            "processing_fee_percent": l["processing_fee_percent"],
+            "risk_profile": l["risk_profile"],
+            "approval_probability": l["approval_probability"],
+            "characteristics": l["characteristics"],
+        })
+    return rules
+
 
 def _calculate_max_principal_internal(desired_emi: float, annual_rate: float, tenure_months: int) -> float:
     if annual_rate == 0 or tenure_months <= 0: return 0

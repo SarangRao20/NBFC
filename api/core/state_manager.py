@@ -37,6 +37,9 @@ def _default_state() -> dict:
             "occupation": "",
             "employer_name": "",
             "residence_type": "", # Owned, Rented, etc.
+            "bank_account_number": "123456789012",
+            "ifsc_code": "HDFC0001234",
+            "bank_name": "HDFC Bank",
         },
         "is_existing_customer": False,
 
@@ -97,6 +100,12 @@ def _default_state() -> dict:
 
         # Sanction (Phase 8)
         "sanction_pdf": "",
+        "is_signed": False,
+        "disbursement_step": "",
+        "disbursement_status": "",
+        "disbursement_id": "",
+        "disbursement_date": "",
+        "net_disbursement_amount": 0,
 
         # Advisory (Phase 9)
         "advisory_message": "",
@@ -149,6 +158,9 @@ async def get_session(session_id: str) -> Optional[dict]:
         "risk_flags": [],
         "past_records": "",
         "drop_off_history": "",
+        "bank_account_number": "",
+        "ifsc_code": "",
+        "bank_name": "",
     }
     default_loan_terms = {
         "loan_type": "",
@@ -211,6 +223,16 @@ async def get_session(session_id: str) -> Optional[dict]:
         doc["risk_level"] = ""
     if "is_signed" not in doc:
         doc["is_signed"] = False
+    if "disbursement_step" not in doc:
+        doc["disbursement_step"] = ""
+    if "disbursement_status" not in doc:
+        doc["disbursement_status"] = ""
+    if "disbursement_id" not in doc:
+        doc["disbursement_id"] = ""
+    if "disbursement_date" not in doc:
+        doc["disbursement_date"] = ""
+    if "net_disbursement_amount" not in doc:
+        doc["net_disbursement_amount"] = 0
     if "dti_ratio" not in doc:
         doc["dti_ratio"] = 0.0
     if "required_documents" not in doc:
@@ -271,7 +293,8 @@ async def update_session(session_id: str, updates: dict) -> dict:
 
     # Sanitize before persisting to MongoDB Atlas
     sanitized = _sanitize_state(state)
-    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    sanitized["_id"] = session_id
+    await sessions_collection.replace_one({"_id": session_id}, sanitized, upsert=True)
     return sanitized
 
 
@@ -288,7 +311,8 @@ async def advance_phase(session_id: str, phase: str) -> dict:
     })
     
     sanitized = _sanitize_state(state)
-    await sessions_collection.replace_one({"_id": session_id}, sanitized)
+    sanitized["_id"] = session_id
+    await sessions_collection.replace_one({"_id": session_id}, sanitized, upsert=True)
     return sanitized
 
 

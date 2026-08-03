@@ -1,7 +1,12 @@
 """Authentication Router - Enhanced with OTP bypass and profile completeness check."""
 
-from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Form
+import jwt
+import secrets
+import time
+import httpx
+from typing import Optional, Dict
+from fastapi import APIRouter, HTTPException, status, Form, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from api.schemas.auth import OTPVerify, LoginResponse, ProfileCheckResponse
 from api.services.auth_service import auth_service
@@ -386,3 +391,142 @@ async def verify_session(session_id: str):
             detail=result["message"]
         )
     return result
+
+
+# ─── Google OAuth Integration ────────────────────────────────────────────────
+def generate_app_jwt(payload_data: dict) -> str:
+    """Generate JWT token for authenticated application users."""
+    payload = {
+        **payload_data,
+        "exp": int(time.time()) + (7 * 24 * 3600),  # 7 days expiration
+        "iat": int(time.time()),
+        "iss": "nbfc-advocate"
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+
+OAUTH_STATES: Dict[str, float] = {}
+
+
+@router.get("/google/login", summary="Initiate Google OAuth Login")
+async def google_login(request: Request):
+    """Initiates Google OAuth 2.0 flow and redirects user to Google Consent screen."""
+    client_id = settings.GOOGLE_CLIENT_ID
+    if not client_id:
+        # Development fallback redirect if Client ID is not configured yet
+        redirect_url = f"{settings.FRONTEND_URL}/?error=google_client_id_missing"
+        return RedirectResponse(url=redirect_url)
+    
+    state = secrets.token_urlsafe(32)
+    OAUTH_STATES[state] = time.time()
+    
+    # Cleanup expired states (> 10 mins old)
+    now = time.time()
+    for k in list(OAUTH_STATES.keys()):
+        if now - OAUTH_STATES[k] > 600:
+            OAUTH_STATES.pop(k, None)
+            
+    redirect_uri = f"{settings.BACKEND_URL.rstrip('/')}/auth/google/callback"
+    
+    google_auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={client_id}"
+        "&response_type=code"
+        "&scope=openid%20email%20profile"
+        f"&redirect_uri={redirect_uri}"
+        f"&state={state}"
+        "&prompt=select_account"
+    )
+    
+    return RedirectResponse(url=google_auth_url)
+
+
+@router.get("/google/callback", summary="Google OAuth Callback")
+async def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None
+):
+    """Callback endpoint for Google OAuth authorization code exchange."""
+    if error:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error={error}")
+        
+    if not state or state not in OAUTH_STATES:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=invalid_csrf_state")
+        
+    OAUTH_STATES.pop(state, None)
+    
+    if not code:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=missing_code")
+        
+    redirect_uri = f"{settings.BACKEND_URL.rstrip('/')}/auth/google/callback"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code"
+                }
+            )
+            
+            if token_response.status_code != 200:
+                print("⚠️ [GOOGLE OAUTH ERROR]", token_response.text)
+                return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=token_exchange_failed")
+                
+            tokens = token_response.json()
+            access_token = tokens.get("access_token")
+            
+            userinfo_response = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            
+            if userinfo_response.status_code != 200:
+                return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=failed_userinfo")
+                
+            user_info = userinfo_response.json()
+            email = user_info.get("email", "")
+            name = user_info.get("name", "Google User")
+            picture = user_info.get("picture", "")
+            google_id = user_info.get("id", email)
+            
+            phone_ref = f"g_{google_id[:10]}"
+            
+            # Ensure user profile exists
+            customer_data = {
+                "name": name,
+                "email": email,
+                "phone": phone_ref,
+                "picture": picture,
+                "salary": 75000,
+                "credit_score": 750,
+                "pre_approved_limit": 500000
+            }
+            try:
+                await auth_service.register_customer(customer_data)
+            except Exception:
+                pass
+            
+            session_data = await auth_service.create_login_session(phone_ref)
+            session_id = session_data.get("session_id")
+            
+            app_token = generate_app_jwt({
+                "sub": email,
+                "name": name,
+                "picture": picture,
+                "session_id": session_id
+            })
+            
+            redirect_target = f"{settings.FRONTEND_URL}/?session_id={session_id}&token={app_token}&name={name}"
+            return RedirectResponse(url=redirect_target)
+            
+    except Exception as e:
+        print("❌ [GOOGLE OAUTH EXCEPTION]", e)
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=oauth_internal_error")
+

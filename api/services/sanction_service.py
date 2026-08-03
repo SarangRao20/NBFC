@@ -256,7 +256,7 @@ async def generate_sanction(session_id: str) -> dict:
 
 
 async def process_esign_acceptance(session_id: str) -> dict:
-    """Process e-sign acceptance and route to advisory agent."""
+    """Process e-sign acceptance and route to advisory agent for disbursement."""
     state = await get_session(session_id)
     if not state:
         return None
@@ -268,59 +268,26 @@ async def process_esign_acceptance(session_id: str) -> dict:
     cust_name = customer.get("name", "Customer")
     principal = terms.get("principal", 0)
     
-    # Generate thank you message
-    if decision == "approve":
-        thank_you_msg = (
-            f"🎉 **Congratulations {cust_name}!**\n\n"
-            f"Your loan of ₹{principal:,.0f} has been successfully approved and e-signed!\n\n"
-            f"📄 **Next Steps:**\n"
-            f"• Your sanction letter will be sent to your registered email\n"
-            f"• Our advisory team will now contact you for documentation guidance\n"
-            f"• Loan disbursement will begin after document verification\n\n"
-            f"Thank you for choosing FinServe NBFC! 🙏"
-        )
-    else:
-        thank_you_msg = (
-            f"📝 **Thank you {cust_name}**\n\n"
-            f"We've received your e-sign on the loan decision letter.\n\n"
-            f"🤝 **Next Steps:**\n"
-            f"• Our advisory team will provide personalized guidance\n"
-            f"• We'll help you improve your eligibility for future applications\n"
-            f"• Free financial planning consultation will be arranged\n\n"
-            f"Thank you for considering FinServe NBFC! 🙏"
-        )
-    
-    # Route to sales agent for advisory mode (post-sanction guidance)
-    from agents.sales_agent import sales_agent_node
-    advisory_state = {
-        "customer_data": customer,
-        "loan_terms": terms,
-        "decision": decision,
-        "session_id": session_id,
-        "post_sanction": True
-    }
-    
-    advisory_result = await sales_agent_node(advisory_state)
-    msg_obj = advisory_result.get("messages", [None])[0]
-    advisory_message = ""
-    if msg_obj:
-        if hasattr(msg_obj, "content"):
-            advisory_message = msg_obj.content
-        elif isinstance(msg_obj, dict):
-            advisory_message = msg_obj.get("content", "")
-    
-    # Update session state
+    # Mark e-sign completed in session immediately
     await update_session(session_id, {
+        "is_signed": True,
         "esign_completed": True,
-        "advisory_message": advisory_message,
-        "current_phase": "advisory"
+        "current_phase": "loan_disbursed",
+        "disbursement_step": "ui_paused",
     })
     
     return {
         "success": True,
-        "message": thank_you_msg,
-        "next_step": "advisory",
-        "advisory_message": advisory_message
+        "message": (
+            f"🎉 **Congratulations {cust_name}!**\n\n"
+            f"Your loan of ₹{principal:,.0f} has been successfully approved and e-signed!\n\n"
+            f"📄 **Next Steps:**\n"
+            f"• Your sanction letter has been generated\n"
+            f"• The funds will be disbursed to your bank account\n"
+            f"• Please confirm to proceed with the transfer\n\n"
+            f"Use the chat to confirm disbursement or ask any questions."
+        ),
+        "next_step": "disbursement_pending",
     }
 
 

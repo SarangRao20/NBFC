@@ -108,8 +108,8 @@ def route_next_agent(state: MasterState):
                 return "verification_agent", "Awaiting KYC completion before underwriting."
 
     # ─── PHASE 8: SANCTION & ADVICE (Priya - Now via Sales Agent advisor mode) ──
-    if intent == "unclear" or intent == "unclear_greeting":
-        return "__end__", "Waiting for user clarification (unclear intent)."
+    if intent == "unclear" or intent == "unclear_greeting" or intent == "none":
+        return "__end__", "Waiting for user clarification (general greeting)."
 
     if decision in ("approve", "hard_reject"):
         # If hard reject, we stay in sales (Arjun) for final communication

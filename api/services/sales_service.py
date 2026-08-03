@@ -27,6 +27,37 @@ def _clean_dict(d):
     return d
 
 
+def _generate_options(state: dict) -> list[str]:
+    """Generate contextual action buttons based on current state."""
+    loan_terms = state.get("loan_terms", {}) or {}
+    decision = state.get("decision", "")
+    payments_made = loan_terms.get("payments_made")
+    phase = state.get("current_phase", "")
+    eligible = state.get("eligible_offers", [])
+    disbursement_status = state.get("disbursement_status", "")
+
+    if disbursement_status == "completed":
+        return ["View Loan Summary", "Pay EMI", "Talk to Advisor"]
+    if loan_terms.get("principal") and payments_made is not None:
+        return ["Pay EMI", "View Loan Summary", "Talk to Advisor"]
+    if decision == "approve" and not state.get("is_signed"):
+        return ["View Sanction Letter", "Sign Now", "Show Details"]
+    if decision in ("soft_reject", "hard_reject"):
+        base = ["View Lender Rules"]
+        if decision == "soft_reject":
+            base.insert(0, "Negotiate Terms")
+        return base
+    if phase in ("document", "kyc_verification") and not state.get("documents_uploaded"):
+        return ["Upload Documents", "Which Documents?", "Check Status"]
+    if phase == "loan_details" and state.get("is_authenticated"):
+        return ["Show Offers", "Check Eligibility", "Talk to Advisor"]
+    if eligible:
+        return ["Show Best Offer", "Compare Lenders", "Tell Me More"]
+    if phase in ("onboarding", "sales") and not state.get("intent") or state.get("intent") in ("none", "general", ""):
+        return ["What services do you offer?", "I want a loan", "Check eligibility"]
+    return ["What services do you offer?", "I want a loan", "Check eligibility"]
+
+
 
 async def _lookup_customer_by_phone(phone: str) -> dict | None:
     """CRM lookup by phone number using MongoDB."""
@@ -233,41 +264,6 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
         from db.database import sessions_collection
         await sessions_collection.insert_one({"_id": session_id, **state})
 
-    # Fast-path for EMI reminder queries using stored sanction/loan records.
-    lowered = (user_message or "").lower()
-    if any(k in lowered for k in ["emi", "existing emis", "due date", "when do i need to pay", "previous loans", "past loans", "my loans", "history"]):
-        try:
-            from db.database import loan_applications_collection
-            phone = state.get("customer_data", {}).get("phone")
-            if phone:
-                cursor = loan_applications_collection.find({"phone": phone})
-                all_apps = await cursor.to_list(length=10)
-                apps = []
-                for app in all_apps:
-                    if app.get("status") in ["Approved", "Signed & Disbursed"]:
-                        apps.append(app)
-
-                if apps:
-                    lines = ["Your active EMI obligations are:"]
-                    for idx, app in enumerate(apps[:5], start=1):
-                        amount = app.get("amount", 0)
-                        emi = app.get("emi", 0)
-                        due = app.get("first_emi_due_date") or "Not available"
-                        lines.append(f"{idx}. Loan ₹{amount:,.0f} | EMI ₹{emi:,.0f} | Next due: {due}")
-                    lines.append("Please pay on or before due date to avoid penalties.")
-                    reply = "\n".join(lines)
-                    return _clean_dict({
-                        "reply": reply,
-                        "all_replies": [{"type": "text", "content": reply}],
-                        "next_agent": "sales_agent",
-                        "intent": state.get("intent", "advice"),
-                        "is_authenticated": state.get("is_authenticated", True),
-                        "loan_terms": state.get("loan_terms", {}),
-                        "customer_data": state.get("customer_data", {}),
-                    })
-        except Exception as emi_err:
-            print(f"⚠️ EMI lookup failed: {emi_err}")
-
     # Rebuild message list from history or stored state
     current_messages = []
     if history:
@@ -361,7 +357,27 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             # }
             # new_ai.insert(0, step_msg)
 
-        # NOTE: frontend buttons/options disabled for cleaner chat UI
+        # Generate action buttons based on state
+        state_based_options = _generate_options(final_state)
+
+        # Inject options into the last text message (only if it doesn't already have options)
+        for m in reversed(new_ai):
+            if isinstance(m, dict) and m.get("type") == "text":
+                if not m.get("options"):
+                    m["options"] = state_based_options
+                break
+
+        # Extract ui_trigger from LLM response to control frontend UI
+        ui_trigger = "none"
+        for m in reversed(new_ai):
+            if isinstance(m, dict):
+                if m.get("ui_trigger"):
+                    ui_trigger = m["ui_trigger"]
+                    break
+                content = m.get("content", "")
+                if '"ui_trigger": "payment_modal"' in content:
+                    ui_trigger = "payment_modal"
+                    break
 
         # For the legacy string reply, concat just the text bits
         texts = [m["content"] for m in new_ai if isinstance(m, dict) and m.get("type") == "text"]
@@ -434,6 +450,16 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             "required_documents": final_state.get("required_documents", []),
             "documents_uploaded": final_state.get("documents_uploaded", False),
             "sales_output": final_state.get("sales_output", {}),
+            # Explainability fields
+            "rejection_details": final_state.get("rejection_details", []),
+            "all_lender_rules": final_state.get("all_lender_rules", []),
+            "show_rules_button": final_state.get("show_rules_button", False),
+            "ui_trigger": ui_trigger,
+            "disbursement_step": final_state.get("disbursement_step", ""),
+            "disbursement_status": final_state.get("disbursement_status", ""),
+            "disbursement_id": final_state.get("disbursement_id", ""),
+            "disbursement_date": final_state.get("disbursement_date", ""),
+            "net_disbursement_amount": final_state.get("net_disbursement_amount", 0),
         })
         print(f"📊 [DEBUG] Response keys: {list(response_data.keys())}")
         print(f"📊 [DEBUG] eligible_offers in response: {len(response_data.get('eligible_offers', []))}")

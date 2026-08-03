@@ -44,6 +44,9 @@ class CustomerData(TypedDict, total=False):
     last_payment_date: Optional[str]  # Last EMI payment date
     payment_history: List[Dict]       # [{date, amount, status}]
     score_degradation_due_to_overdue: int  # Points lost due to late payments
+    bank_account_number: str
+    ifsc_code: str
+    bank_name: str
 
 class DocumentData(TypedDict, total=False):
     salary_slip_path: str
@@ -94,8 +97,6 @@ class MasterState(TypedDict):
     esign_completed: bool # ✅ Added: True after e-signature
     kyc_status: str  # "pending", "verified", "rejected"
     risk_level: str  # "low", "medium", "high"
-    sanction_pdf: str # ✅ Added: Move from below to ensure consistent schema
-    is_signed: bool
     
     # ─── Underwriting Decision ─────────────────────────────────────────────────
     decision: str  # "", "approve", "soft_reject", "hard_reject"
@@ -105,6 +106,10 @@ class MasterState(TypedDict):
     # ─── Sanction & Final Output ───────────────────────────────────────────────
     sanction_pdf: str  # path to generated PDF
     is_signed: bool
+    disbursement_step: str  # "ui_paused" | "processing" | "completed"
+    disbursement_status: str  # "pending" | "processing" | "completed" | "failed"
+    disbursement_id: str
+    disbursement_date: str
     
     # ─── Persuasion/Negotiation State ─────────────────────────────────────────
     negotiation_round: int

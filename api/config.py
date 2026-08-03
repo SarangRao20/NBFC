@@ -42,10 +42,18 @@ class Settings(BaseSettings):
     DISABLE_OTP: bool = os.getenv("DISABLE_OTP", "false").lower() == "true"
     DEV_OTP: str = os.getenv("DEV_OTP", "123456")  # Default OTP for development
 
+    # Google OAuth & JWT Settings
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "nbfc_super_secret_jwt_key_2026_change_in_prod")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
+
     # Underwriting thresholds
     MIN_CREDIT_SCORE: int = int(os.getenv("MIN_CREDIT_SCORE", "700"))
     MAX_DTI_RATIO: float = float(os.getenv("MAX_DTI_RATIO", "0.50"))  # 50% maximum DTI
     MAX_EXPOSURE_MULTIPLIER: float = float(os.getenv("MAX_EXPOSURE_MULTIPLIER", "2.0"))  # Allow up to 2× pre-approved by default
+    USE_DTI_SCORE: bool = os.getenv("USE_DTI_SCORE", "false").lower() == "true"
     
     # Persuasion loop
     MAX_NEGOTIATION_ROUNDS: int = int(os.getenv("MAX_NEGOTIATION_ROUNDS", "3"))

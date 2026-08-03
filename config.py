@@ -1,7 +1,7 @@
 """LLM Configuration with automatic fallback chain."""
 
+import asyncio
 import os
-import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +13,24 @@ OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 # Feature flags
 # Disable usage of DTI score in decisioning when False
 USE_DTI_SCORE = False
+
+
+async def llm_invoke_with_retry(llm, messages, max_retries=3, base_delay=1.5):
+    """Invoke LLM with exponential backoff retry for rate limits (429)."""
+    for attempt in range(max_retries):
+        try:
+            return await llm.ainvoke(messages)
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "rate_limit" in err_str.lower() or "Rate limit" in err_str:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"  ⏳ Rate limited, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(delay)
+                    continue
+            raise
+    # Fallthrough should never happen, but just in case
+    return await llm.ainvoke(messages)
 
 
 # ── Redis LLM Cache (Memurai / Redis on Windows) ─────────────────────────────
@@ -68,8 +86,6 @@ def _get_llm_with_fallback(temperature: float = 0.3):
                 groq_api_key=GROQ_API_KEY,
                 temperature=temperature
             )
-            # Quick test
-            llm.invoke("hi")
             print("   Using: Groq (llama-3.1-8b)")
             return llm
         except Exception as e:
@@ -84,7 +100,6 @@ def _get_llm_with_fallback(temperature: float = 0.3):
                 google_api_key=GEMINI_API_KEY,
                 temperature=temperature
             )
-            llm.invoke("hi")
             print("   Using: Gemini (1.5-flash)")
             return llm
         except Exception as e:
@@ -100,7 +115,6 @@ def _get_llm_with_fallback(temperature: float = 0.3):
                 api_key=OPENROUTER_API_KEY,
                 temperature=temperature
             )
-            llm.invoke("hi")
             print("   Using: OpenRouter (llama-3.3-70b)")
             return llm
         except Exception as e:

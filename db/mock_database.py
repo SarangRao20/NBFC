@@ -95,46 +95,72 @@ class MockCollection:
             ]
         return MockCursor(filtered_data)
     
-    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]):
+    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any], upsert: bool = False):
         # Find the first document that matches the query
         doc_to_update = None
+        doc_id_key = None
         for doc_id, doc in self.data.items():
             if all(doc.get(k) == v for k, v in query.items()):
                 doc_to_update = doc
+                doc_id_key = doc_id
                 break
         
         if doc_to_update:
-            doc_id = doc_to_update["_id"]
             if "$set" in update:
-                self.data[doc_id].update(update["$set"])
-                print(f"✏️ Updated {self.collection_name}: {doc_id}")
+                self.data[doc_id_key].update(update["$set"])
+                print(f"✏️ Updated {self.collection_name}: {doc_id_key}")
             else:
-                # Basic update without $set (Atlas style)
-                self.data[doc_id].update(update)
-                print(f"✏️ Updated {self.collection_name} (direct): {doc_id}")
+                self.data[doc_id_key].update(update)
+                print(f"✏️ Updated {self.collection_name} (direct): {doc_id_key}")
             self._persist()
             return type("Result", (), {"matched_count": 1, "modified_count": 1})()
+        
+        # Upsert support: create document if it doesn't exist
+        if upsert:
+            new_doc = {}
+            if "$set" in update:
+                new_doc.update(update["$set"])
+            else:
+                new_doc.update(update)
+            # Set _id from query if it's an _id query
+            if "_id" in query:
+                new_doc["_id"] = query["_id"]
+            doc_id = new_doc.get("_id", str(uuid.uuid4()))
+            new_doc["_id"] = doc_id
+            self.data[doc_id] = new_doc
+            self._persist()
+            print(f"➕ Upserted new doc in {self.collection_name}: {doc_id}")
+            return type("Result", (), {"matched_count": 1, "modified_count": 1, "upserted_id": doc_id})()
             
         print(f"❌ Update failed in {self.collection_name}: No document matching {query}")
         return type("Result", (), {"matched_count": 0, "modified_count": 0})()
     
-    async def replace_one(self, query: Dict[str, Any], replacement: Dict[str, Any]):
+    async def replace_one(self, query: Dict[str, Any], replacement: Dict[str, Any], upsert: bool = False):
         # Find the first document that matches the query
         doc_to_replace = None
+        doc_id_key = None
         for doc_id, doc in self.data.items():
             if all(doc.get(k) == v for k, v in query.items()):
                 doc_to_replace = doc
+                doc_id_key = doc_id
                 break
         
         if doc_to_replace:
-            doc_id = doc_to_replace["_id"]
-            # Ensure replacement has the same _id if it doesn't have one
             if "_id" not in replacement:
-                replacement["_id"] = doc_id
+                replacement["_id"] = doc_id_key
+            self.data[doc_id_key] = replacement
+            self._persist()
+            print(f"🔄 Replaced {self.collection_name}: {doc_id_key}")
+            return type("Result", (), {"matched_count": 1, "modified_count": 1})()
+        
+        # Upsert support
+        if upsert:
+            doc_id = replacement.get("_id") or query.get("_id") or str(uuid.uuid4())
+            replacement["_id"] = doc_id
             self.data[doc_id] = replacement
             self._persist()
-            print(f"🔄 Replaced {self.collection_name}: {doc_id}")
-            return type("Result", (), {"matched_count": 1, "modified_count": 1})()
+            print(f"➕ Upserted (replace) new doc in {self.collection_name}: {doc_id}")
+            return type("Result", (), {"matched_count": 1, "modified_count": 1, "upserted_id": doc_id})()
             
         print(f"❌ Replace failed in {self.collection_name}: No document matching {query}")
         return type("Result", (), {"matched_count": 0, "modified_count": 0})()

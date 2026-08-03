@@ -10,7 +10,7 @@ It determines if the user wants:
 
 import json
 import re
-from config import get_extraction_llm
+from config import get_extraction_llm, llm_invoke_with_retry
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 INTENT_SYSTEM_PROMPT = """You are Arjun, the Senior Strategy Dispatcher at FinServe NBFC. Your job is to classify the user's latest message into one of five strict categories to ensure they talk to the right specialist.
@@ -23,8 +23,8 @@ INTENT_SYSTEM_PROMPT = """You are Arjun, the Senior Strategy Dispatcher at FinSe
 3. **'advice'**: The user is asking "Should I take a loan?", "Is this a good investment?", "How can I improve my CIBIL?", "What is my DTI?", or looking for advisor guidance.
 4. **'kyc'**: The user is uploading or asking about PAN, Aadhaar, Salary Slips, or "how to upload documents".
 5. **'sign'**: The user says "I am ready to sign", "e-sign", "accept the offer", or "confirm the loan".
-6. **'payment'**: The user wants to make an EMI payment, check their **loan status**, see **remaining balance**, or track **repayment progress**. (e.g., "how much is left?", "pay my emi", "status of my loan").
-7. **'none'**: General greetings ("Hi", "Hello") or completely unrelated chat.
+6. **'payment'**: The user wants to make an EMI payment, check their **loan status**, see **remaining balance**, or track **repayment progress**. (e.g., "how much is left?", "pay my emi", "status of my loan"). **A simple greeting like 'hi', 'hello', 'hey' should be 'none', NOT 'payment'**.
+7. **'none'**: General greetings ("Hi", "Hello", "hey", "good morning") or completely unrelated chat.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ## DISPATCH RULES (ANTI-HALLUCINATION):
@@ -73,7 +73,7 @@ async def intent_node(state: dict):
     try:
         PROMPT = INTENT_SYSTEM_PROMPT + "\n\nEXTRACTOR RULE: Extract 'requested_amount' and 'salary' if mentioned. Return 0 for missing values."
         
-        res = await llm.ainvoke([
+        res = await llm_invoke_with_retry(llm, [
             SystemMessage(content=PROMPT),
             HumanMessage(content=f"RECENT CONTEXT:\n{context_text}\n\nLatest User Message: {user_msg}")
         ])
@@ -127,24 +127,22 @@ async def intent_node(state: dict):
     if intent == 'unclear' or intent not in ['loan', 'advice', 'kyc', 'sign', 'payment', 'document_request']:
         cust = state.get("customer_data", {}) or {}
         name = cust.get("name", "").strip()
+        display_name = name if name else 'there'
         
-        # Check if they have past loans to acknowledge
-        past_loans = cust.get("past_loans", [])
-        if past_loans and not state.get("messages"):
-             greeting_prompt = f"Welcome back {name if name else ''}! I see your past history with us. How can I help you today? Loans, payments, or some advice?"
-        else:
-             greeting_prompt = f"Hi {name if name else 'there'}! I'm Arjun, your loan specialist. How can I help you today? We offer loans, financial advice, and KYC support."
-        
-        res = await llm.ainvoke([SystemMessage(content=greeting_prompt + " Keep it to exactly one warm sentence.")])
-        msg = res.content
+        greeting_text = (
+            f"Hello {display_name}! I am Arjun, your Autonomous Loan Advocate. "
+            f"I'm here to analyze market rates, verify eligibility, and secure the optimal loan structure for you. "
+            f"How can I assist you today?"
+        )
 
         return {
-            "intent": "unclear",
-            "messages": [AIMessage(content=msg)],
+            "intent": "none",
+            "messages": [AIMessage(content=greeting_text)],
             "action_log": log,
-            "current_phase": "intent_discovery",
-            "options": ["Apply for Loan", "Check Loan History", "Financial Advice"]
+            "current_phase": "onboarding",
+            "options": ["Apply for a loan", "Check my eligibility", "Talk to an advisor"]
         }
+
 
     phase_map = {
         "loan": "loan_application", 

@@ -2,17 +2,16 @@
 
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from api.core.websockets import manager
-from config import get_master_llm
+from config import get_master_llm, llm_invoke_with_retry
 from datetime import datetime
 
-REPAYMENT_PROMPT = """You are Arjun, the Senior Financial Advisor at FinServe.
-Your goal is to help users manage their repayments naturally and supportively.
+REPAYMENT_PROMPT = """You are Arjun, a concise loan repayment guide at FinServe.
 
 GUIDELINES:
-1. **BE HUMAN**: Acknowledge their payment progress with encouragement (e.g., "You're halfway there!", "Almost done!").
-2. **BE CONCISE**: Limit your response to 2-3 sentences.
-3. **GUIDE TO UI**: Naturally mention that they can use the "Pay Next EMI" button in their dashboard.
-4. **NO ROBOTIC HEADERS**: Avoid using "Loan Repayment Portal" or similar technical headers.
+1. **NEVER RE-ASK**: If the customer already stated their intent (pay, check due date, etc.), respond directly. Do NOT ask "what would you like to do?" again.
+2. **BE CONCISE**: 1-2 sentences max. No bullet points, no headers, no loan summaries.
+3. **GUIDE TO UI**: Mention the "Pay Next EMI" button in dashboard if they want to pay.
+4. **NO ROBOTIC**: No "Your Loan Summary" or "Loan Repayment Portal" headers.
 """
 
 async def repayment_agent_node(state: dict) -> dict:
@@ -27,7 +26,7 @@ async def repayment_agent_node(state: dict) -> dict:
     emi = terms.get("emi", 0)
     payments_made = terms.get("payments_made", 0)
     tenure = terms.get("tenure", 0)
-    next_due = terms.get("next_emi_date", "TBD")
+    next_due = terms.get("next_emi_date")
     
     # Fallback to past_loans if current terms are empty (returning user scenario)
     if principal <= 0:
@@ -38,7 +37,7 @@ async def repayment_agent_node(state: dict) -> dict:
             emi = active_loan.get("emi", 0)
             tenure = active_loan.get("tenure", 0)
             payments_made = active_loan.get("payments_made", 0) # Assuming this is tracked in past_loans
-            next_due = active_loan.get("next_emi_date", "TBD")
+            next_due = active_loan.get("next_emi_date")
             
             # Hydrate state for other agents
             terms.update({
@@ -97,13 +96,15 @@ async def repayment_agent_node(state: dict) -> dict:
         f"NEXT DUE: {next_due}"
     )
     
-    response = await llm.ainvoke([
+    response = await llm_invoke_with_retry(llm, [
         SystemMessage(content=REPAYMENT_PROMPT),
-        HumanMessage(content=f"Help me with my payment. Context: {prompt_context}")
+        HumanMessage(content=f"Help me with my payment. Context: {prompt_context}\n\nIMPORTANT: Your entire response must be valid JSON: {{\"type\": \"text\", \"content\": \"your message here\", \"ui_trigger\": \"payment_modal\"}}\nWhen user wants to pay, set ui_trigger to \"payment_modal\". Otherwise omit ui_trigger.")  # noqa: E501
     ])
 
     return {
         "messages": [AIMessage(content=response.content)],
         "current_phase": "payment",
+        "intent": "none",
+        "payment_handled": True,
         "options": ["Confirm Payment", "View Detailed Schedule", "Talk to Advisor"]
     }
