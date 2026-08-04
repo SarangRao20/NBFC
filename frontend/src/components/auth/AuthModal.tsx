@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
+import { API_BASE } from '../../lib/config';
 import { useLoanStore } from '../../store/useLoanStore';
 import { X, Lock, Phone, User, Mail, MapPin, Briefcase, ShieldCheck, ArrowRight } from 'lucide-react';
 
@@ -31,7 +32,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   if (!isOpen) return null;
 
   const handleGoogleOAuth = () => {
-    window.location.href = 'http://localhost:8000/auth/google/login';
+    window.location.href = `${API_BASE}/auth/google/login`;
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
