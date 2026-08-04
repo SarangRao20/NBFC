@@ -481,19 +481,24 @@ class AuthService:
                 "error": str(e)
             }
     
-    async def login_with_password(self, phone: str, password: str) -> Dict[str, Any]:
-        """Login with phone and password using MongoDB database."""
+    async def login_with_password(self, email_or_phone: str, password: str) -> Dict[str, Any]:
+        """Login with email/phone and password using MongoDB database."""
         await self._get_services()
         
         try:
-            # First check MongoDB
+            # First check MongoDB for phone or email
             from db.database import users_collection
-            user = await users_collection.find_one({"phone": phone})
+            user = await users_collection.find_one({
+                "$or": [
+                    {"phone": email_or_phone},
+                    {"email": email_or_phone}
+                ]
+            })
             
             # If not found in MongoDB and in development mode, check mock customers
             if not user and get_settings().APP_ENV != "production":
                 customers = load_mock_customers()
-                user = next((c for c in customers if c.get("phone") == phone), None)
+                user = next((c for c in customers if c.get("phone") == email_or_phone or c.get("email") == email_or_phone), None)
             
             if not user:
                 return {
@@ -509,7 +514,14 @@ class AuthService:
                     "message": "Invalid password"
                 }
             
-            # Create session
+            # Use the registered phone number to create login session
+            phone = user.get("phone")
+            if not phone:
+                return {
+                    "success": False,
+                    "message": "User profile is missing phone number"
+                }
+                
             session_result = await self.create_login_session(phone)
             
             return {

@@ -91,12 +91,12 @@ async def verify_otp(
 
 
 @router.post("/login", response_model=LoginResponse,
-             summary="Login with phone and password")
+             summary="Login with email or phone and password")
 async def login(
-    phone: str = Form(...),
+    phone: str = Form(..., description="Email or Phone number"),
     password: str = Form(...)
 ):
-    """Login with phone and password using mock customers database."""
+    """Login with email/phone and password using MongoDB database."""
     try:
         result = await auth_service.login_with_password(phone, password)
         

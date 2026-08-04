@@ -13,10 +13,10 @@ export interface ApiResponse<T = any> {
 export const api = {
   // ── 1. Authentication & MongoDB Users ─────────────────────────────
   
-  async loginWithPassword(phone: string, password: string): Promise<ApiResponse> {
+  async loginWithPassword(emailOrPhone: string, password: string): Promise<ApiResponse> {
     try {
       const formData = new FormData();
-      formData.append('phone', phone);
+      formData.append('phone', emailOrPhone);
       formData.append('password', password);
 
       const res = await fetch(`${API_BASE}/auth/login`, {
