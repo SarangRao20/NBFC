@@ -68,6 +68,40 @@ export const api = {
     }
   },
 
+  async sendOtp(phone: string): Promise<ApiResponse> {
+    try {
+      const formData = new FormData();
+      formData.append('phone', phone);
+      const res = await fetch(`${API_BASE}/auth/send-otp`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.message || 'Failed to send OTP');
+      return { success: true, data };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async verifyOtp(phone: string, otp: string): Promise<ApiResponse> {
+    try {
+      const formData = new FormData();
+      formData.append('phone', phone);
+      formData.append('otp', otp);
+      const res = await fetch(`${API_BASE}/auth/verify-otp`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || data.message || 'Invalid OTP');
+      return { success: true, data };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+
   async checkProfileCompleteness(phone: string): Promise<ApiResponse> {
     try {
       const res = await fetch(`${API_BASE}/auth/check-profile/${phone}`);

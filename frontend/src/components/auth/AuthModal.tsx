@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { useLoanStore } from '../../store/useLoanStore';
-import { X, Lock, Phone, User, Mail, MapPin, Briefcase, Calendar, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, Lock, Phone, User, Mail, MapPin, Briefcase, ShieldCheck, ArrowRight, KeyRound, CheckCircle2 } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -10,13 +10,19 @@ interface AuthModalProps {
 
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const { setUser } = useLoanStore();
-  const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [mode, setMode] = useState<'LOGIN' | 'OTP' | 'REGISTER'>('OTP');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpNotice, setOtpNotice] = useState<string | null>(null);
 
   // Login form fields
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  // OTP Login fields
+  const [otpPhone, setOtpPhone] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   // Register form fields
   const [regName, setRegName] = useState('');
@@ -34,6 +40,44 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     window.location.href = 'http://localhost:8000/auth/google/login';
   };
 
+  const handleSendOtp = async () => {
+    if (!otpPhone) return;
+    setError(null);
+    setLoading(true);
+    const res = await api.sendOtp(otpPhone);
+    setLoading(false);
+    if (res.success) {
+      setOtpSent(true);
+      setOtpNotice(res.data?.message || 'OTP dispatched to registered mobile (Dev OTP: 123456)');
+    } else {
+      setError(res.error || 'Failed to dispatch OTP');
+    }
+  };
+
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const res = await api.verifyOtp(otpPhone, otpCode);
+    setLoading(false);
+
+    if (res.success) {
+      setUser({
+        name: 'Sarang Rao',
+        email: 'sarang@nbfc-finserve.com',
+        picture: '',
+        phone: otpPhone,
+        salary: 150000,
+        city: 'Mumbai, Maharashtra',
+        creditScore: 800,
+      });
+      onClose();
+    } else {
+      setError(res.error || 'Invalid OTP code');
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -45,13 +89,13 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     if (res.success && res.data) {
       const cust = res.data.customer_data || {};
       setUser({
-        name: cust.name || 'User',
-        email: cust.email || 'user@example.com',
+        name: cust.name || 'Sarang Rao',
+        email: cust.email || 'sarang@nbfc-finserve.com',
         picture: cust.picture || '',
         phone: cust.phone || loginPhone,
-        salary: cust.salary || 0,
-        city: cust.city || '',
-        creditScore: cust.credit_score || 785,
+        salary: cust.salary || 150000,
+        city: cust.city || 'Mumbai',
+        creditScore: cust.credit_score || 800,
       });
       onClose();
     } else {
@@ -131,19 +175,27 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
         <div className="relative flex items-center justify-center mb-6">
           <div className="border-t border-white/10 w-full" />
-          <span className="bg-[#111] px-3 text-[10px] uppercase tracking-widest text-white/40 font-bold shrink-0">Or via MongoDB</span>
+          <span className="bg-[#111] px-3 text-[10px] uppercase tracking-widest text-white/40 font-bold shrink-0">Or Instant Authentication</span>
           <div className="border-t border-white/10 w-full" />
         </div>
 
         {/* Mode Switcher */}
         <div className="flex bg-[#0A0A0A] p-1 rounded-xl border border-white/10 mb-6">
           <button
+            onClick={() => { setMode('OTP'); setError(null); }}
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+              mode === 'OTP' ? 'bg-white text-black shadow' : 'text-white/50 hover:text-white'
+            }`}
+          >
+            OTP Login
+          </button>
+          <button
             onClick={() => { setMode('LOGIN'); setError(null); }}
             className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
               mode === 'LOGIN' ? 'bg-white text-black shadow' : 'text-white/50 hover:text-white'
             }`}
           >
-            Sign In
+            Password
           </button>
           <button
             onClick={() => { setMode('REGISTER'); setError(null); }}
@@ -151,7 +203,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
               mode === 'REGISTER' ? 'bg-white text-black shadow' : 'text-white/50 hover:text-white'
             }`}
           >
-            Create Account
+            Register
           </button>
         </div>
 
@@ -161,7 +213,69 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
           </div>
         )}
 
-        {/* LOGIN FORM */}
+        {/* OTP LOGIN FORM */}
+        {mode === 'OTP' && (
+          <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1">Mobile Number</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Phone className="w-4 h-4 text-white/30 absolute left-3 top-3.5" />
+                  <input
+                    required
+                    type="tel"
+                    value={otpPhone}
+                    onChange={(e) => setOtpPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/20"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={loading || !otpPhone}
+                  className="px-4 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold text-xs rounded-xl transition-all disabled:opacity-50 shrink-0"
+                >
+                  {otpSent ? 'Resend' : 'Send OTP'}
+                </button>
+              </div>
+            </div>
+
+            {otpNotice && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{otpNotice}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1">6-Digit UIDAI / Dev OTP</label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-white/30 absolute left-3 top-3.5" />
+                <input
+                  required
+                  type="text"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  placeholder="123456"
+                  className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white font-mono tracking-widest focus:outline-none focus:border-white/30 placeholder:text-white/20"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !otpCode}
+              className="w-full h-12 mt-2 bg-white text-black font-semibold rounded-xl hover:bg-white/90 shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
+            >
+              {loading ? 'Verifying OTP...' : 'Verify OTP & Enter Console'}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
+        )}
+
+        {/* PASSWORD LOGIN FORM */}
         {mode === 'LOGIN' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>

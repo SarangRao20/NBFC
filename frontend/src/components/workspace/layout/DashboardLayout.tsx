@@ -1,9 +1,10 @@
-import { ShieldCheck, LayoutDashboard, FileText, CreditCard, LogOut } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, FileText, CreditCard, Bot, LogOut } from 'lucide-react';
 import { useLoanStore } from '../../../store/useLoanStore';
 import AgentOverlay from '../../shared/AgentOverlay';
 import AnalyticsDashboard from '../pages/AnalyticsDashboard';
 import GenUiApplication from '../pages/GenUiApplication';
 import ActiveLoans from '../pages/ActiveLoans';
+import AdvisorChat from '../pages/AdvisorChat';
 import UserProfile from '../pages/UserProfile';
 
 export default function DashboardLayout() {
@@ -11,7 +12,8 @@ export default function DashboardLayout() {
 
   const navigation = [
     { name: 'Dashboard', id: 'DASHBOARD', icon: LayoutDashboard },
-    { name: 'Origination & AI Console', id: 'APPLICATION', icon: FileText },
+    { name: 'Track 1: Loan Origination', id: 'APPLICATION', icon: FileText },
+    { name: 'Track 2: AI Financial Advisor', id: 'ADVISOR', icon: Bot },
     { name: 'Active Loans & Ledgers', id: 'ACTIVE_LOANS', icon: CreditCard },
   ];
 
@@ -19,6 +21,7 @@ export default function DashboardLayout() {
     switch (currentView) {
       case 'DASHBOARD': return <AnalyticsDashboard />;
       case 'APPLICATION': return <GenUiApplication />;
+      case 'ADVISOR': return <AdvisorChat />;
       case 'ACTIVE_LOANS': return <ActiveLoans />;
       case 'PROFILE': return <UserProfile />;
       default: return <AnalyticsDashboard />;
