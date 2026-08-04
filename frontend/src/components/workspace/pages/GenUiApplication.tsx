@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
@@ -12,6 +12,7 @@ interface ChatItem {
   role: 'user' | 'assistant';
   content: string;
   component?: 'ONBOARDING' | 'KYC' | 'OFFERS' | 'SANCTION';
+  showConfiguratorPill?: boolean;
   timestamp: number;
 }
 
@@ -74,7 +75,7 @@ export default function GenUiApplication() {
       {
         id: Date.now().toString(),
         role: 'user',
-        content: 'I would like to configure my capital parameters.',
+        content: 'I would like to open the capital parameter slider.',
         timestamp: Date.now()
       },
       {
@@ -85,6 +86,10 @@ export default function GenUiApplication() {
         timestamp: Date.now()
       }
     ]);
+  };
+
+  const handleProceedToKyc = () => {
+    handleOnboardingNext();
   };
 
   const handleCheckBestTerms = () => {
@@ -99,8 +104,8 @@ export default function GenUiApplication() {
       {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Based on your Tier-1 credit score of ${user?.creditScore || 785} and verified income telemetry, your optimal pre-approved facility is ₹${loanDetails.requestedAmount.toLocaleString('en-IN')} at a prime rate of 10.5% p.a. over ${loanDetails.tenureMonths} months. You can confirm or customize these terms below:`,
-        component: 'ONBOARDING',
+        content: `Based on your Tier-1 credit score of ${user?.creditScore || 785} and monthly income telemetry, your optimal pre-approved facility is ₹5,00,000 at a prime rate of 10.5% p.a. over 36 months (~₹16,250/mo EMI). You can confirm these parameters to proceed to KYC, or adjust them using the configurator below:`,
+        showConfiguratorPill: true,
         timestamp: Date.now()
       }
     ]);
@@ -213,8 +218,17 @@ export default function GenUiApplication() {
 
     // 1. Entity Extraction (Amount)
     const extractedAmount = parseAmountInr(text);
+
+    // Auto-scale recommended tenure based on requested amount
+    let recommendedTenure = loanDetails.tenureMonths;
     if (extractedAmount && extractedAmount >= 10000) {
-      updateLoanDetails({ requestedAmount: extractedAmount });
+      if (extractedAmount <= 100000) recommendedTenure = 12;
+      else if (extractedAmount <= 300000) recommendedTenure = 24;
+      else if (extractedAmount <= 700000) recommendedTenure = 36;
+      else if (extractedAmount <= 1200000) recommendedTenure = 48;
+      else recommendedTenure = 60;
+
+      updateLoanDetails({ requestedAmount: extractedAmount, tenureMonths: recommendedTenure });
     }
 
     // 2. Start or get session & sync with backend
@@ -231,7 +245,7 @@ export default function GenUiApplication() {
       const targetAmt = extractedAmount || loanDetails.requestedAmount;
       await api.updateLoanParams(activeSessionId, {
         requested_amount: targetAmt,
-        tenure_months: loanDetails.tenureMonths
+        tenure_months: recommendedTenure
       });
       await api.chatWithAgent(activeSessionId, text);
     }
@@ -240,15 +254,30 @@ export default function GenUiApplication() {
       setIsTyping(false);
       const lower = text.toLowerCase();
       const currentAmt = extractedAmount || loanDetails.requestedAmount;
+      const currentTenure = recommendedTenure;
+      const emiVal = Math.round((currentAmt * (1 + 0.105 * (currentTenure / 12))) / currentTenure);
 
-      if (extractedAmount || lower.includes('terms') || lower.includes('profile') || lower.includes('best') || lower.includes('rate') || lower.includes('apply') || lower.includes('loan') || lower.includes('rupees') || lower.includes('k')) {
+      const explicitlyWantsSlider = lower.includes('slider') || lower.includes('configure') || lower.includes('adjust slider') || lower.includes('show slider');
+
+      if (explicitlyWantsSlider) {
         setChatHistory((prev) => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Understood ${firstName}. Based on your request, I have configured your capital requirement for ₹${currentAmt.toLocaleString('en-IN')} over ${loanDetails.tenureMonths} months at a prime rate of 10.5% p.a. (~₹${Math.round((currentAmt * 1.105) / loanDetails.tenureMonths).toLocaleString('en-IN')}/mo EMI). You can confirm or adjust these terms in the interactive configurator below:`,
+            content: `Understood ${firstName}. Here is the interactive facility configurator pre-scaled to ₹${currentAmt.toLocaleString('en-IN')} over ${currentTenure} months:`,
             component: 'ONBOARDING',
+            timestamp: Date.now()
+          }
+        ]);
+      } else if (extractedAmount || lower.includes('terms') || lower.includes('profile') || lower.includes('best') || lower.includes('rate') || lower.includes('apply') || lower.includes('loan') || lower.includes('rupees') || lower.includes('k')) {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Understood ${firstName}. For a requested principal of ₹${currentAmt.toLocaleString('en-IN')}, the optimal recommended tenure is ${currentTenure} months (~₹${emiVal.toLocaleString('en-IN')}/mo EMI @ 10.5% p.a.).`,
+            showConfiguratorPill: true,
             timestamp: Date.now()
           }
         ]);
@@ -263,7 +292,7 @@ export default function GenUiApplication() {
           }
         ]);
       }
-    }, 800);
+    }, 600);
   };
 
   const renderComponent = (compName?: string) => {
@@ -335,6 +364,23 @@ export default function GenUiApplication() {
                       className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
                     >
                       <Sliders className="w-3.5 h-3.5" /> Configure Capital Slider
+                    </button>
+                  </div>
+                )}
+
+                {item.showConfiguratorPill && (
+                  <div className="flex flex-wrap gap-3 pt-1">
+                    <button
+                      onClick={handleProceedToKyc}
+                      className="px-4 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-all flex items-center gap-2"
+                    >
+                      Confirm Terms & Proceed to KYC <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={handleStartConfigurator}
+                      className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
+                    >
+                      <Sliders className="w-3.5 h-3.5" /> Adjust Parameters Slider
                     </button>
                   </div>
                 )}
