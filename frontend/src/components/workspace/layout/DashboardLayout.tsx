@@ -1,10 +1,9 @@
-import { ShieldCheck, LayoutDashboard, FileText, CreditCard, Bot, LogOut, User } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, FileText, CreditCard, LogOut } from 'lucide-react';
 import { useLoanStore } from '../../../store/useLoanStore';
 import AgentOverlay from '../../shared/AgentOverlay';
 import AnalyticsDashboard from '../pages/AnalyticsDashboard';
 import GenUiApplication from '../pages/GenUiApplication';
 import ActiveLoans from '../pages/ActiveLoans';
-import AdvisorChat from '../pages/AdvisorChat';
 import UserProfile from '../pages/UserProfile';
 
 export default function DashboardLayout() {
@@ -12,10 +11,8 @@ export default function DashboardLayout() {
 
   const navigation = [
     { name: 'Dashboard', id: 'DASHBOARD', icon: LayoutDashboard },
-    { name: 'Apply for Loan', id: 'APPLICATION', icon: FileText },
-    { name: 'Active Loans', id: 'ACTIVE_LOANS', icon: CreditCard },
-    { name: 'Financial Advisor', id: 'ADVISOR', icon: Bot },
-    { name: 'My Profile', id: 'PROFILE', icon: User },
+    { name: 'Origination & AI Console', id: 'APPLICATION', icon: FileText },
+    { name: 'Active Loans & Ledgers', id: 'ACTIVE_LOANS', icon: CreditCard },
   ];
 
   const renderContent = () => {
@@ -23,7 +20,6 @@ export default function DashboardLayout() {
       case 'DASHBOARD': return <AnalyticsDashboard />;
       case 'APPLICATION': return <GenUiApplication />;
       case 'ACTIVE_LOANS': return <ActiveLoans />;
-      case 'ADVISOR': return <AdvisorChat />;
       case 'PROFILE': return <UserProfile />;
       default: return <AnalyticsDashboard />;
     }
@@ -70,15 +66,16 @@ export default function DashboardLayout() {
               })}
             </nav>
 
-            {/* Profile Menu */}
+            {/* Profile Menu: Click on User Name / Avatar to Open Profile */}
             <div className="ml-auto flex items-center gap-4">
               <div 
                 onClick={() => setView('PROFILE')}
                 className="flex items-center gap-3 cursor-pointer p-1.5 rounded-xl hover:bg-white/5 transition-all group"
+                title="Click to view & edit borrower profile"
               >
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-medium text-white leading-none group-hover:text-emerald-400 transition-colors">{user?.name || 'Partner'}</p>
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Verified Profile</p>
+                  <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1 font-mono">View Profile →</p>
                 </div>
                 <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 overflow-hidden flex items-center justify-center group-hover:border-emerald-500/50 transition-colors">
                    {user?.picture ? (
