@@ -12,7 +12,7 @@ OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Feature flags
 # Disable usage of DTI score in decisioning when False
-USE_DTI_SCORE = False
+USE_DTI_SCORE = True
 
 
 async def llm_invoke_with_retry(llm, messages, max_retries=3, base_delay=1.5):
