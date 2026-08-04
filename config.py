@@ -33,19 +33,23 @@ async def llm_invoke_with_retry(llm, messages, max_retries=3, base_delay=1.5):
     return await llm.ainvoke(messages)
 
 
-# ── Redis LLM Cache (Memurai / Redis on Windows) ─────────────────────────────
+# ── Redis LLM Cache ─────────────────────────────────────────────────────────────
 def _setup_redis_cache():
-    """Connect to local Redis/Memurai for LLM response caching. Silently skips if unavailable."""
+    """Connect to Redis using REDIS_URL for LLM response caching."""
     try:
         import redis
         import langchain
         from langchain_community.cache import RedisCache
-        client = redis.Redis(host="localhost", port=6379, db=0, socket_connect_timeout=1)
-        client.ping()  # test connection
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            print("    No REDIS_URL found in environment; skipping Redis cache.")
+            return
+        client = redis.Redis.from_url(redis_url)
+        client.ping()
         langchain.llm_cache = RedisCache(redis_=client)
-        print("   Redis LLM Cache connected (Memurai)")
+        print("   Redis LLM Cache connected")
     except Exception as e:
-        print(f"    Redis cache unavailable ({e.__class__.__name__}: {str(e)[:40]}), running without cache.")
+        print(f"    Redis cache unavailable ({e.__class__.__name__}: {str(e)[:60]}), running without cache.")
 
 _setup_redis_cache()
 
