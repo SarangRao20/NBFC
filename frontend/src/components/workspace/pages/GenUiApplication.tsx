@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, Network, FileText, Mail, CreditCard } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, Network, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
 import SanctionViewer from '../widgets/SanctionViewer';
+import ShapWidget from '../widgets/ShapWidget';
 import { api } from '../../../lib/api';
 
 interface ChatItem {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  component?: 'ONBOARDING' | 'KYC' | 'OFFERS' | 'SANCTION';
+  component?: 'ONBOARDING' | 'KYC' | 'OFFERS' | 'SANCTION' | 'SHAP';
   showConfiguratorPill?: boolean;
   showActiveLoansPill?: boolean;
+  showShapPill?: boolean;
   graphTrace?: string[];
   pdfDownloadUrl?: string;
   timestamp: number;
@@ -128,7 +130,26 @@ export default function GenUiApplication() {
         timestamp: Date.now()
       }
     ]);
+  const handleShowShap = () => {
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        role: 'user',
+        content: 'Explain my underwriting pricing using SHAP feature contributions.',
+        timestamp: Date.now()
+      },
+      {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Here is the SHAP Feature Importance Waterfall showing exactly how your credit score, income levels, debt obligations, and location metrics contributed to your final approved interest rate:`,
+        component: 'SHAP',
+        graphTrace: ['StateGraph Node: underwriting_agent -> shap_explainer_mcp'],
+        timestamp: Date.now()
+      }
+    ]);
   };
+
 
   const handleOnboardingNext = async () => {
     setIsTyping(true);
@@ -190,6 +211,7 @@ export default function GenUiApplication() {
           role: 'assistant',
           content: `StateGraph Underwriting Complete! Verified CIBIL Score: ${user?.creditScore || 785}. Evaluated 40,000+ risk vectors across partner lenders. Here are your pre-approved institutional offers:`,
           component: 'OFFERS',
+          showShapPill: true,
           graphTrace: [
             'StateGraph Node: underwriting_agent -> lender_aggregator',
             'Evaluated 5 Institutional Lenders (HDFC, ICICI, Bajaj, Muthoot, Saraswat)',
@@ -294,6 +316,7 @@ export default function GenUiApplication() {
 
         const lowerText = text.toLowerCase();
         const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
+        const wantsShap = lowerText.includes('shap') || lowerText.includes('explain') || lowerText.includes('why') || lowerText.includes('rationale') || lowerText.includes('decision');
 
         const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
 
@@ -303,7 +326,7 @@ export default function GenUiApplication() {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content: backendReply,
-            component: explicitlyWantsSlider ? 'ONBOARDING' : undefined,
+            component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap ? 'SHAP' : undefined),
             showConfiguratorPill: intent === 'loan' && !explicitlyWantsSlider,
             showActiveLoansPill: isEmiStatus,
             graphTrace: graphTraces,
@@ -347,6 +370,8 @@ export default function GenUiApplication() {
         return <OffersWidget onSelect={handleOfferSelect} />;
       case 'SANCTION':
         return <SanctionViewer />;
+      case 'SHAP':
+        return <ShapWidget />;
       default:
         return null;
     }
@@ -474,6 +499,17 @@ export default function GenUiApplication() {
                       className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
                     >
                       <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
+                    </button>
+                  </div>
+                )}
+
+                {item.showShapPill && (
+                  <div className="flex flex-wrap gap-3 pt-1">
+                    <button
+                      onClick={handleShowShap}
+                      className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" /> Explain Underwriting Decision (SHAP) →
                     </button>
                   </div>
                 )}

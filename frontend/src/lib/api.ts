@@ -262,6 +262,16 @@ export const api = {
     }
   },
 
+  async fetchShapExplainability(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/shap-explain`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // ── 6. Lender Selection ──────────────────────────────────────────
   
   async selectLender(sessionId: string, payload: { selected_lender_id: string }): Promise<ApiResponse> {

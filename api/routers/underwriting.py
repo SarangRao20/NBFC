@@ -62,3 +62,27 @@ async def get_lender_offers(session_id: str):
         }
     }
 
+
+@router.post("/{session_id}/shap-explain", summary="Compute SHAP Feature Importance for Credit Decision")
+async def get_shap_explainability(session_id: str):
+    """Generates SHAP feature contribution waterfall for credit underwriting decision."""
+    from api.core.state_manager import get_session
+    from api.services.shap_service import compute_shap_explainability
+
+    state = await get_session(session_id)
+    if not state:
+        raise SessionNotFoundError(session_id)
+
+    customer = state.get("customer_data", {}) or {}
+    terms = state.get("loan_terms", {}) or {}
+
+    score = customer.get("credit_score", 785)
+    salary = customer.get("salary", 75000)
+    existing_emi = customer.get("existing_emi_total", 0)
+    amount = terms.get("principal", 500000)
+    city = customer.get("city", "Mumbai")
+
+    shap_data = compute_shap_explainability(score, salary, existing_emi, amount, city)
+    return {"success": True, "shap_data": shap_data}
+
+
