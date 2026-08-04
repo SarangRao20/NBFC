@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint } from 'lucide-react';
 import AuthModal from './auth/AuthModal';
+import { useLoanStore } from '../store/useLoanStore';
 
 const Button = ({ children, className = "", variant = "default", size = "default", ...props }: any) => {
   const baseStyle = "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
@@ -26,8 +27,15 @@ const Button = ({ children, className = "", variant = "default", size = "default
 
 const LandingPage = () => {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const { setView, setSessionId } = useLoanStore();
 
   const handleOpenAuth = () => {
+    setIsAuthOpen(true);
+  };
+
+  const handleOpenDocs = () => {
+    // Trigger auth flow and set the target view to DOCS
+    localStorage.setItem('postAuthView', 'DOCS');
     setIsAuthOpen(true);
   };
 
@@ -85,9 +93,9 @@ const LandingPage = () => {
               <Button size="lg" onClick={handleOpenAuth} className="w-full sm:w-auto min-w-[200px]">
                 Initialize Protocol
               </Button>
-              <Button size="lg" variant="outline" className="w-full sm:w-auto min-w-[200px]">
-                View Documentation
-              </Button>
+               <Button size="lg" variant="outline" className="w-full sm:w-auto min-w-[200px]" onClick={handleOpenDocs}>
+                 View Documentation
+               </Button>
             </div>
           </div>
         </section>

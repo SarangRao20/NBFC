@@ -57,6 +57,11 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         city: cust.city || 'Mumbai',
         creditScore: cust.credit_score || 800,
       });
+      const targetView = localStorage.getItem('postAuthView');
+      if (targetView) {
+        useLoanStore.setState({ currentView: targetView as any });
+        localStorage.removeItem('postAuthView');
+      }
       onClose();
     } else {
       setError(res.error || 'Invalid credentials');
@@ -94,6 +99,11 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         city: cust.city || regCity,
         creditScore: cust.credit_score || 785,
       });
+      const targetView = localStorage.getItem('postAuthView');
+      if (targetView) {
+        useLoanStore.setState({ currentView: targetView as any });
+        localStorage.removeItem('postAuthView');
+      }
       onClose();
     } else {
       setError(res.error || 'Registration failed');
