@@ -44,12 +44,12 @@ def _setup_redis_cache():
         if not redis_url:
             print("    No REDIS_URL found in environment; skipping Redis cache.")
             return
-        client = redis.Redis.from_url(redis_url, ssl=True)
+        client = redis.Redis.from_url(redis_url, ssl=True, socket_connect_timeout=5)
         client.ping()
         langchain.llm_cache = RedisCache(redis_=client)
-        print("   Redis LLM Cache connected")
+        print("   ✅ Redis LLM Cache connected (cloud)")
     except Exception as e:
-        print(f"    Redis cache unavailable ({e.__class__.__name__}: {str(e)[:60]}), running without cache.")
+        print(f"    ⚠️ Redis cache unavailable ({e.__class__.__name__}: {str(e)[:80]}), running without cache.")
 
 _setup_redis_cache()
 
