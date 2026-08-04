@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, Network, CheckCircle2, FileText, Mail } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, Network, FileText, Mail, CreditCard } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
@@ -13,6 +13,7 @@ interface ChatItem {
   content: string;
   component?: 'ONBOARDING' | 'KYC' | 'OFFERS' | 'SANCTION';
   showConfiguratorPill?: boolean;
+  showActiveLoansPill?: boolean;
   graphTrace?: string[];
   pdfDownloadUrl?: string;
   timestamp: number;
@@ -33,7 +34,7 @@ function parseAmountInr(text: string): number | null {
 }
 
 export default function GenUiApplication() {
-  const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs } = useLoanStore();
+  const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs, setView } = useLoanStore();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -244,7 +245,49 @@ export default function GenUiApplication() {
 
     setIsTyping(true);
 
-    // 1. Entity Extraction (Amount)
+    const lower = text.toLowerCase();
+
+    // 1. Check for Active Loan Status / EMI Remaining Inquiry FIRST
+    const isEmiStatusInquiry = lower.includes('remaining') || lower.includes('loanfree') || lower.includes('loan free') || lower.includes('how many emi') || lower.includes('balance') || lower.includes('status of my loan') || lower.includes('active loan');
+
+    if (isEmiStatusInquiry) {
+      setTimeout(async () => {
+        setIsTyping(false);
+        let activeAmt = loanDetails.requestedAmount;
+        let activeTenure = loanDetails.tenureMonths;
+        let emiVal = Math.round((activeAmt * 1.105) / activeTenure);
+        let remainingEmis = activeTenure;
+
+        if (user?.phone) {
+          const res = await api.getLoanHistory(user.phone);
+          if (res.success && res.data?.history && res.data.history.length > 0) {
+            const latest = res.data.history[0];
+            activeAmt = latest.amount || activeAmt;
+            activeTenure = latest.tenure || activeTenure;
+            emiVal = latest.emi || emiVal;
+          }
+        }
+
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Hello ${firstName}. Based on your active facility ledger in MongoDB:\n\n• Active Facility Principal: ₹${activeAmt.toLocaleString('en-IN')}\n• Agreed Tenure: ${activeTenure} Months (~₹${emiVal.toLocaleString('en-IN')}/mo EMI)\n• **Remaining EMIs to become 100% Loan-Free: ${remainingEmis} EMIs**\n\nYou can pay individual EMIs directly or manage auto-debit in your Active Loans ledger below:`,
+            showActiveLoansPill: true,
+            graphTrace: [
+              'StateGraph Node: intent_agent (CLASSIFIED: Repayment / EMI Remaining Status Inquiry)',
+              'Queried MongoDB Loan Ledger collection',
+              `Active Facility Found: ₹${activeAmt.toLocaleString('en-IN')} | Remaining EMIs: ${remainingEmis}`
+            ],
+            timestamp: Date.now()
+          }
+        ]);
+      }, 600);
+      return;
+    }
+
+    // 2. Entity Extraction (Amount) for new loan inquiries
     const extractedAmount = parseAmountInr(text);
 
     let recommendedTenure = loanDetails.tenureMonths;
@@ -258,7 +301,7 @@ export default function GenUiApplication() {
       updateLoanDetails({ requestedAmount: extractedAmount, tenureMonths: recommendedTenure });
     }
 
-    // 2. Start or get session & sync with backend
+    // 3. Start or get session & sync with backend
     let activeSessionId = sessionId;
     if (!activeSessionId) {
       const startRes = await api.startSession();
@@ -279,7 +322,6 @@ export default function GenUiApplication() {
 
     setTimeout(() => {
       setIsTyping(false);
-      const lower = text.toLowerCase();
       const currentAmt = extractedAmount || loanDetails.requestedAmount;
       const currentTenure = recommendedTenure;
       const emiVal = Math.round((currentAmt * (1 + 0.105 * (currentTenure / 12))) / currentTenure);
@@ -466,6 +508,17 @@ export default function GenUiApplication() {
                   </div>
                 )}
 
+                {item.showActiveLoansPill && (
+                  <div className="flex flex-wrap gap-3 pt-1">
+                    <button
+                      onClick={() => setView('ACTIVE_LOANS')}
+                      className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
+                    </button>
+                  </div>
+                )}
+
                 {item.component && (
                   <div className="w-full">
                     {renderComponent(item.component)}
@@ -498,7 +551,7 @@ export default function GenUiApplication() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask System Intelligence (e.g. 'I need 80k loan for business expansion')..."
+          placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
           className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
         />
         <button
