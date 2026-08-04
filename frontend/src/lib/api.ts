@@ -180,7 +180,22 @@ export const api = {
     }
   },
 
+  async chatWithAgent(sessionId: string, message: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // ── 4. KYC Upload ────────────────────────────────────────────────
+
   
   async uploadDocument(sessionId: string, docType: string, file: File): Promise<ApiResponse> {
     try {

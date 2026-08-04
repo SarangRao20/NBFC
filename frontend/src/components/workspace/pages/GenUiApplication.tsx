@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
@@ -15,8 +15,22 @@ interface ChatItem {
   timestamp: number;
 }
 
+function parseAmountInr(text: string): number | null {
+  const t = text.toLowerCase().replace(/,/g, '').trim();
+  const lakhMatch = t.match(/(\d+(?:\.\d+)?)\s*(lakh|lac|lakhs|lacs)/);
+  if (lakhMatch) return parseFloat(lakhMatch[1]) * 100000;
+
+  const kMatch = t.match(/(\d+(?:\.\d+)?)\s*(k|thousand|thousands)/);
+  if (kMatch) return parseFloat(kMatch[1]) * 1000;
+
+  const rsMatch = t.match(/(?:rs\.?|inr|rupees?)?\s*(\d{4,8})/);
+  if (rsMatch) return parseFloat(rsMatch[1]);
+
+  return null;
+}
+
 export default function GenUiApplication() {
-  const { user, sessionId, setSessionId, loanDetails, setAgentActive, addAgentLog, clearAgentLogs } = useLoanStore();
+  const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs } = useLoanStore();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -42,7 +56,7 @@ export default function GenUiApplication() {
 
     for (const log of logs) {
       addAgentLog(log);
-      await new Promise((res) => setTimeout(res, 500));
+      await new Promise((res) => setTimeout(res, 400));
     }
 
     try {
@@ -50,7 +64,7 @@ export default function GenUiApplication() {
     } catch (e: any) {
       addAgentLog(`❌ Error: ${e.message}`);
     } finally {
-      setTimeout(() => setAgentActive(false), 800);
+      setTimeout(() => setAgentActive(false), 600);
     }
   };
 
@@ -85,7 +99,7 @@ export default function GenUiApplication() {
       {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Based on your Tier-1 credit score of ${user?.creditScore || 785} and verified income telemetry, your optimal pre-approved facility is ₹5,00,000 at a prime rate of 10.5% p.a. over 36 months (~₹16,250/mo EMI). You can confirm or customize these terms below:`,
+        content: `Based on your Tier-1 credit score of ${user?.creditScore || 785} and verified income telemetry, your optimal pre-approved facility is ₹${loanDetails.requestedAmount.toLocaleString('en-IN')} at a prime rate of 10.5% p.a. over ${loanDetails.tenureMonths} months. You can confirm or customize these terms below:`,
         component: 'ONBOARDING',
         timestamp: Date.now()
       }
@@ -183,31 +197,57 @@ export default function GenUiApplication() {
     });
   };
 
-  const handleSendUserMessage = (e: React.FormEvent) => {
+  const handleSendUserMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
     const text = input;
     setInput('');
-    
+
     setChatHistory((prev) => [
       ...prev,
       { id: Date.now().toString(), role: 'user', content: text, timestamp: Date.now() }
     ]);
 
     setIsTyping(true);
-    
+
+    // 1. Entity Extraction (Amount)
+    const extractedAmount = parseAmountInr(text);
+    if (extractedAmount && extractedAmount >= 10000) {
+      updateLoanDetails({ requestedAmount: extractedAmount });
+    }
+
+    // 2. Start or get session & sync with backend
+    let activeSessionId = sessionId;
+    if (!activeSessionId) {
+      const startRes = await api.startSession();
+      if (startRes.success && startRes.data) {
+        activeSessionId = startRes.data.session_id;
+        setSessionId(activeSessionId!);
+      }
+    }
+
+    if (activeSessionId) {
+      const targetAmt = extractedAmount || loanDetails.requestedAmount;
+      await api.updateLoanParams(activeSessionId, {
+        requested_amount: targetAmt,
+        tenure_months: loanDetails.tenureMonths
+      });
+      await api.chatWithAgent(activeSessionId, text);
+    }
+
     setTimeout(() => {
       setIsTyping(false);
       const lower = text.toLowerCase();
+      const currentAmt = extractedAmount || loanDetails.requestedAmount;
 
-      if (lower.includes('terms') || lower.includes('profile') || lower.includes('best') || lower.includes('rate') || lower.includes('apply') || lower.includes('loan')) {
+      if (extractedAmount || lower.includes('terms') || lower.includes('profile') || lower.includes('best') || lower.includes('rate') || lower.includes('apply') || lower.includes('loan') || lower.includes('rupees') || lower.includes('k')) {
         setChatHistory((prev) => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Based on your prime CIBIL score of ${user?.creditScore || 785} and monthly income telemetry, your optimal pre-approved facility is ₹5,00,000 at a prime rate of 10.5% p.a. over 36 months (~₹16,250/mo EMI). I have rendered the facility configurator below so you can customize your terms:`,
+            content: `Understood ${firstName}. Based on your request, I have configured your capital requirement for ₹${currentAmt.toLocaleString('en-IN')} over ${loanDetails.tenureMonths} months at a prime rate of 10.5% p.a. (~₹${Math.round((currentAmt * 1.105) / loanDetails.tenureMonths).toLocaleString('en-IN')}/mo EMI). You can confirm or adjust these terms in the interactive configurator below:`,
             component: 'ONBOARDING',
             timestamp: Date.now()
           }
@@ -223,7 +263,7 @@ export default function GenUiApplication() {
           }
         ]);
       }
-    }, 1000);
+    }, 800);
   };
 
   const renderComponent = (compName?: string) => {
@@ -331,7 +371,7 @@ export default function GenUiApplication() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask System Intelligence about terms or type your request..."
+          placeholder="Ask System Intelligence about terms or type your request (e.g. 'I need 80k loan')..."
           className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
         />
         <button
