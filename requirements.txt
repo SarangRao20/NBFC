@@ -21,3 +21,4 @@ pytest-asyncio
 authlib>=1.3.0
 httpx>=0.27.0
 pyjwt>=2.8.0
+twilio>=9.10.0
