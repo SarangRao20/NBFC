@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, Network, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, FileText, Mail, CreditCard } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
 import SanctionViewer from '../widgets/SanctionViewer';
 import ShapWidget from '../widgets/ShapWidget';
+import GraphVisualizer from '../widgets/GraphVisualizer';
 import { api } from '../../../lib/api';
 
 interface ChatItem {
@@ -25,6 +26,8 @@ export default function GenUiApplication() {
   const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs, setView } = useLoanStore();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState('load_session');
+  const [nextAgent, setNextAgent] = useState<string | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const firstName = user?.name ? user.name.split(' ')[0] : 'Partner';
@@ -294,26 +297,16 @@ export default function GenUiApplication() {
         const intent = chatRes.data.intent || 'general';
         const phase = chatRes.data.current_phase || 'active';
 
+        // Update DAG visualizer state
+        setCurrentPhase(phase);
+        if (chatRes.data.next_agent) setNextAgent(chatRes.data.next_agent);
+
         // Update local loan details if returned from backend NLP extraction
         if (chatRes.data.loan_terms?.principal) {
           updateLoanDetails({
             requestedAmount: chatRes.data.loan_terms.principal,
             tenureMonths: chatRes.data.loan_terms.tenure || loanDetails.tenureMonths
           });
-        }
-
-        // Build authentic LangGraph execution traces
-        const graphTraces: string[] = [
-          `StateGraph Node: intent_agent (NLP Classified Intent: '${intent.toUpperCase()}')`,
-          `Current State Phase: ${phase}`
-        ];
-
-        if (chatRes.data.next_agent) {
-          graphTraces.push(`Routed to Agent: ${chatRes.data.next_agent}`);
-        }
-
-        if (chatRes.data.loan_terms?.emi) {
-          graphTraces.push(`EMI Engine: ₹${Math.round(chatRes.data.loan_terms.emi).toLocaleString('en-IN')}/month`);
         }
 
         const lowerText = text.toLowerCase();
@@ -336,7 +329,6 @@ export default function GenUiApplication() {
             component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap || isRejected ? 'SHAP' : undefined),
             showConfiguratorPill: isConfirmingTerms,
             showActiveLoansPill: isEmiStatus,
-            graphTrace: graphTraces,
             timestamp: Date.now()
           }
         ]);
@@ -385,7 +377,9 @@ export default function GenUiApplication() {
   };
 
   return (
-    <div className="bg-[#111] border border-white/10 rounded-2xl h-[calc(100vh-140px)] flex flex-col overflow-hidden max-w-4xl mx-auto shadow-2xl relative">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-140px)] w-full">
+      {/* ── Left: Chat Console ─── */}
+      <div className="lg:col-span-8 xl:col-span-9 bg-[#111] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
       {/* Console Header */}
       <div className="p-4 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -418,26 +412,9 @@ export default function GenUiApplication() {
                   <div className={`px-5 py-4 text-[15px] leading-relaxed rounded-2xl ${
                     item.role === 'user'
                       ? 'bg-white/10 text-white rounded-tr-sm border border-white/5'
-                      : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm space-y-3'
+                      : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm'
                   }`}>
                     <p className="whitespace-pre-line">{item.content}</p>
-
-                    {/* LangGraph StateGraph Execution Traces */}
-                    {item.graphTrace && item.graphTrace.length > 0 && (
-                      <div className="pt-2 border-t border-white/5 space-y-1">
-                        <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono font-bold uppercase tracking-wider">
-                          <Network className="w-3 h-3" /> LangGraph StateGraph Traces:
-                        </div>
-                        <div className="bg-[#111] p-2.5 rounded-lg border border-white/5 space-y-1 font-mono text-[11px] text-white/60">
-                          {item.graphTrace.map((trace, tIdx) => (
-                            <div key={tIdx} className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                              <span>{trace}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -564,6 +541,16 @@ export default function GenUiApplication() {
           <Send className="w-4 h-4" />
         </button>
       </form>
-    </div>
+      </div>{/* end chat column */}
+
+      {/* ── Right: Live DAG Visualizer ─── */}
+      <div className="hidden lg:block lg:col-span-4 xl:col-span-3">
+        <GraphVisualizer
+          currentPhase={currentPhase}
+          nextAgent={nextAgent}
+          isStreaming={isTyping}
+        />
+      </div>
+    </div>{/* end grid */}
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { useLoanStore } from '../../store/useLoanStore';
-import { X, Lock, Phone, User, Mail, MapPin, Briefcase, ShieldCheck, ArrowRight, KeyRound, CheckCircle2 } from 'lucide-react';
+import { X, Lock, Phone, User, Mail, MapPin, Briefcase, ShieldCheck, ArrowRight } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -13,16 +13,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpNotice, setOtpNotice] = useState<string | null>(null);
 
   // Login form fields
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-
-  // OTP Login fields
-  const [otpPhone, setOtpPhone] = useState('');
-  const [otpCode, setOtpCode] = useState('');
 
   // Register form fields
   const [regName, setRegName] = useState('');
@@ -38,48 +32,6 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
   const handleGoogleOAuth = () => {
     window.location.href = 'http://localhost:8000/auth/google/login';
-  };
-
-  const handleSendOtp = async () => {
-    if (!otpPhone) return;
-    setError(null);
-    setLoading(true);
-    const res = await api.sendOtp(otpPhone);
-    setLoading(false);
-    if (res.success) {
-      setOtpSent(true);
-      const code = res.data?.dev_otp || '123456';
-      setOtpNotice(`📱 OTP Sent! Verification Code: ${code} (or use 123456)`);
-    } else {
-      setError(res.error || 'Failed to dispatch OTP');
-    }
-  };
-
-  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const res = await api.verifyOtp(otpPhone, otpCode);
-    setLoading(false);
-
-    if (res.success) {
-      if (res.data?.session_id) {
-        setSessionId(res.data.session_id);
-      }
-      setUser({
-        name: 'Sarang Rao',
-        email: 'sarang@nbfc-finserve.com',
-        picture: '',
-        phone: otpPhone,
-        salary: 150000,
-        city: 'Mumbai, Maharashtra',
-        creditScore: 800,
-      });
-      onClose();
-    } else {
-      setError(res.error || 'Invalid OTP code');
-    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {

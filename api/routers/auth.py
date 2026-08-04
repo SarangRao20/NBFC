@@ -1,4 +1,4 @@
-"""Authentication Router - Enhanced with OTP bypass and profile completeness check."""
+"""Authentication Router — Password & Google OAuth only. OTP removed."""
 
 import jwt
 import secrets
@@ -8,7 +8,7 @@ from typing import Optional, Dict
 from fastapi import APIRouter, HTTPException, status, Form, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from api.schemas.auth import OTPVerify, LoginResponse, ProfileCheckResponse
+from api.schemas.auth import LoginResponse, ProfileCheckResponse
 from api.services.auth_service import auth_service
 from api.config import get_settings
 
@@ -17,77 +17,18 @@ settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-class DevOTPRequest(BaseModel):
-    """Development OTP request model"""
-    phone: str
-    use_dev_otp: bool = False  # Toggle for development
 
 
-@router.post("/send-otp", response_model=dict,
-             summary="Send OTP with Development Bypass Option")
-async def send_otp(
-    phone: str = Form(...),
-    email: Optional[str] = Form(None)
-):
-    """Send OTP to customer's email with development bypass option."""
-    try:
-        # Check if OTP is disabled for development
-        if settings.DISABLE_OTP:
-            dev_otp = settings.DEV_OTP
-            success = await auth_service.generate_dev_otp(phone, dev_otp)
-            
-            return {
-                "success": success,
-                "message": f"Development mode: OTP set to {dev_otp}",
-                "otp_sent": False,
-                "dev_mode": True,
-                "dev_otp": dev_otp
-            }
-        
-        # Normal OTP flow
-        result = await auth_service.send_otp(phone, email)
-        return result
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to send OTP: {str(e)}"
-        )
+@router.post("/send-otp", response_model=dict, summary="[REMOVED] OTP Auth")
+async def send_otp():
+    """OTP authentication has been removed. Use /auth/login (password) or /auth/google/login."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="OTP authentication removed. Use password login or Google OAuth.")
 
 
-@router.post("/verify-otp", response_model=OTPVerify,
-             summary="Verify OTP with Development Bypass")
-async def verify_otp(
-    phone: str = Form(...),
-    otp: str = Form(...),
-    use_dev_otp: bool = Form(False)
-):
-    """Verify OTP with development bypass option."""
-    try:
-        if otp == "123456" or otp == settings.DEV_OTP:
-            return {
-                "success": True,
-                "message": "Development OTP verified successfully",
-                "dev_mode": True
-            }
-
-        # Normal OTP verification
-        result = await auth_service.verify_otp(phone, otp)
-        if not result.get("success") and not result.get("verified"):
-            # Fallback for dev mode
-            if otp == "123456":
-                return {
-                    "success": True,
-                    "message": "Development OTP verified successfully",
-                    "dev_mode": True
-                }
-        return result
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to verify OTP: {str(e)}"
-        )
+@router.post("/verify-otp", response_model=dict, summary="[REMOVED] OTP Verify")
+async def verify_otp():
+    """OTP verification has been removed."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="OTP authentication removed. Use password login or Google OAuth.")
 
 
 @router.post("/login", response_model=LoginResponse,
@@ -229,64 +170,10 @@ async def fetch_credit_score(
         )
 
 
-@router.post("/login-otp", response_model=LoginResponse,
-             summary="Enhanced Login with OTP and Profile Check")
-async def login_otp(
-    phone: str = Form(...),
-    otp: str = Form(...),
-    use_dev_otp: bool = Form(False)
-):
-    """Enhanced login that checks profile completeness."""
-    try:
-        # Verify OTP first
-        if settings.DISABLE_OTP and use_dev_otp:
-            if otp != settings.DEV_OTP:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Invalid development OTP. Use {settings.DEV_OTP}"
-                )
-            otp_verified = True
-        else:
-            otp_result = await auth_service.verify_otp(phone, otp)
-            if not otp_result.get("success"):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid OTP"
-                )
-            otp_verified = True
-        
-        # Check profile completeness
-        profile_check = await auth_service.check_profile_completeness(phone)
-        
-        if not profile_check["is_complete"]:
-            return LoginResponse(
-                success=True,
-                message="Login successful but profile incomplete",
-                session_id=profile_check.get("session_id"),
-                profile_complete=False,
-                missing_fields=profile_check["missing_fields"],
-                requires_profile_update=True
-            )
-        
-        # Complete profile - create session
-        session_data = await auth_service.create_login_session(phone)
-        
-        return LoginResponse(
-            success=True,
-            message="Login successful",
-            session_id=session_data["session_id"],
-            profile_complete=True,
-            customer_data=session_data.get("customer_data"),
-            requires_profile_update=False
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
-        )
+@router.post("/login-otp", response_model=dict, summary="[REMOVED] OTP Login")
+async def login_otp():
+    """OTP login has been removed. Use /auth/login (password) or /auth/google/login."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="OTP login removed. Use password login or Google OAuth.")
 
 
 @router.get("/check-profile/{phone}", response_model=ProfileCheckResponse,
@@ -358,28 +245,10 @@ async def get_dev_status():
     }
 
 
-@router.post("/toggle-otp", summary="Toggle OTP Mode (Development Only)")
-async def toggle_otp(disable: bool = True, dev_otp: str = "123456"):
-    """Toggle OTP mode for development (WARNING: Use only in development)."""
-    if not settings.DEBUG:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This endpoint is only available in debug mode"
-        )
-    
-    try:
-        # This would typically update environment variables
-        # For now, just return the current state
-        return {
-            "otp_disabled": disable,
-            "dev_otp": dev_otp if disable else None,
-            "message": f"OTP {'disabled' if disable else 'enabled'} for development"
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to toggle OTP: {str(e)}"
-        )
+@router.post("/toggle-otp", summary="[REMOVED] Toggle OTP Mode")
+async def toggle_otp():
+    """OTP mode toggle removed. OTP authentication no longer exists."""
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="OTP removed from this system.")
 
 
 @router.get("/verify", summary="Verify Session")

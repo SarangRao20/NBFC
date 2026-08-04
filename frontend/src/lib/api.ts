@@ -108,40 +108,6 @@ export const api = {
     }
   },
 
-  async sendOtp(phone: string, email?: string): Promise<ApiResponse> {
-    try {
-      const formData = new FormData();
-      formData.append('phone', phone);
-      if (email) formData.append('email', email);
-
-      const res = await fetch(`${API_BASE}/auth/send-otp`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      return { success: data.success ?? res.ok, data };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  },
-
-  async verifyOtp(phone: string, otp: string, useDevOtp: boolean = true): Promise<ApiResponse> {
-    try {
-      const formData = new FormData();
-      formData.append('phone', phone);
-      formData.append('otp', otp);
-      formData.append('use_dev_otp', String(useDevOtp));
-
-      const res = await fetch(`${API_BASE}/auth/verify-otp`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      return { success: data.success ?? res.ok, data };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  },
 
   // ── 2. Session & StateGraph Workflow ─────────────────────────────
   
