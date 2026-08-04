@@ -3,7 +3,7 @@ import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe
 import AuthModal from './auth/AuthModal';
 import { useLoanStore } from '../store/useLoanStore';
 
-const Button = ({ children, className = "", variant = "default", size = "default", ...props }: any) => {
+const Button = ({ children, className = "", variant = "default", size = "default", ...props }: any) => { // rebuild
   const baseStyle = "inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
   
   const variants: any = {
