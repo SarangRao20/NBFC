@@ -443,6 +443,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             "next_agent": final_state.get("next_agent", "unknown"),
             "current_phase": final_state.get("current_phase", "unknown"),
             "intent": final_state.get("intent", "none"),
+            "pending_question": final_state.get("pending_question"),
             "is_authenticated": final_state.get("is_authenticated", False),
             "loan_terms": final_state.get("loan_terms", {}),
             "customer_data": final_state.get("customer_data", {}),

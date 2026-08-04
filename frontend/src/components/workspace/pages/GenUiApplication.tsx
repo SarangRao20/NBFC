@@ -319,7 +319,10 @@ export default function GenUiApplication() {
         const lowerText = text.toLowerCase();
         const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
         const wantsShap = lowerText.includes('shap') || lowerText.includes('explain') || lowerText.includes('why') || lowerText.includes('rationale') || lowerText.includes('decision');
-        const isAskingQuestion = backendReply.trim().endsWith('?');
+        
+        // Deterministic UI trigger from LangGraph backend (Industry Standard: Tool Calling / Structured States)
+        const pendingQuestion = chatRes.data.pending_question;
+        const isConfirmingTerms = pendingQuestion === 'confirmation' || explicitlyWantsSlider;
 
         const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
 
@@ -330,7 +333,7 @@ export default function GenUiApplication() {
             role: 'assistant',
             content: backendReply,
             component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap ? 'SHAP' : undefined),
-            showConfiguratorPill: intent === 'loan' && !explicitlyWantsSlider && !isAskingQuestion,
+            showConfiguratorPill: isConfirmingTerms,
             showActiveLoansPill: isEmiStatus,
             graphTrace: graphTraces,
             timestamp: Date.now()
