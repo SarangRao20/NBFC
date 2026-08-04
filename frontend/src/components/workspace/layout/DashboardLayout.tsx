@@ -5,7 +5,7 @@ import AnalyticsDashboard from '../pages/AnalyticsDashboard';
 import GenUiApplication from '../pages/GenUiApplication';
 import ActiveLoans from '../pages/ActiveLoans';
 import UserProfile from '../pages/UserProfile';
-import Docs from '../../pages/Docs';
+import Docs from '../../../pages/Docs';
 
 export default function DashboardLayout() {
   const { user, currentView, setView, agentLogs, isAgentActive, clearSession } = useLoanStore();
