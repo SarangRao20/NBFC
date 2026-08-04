@@ -385,7 +385,7 @@ class AuthService:
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({"phone": phone})
                 
                 if not customer_data:
                     return {
@@ -574,7 +574,11 @@ class AuthService:
         # Also save to MongoDB users collection
         try:
             from db.database import users_collection
-            await users_collection.insert_one({"_id": phone, **new_user})
+            await users_collection.update_one(
+                {"_id": phone},
+                {"$set": new_user},
+                upsert=True
+            )
         except Exception as e:
             print(f"⚠️ Failed to save to MongoDB: {e}")
             
