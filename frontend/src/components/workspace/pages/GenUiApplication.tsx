@@ -45,6 +45,25 @@ export default function GenUiApplication() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isTyping]);
 
+  useEffect(() => {
+    if (sessionId) {
+      api.getChatHistory(sessionId).then((res) => {
+        if (res.success && res.data?.history && res.data.history.length > 0) {
+          const loadedMsgs: ChatItem[] = res.data.history.map((m: any, idx: number) => ({
+            id: `restored-${idx}`,
+            role: m.role === 'user' || m.type === 'human' ? 'user' : 'assistant',
+            content: m.content || m.text || '',
+            graphTrace: m.graphTrace || ['StateGraph Node: session_restored'],
+            timestamp: Date.now()
+          }));
+          if (loadedMsgs.length > 0) {
+            setChatHistory(loadedMsgs);
+          }
+        }
+      });
+    }
+  }, [sessionId]);
+
   const runAgentStream = async (logs: string[], taskFn: () => Promise<void>) => {
     clearAgentLogs();
     setAgentActive(true);

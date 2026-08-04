@@ -72,6 +72,37 @@ async def initiate_imps_transfer(session_id: str) -> dict:
     }
     await update_session(session_id, completion_update)
 
+    # Persist active loan to customer record in MongoDB
+    try:
+        from db.database import users_collection
+        phone = customer.get("phone")
+        if phone:
+            active_loan_doc = {
+                "session_id": session_id,
+                "disbursement_id": disbursement_id,
+                "amount": terms.get("principal", 500000),
+                "tenure": terms.get("tenure", 36),
+                "emi": terms.get("emi", 16250),
+                "rate": terms.get("rate", 10.5),
+                "lender": terms.get("lender_name", "ICICI Bank"),
+                "status": "ACTIVE",
+                "disbursed_at": today,
+                "first_emi_date": first_emi,
+                "paid_emis": 0,
+                "remaining_emis": terms.get("tenure", 36)
+            }
+            await users_collection.update_one(
+                {"phone": phone},
+                {
+                    "$push": {"current_loans": active_loan_doc},
+                    "$set": {"active_facility": active_loan_doc}
+                },
+                upsert=True
+            )
+            print(f"✅ Disbursed loan persisted to MongoDB for phone {phone}")
+    except Exception as dberr:
+        print(f"⚠️ Failed to persist disbursed loan to MongoDB: {dberr}")
+
     return {
         "success": True,
         "disbursement_id": disbursement_id,

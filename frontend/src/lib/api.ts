@@ -68,39 +68,6 @@ export const api = {
     }
   },
 
-  async sendOtp(phone: string): Promise<ApiResponse> {
-    try {
-      const formData = new FormData();
-      formData.append('phone', phone);
-      const res = await fetch(`${API_BASE}/auth/send-otp`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || 'Failed to send OTP');
-      return { success: true, data };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  },
-
-  async verifyOtp(phone: string, otp: string): Promise<ApiResponse> {
-    try {
-      const formData = new FormData();
-      formData.append('phone', phone);
-      formData.append('otp', otp);
-      const res = await fetch(`${API_BASE}/auth/verify-otp`, {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.detail || data.message || 'Invalid OTP');
-      return { success: true, data };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  },
-
 
   async checkProfileCompleteness(phone: string): Promise<ApiResponse> {
     try {
@@ -198,11 +165,21 @@ export const api = {
     }
   },
 
+  async getChatHistory(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/history`);
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // ── 3. Sales & Loan Parameters ───────────────────────────────────
   
   async updateLoanParams(sessionId: string, params: { requested_amount: number; tenure_months: number; purpose?: string }): Promise<ApiResponse> {
     try {
-      const res = await fetch(`${API_BASE}/sales/capture-loan-params/${sessionId}`, {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/capture-loan-params`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),

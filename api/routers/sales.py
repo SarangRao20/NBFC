@@ -38,6 +38,22 @@ async def capture_loan(session_id: str, req: CaptureLoanRequest):
     if result is None:
         raise SessionNotFoundError(session_id)
     return result
+
+
+@router.post("/{session_id}/capture-loan-params", summary="Capture Loan Parameters Alias")
+async def capture_loan_params(session_id: str, req: dict):
+    """Alias for capture loan params matching frontend calls."""
+    loan_amount = req.get("requested_amount") or req.get("loan_amount", 500000)
+    tenure_months = req.get("tenure_months", 36)
+    loan_type = req.get("purpose") or req.get("loan_type", "personal")
+
+    result = await sales_service.capture_loan_requirement(
+        session_id, loan_type, float(loan_amount), int(tenure_months)
+    )
+    if result is None:
+        raise SessionNotFoundError(session_id)
+    return {"success": True, "loan_terms": result}
+
 @router.post("/{session_id}/chat", summary="Conversational interface with Sales/Registration Agent")
 async def chat(session_id: str, req: dict):
     """General chat endpoint that routes to Sales or Registration agents.
