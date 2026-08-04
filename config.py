@@ -44,7 +44,10 @@ def _setup_redis_cache():
         if not redis_url:
             print("    No REDIS_URL found in environment; skipping Redis cache.")
             return
-        client = redis.Redis.from_url(redis_url, ssl=True, socket_connect_timeout=5)
+        # Use rediss:// scheme to enforce SSL/TLS, no need for separate ssl param
+        if not redis_url.startswith('rediss://'):
+            redis_url = redis_url.replace('redis://', 'rediss://', 1)
+        client = redis.Redis.from_url(redis_url, socket_connect_timeout=5)
         client.ping()
         langchain.llm_cache = RedisCache(redis_=client)
         print("   ✅ Redis LLM Cache connected (cloud)")
