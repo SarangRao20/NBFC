@@ -179,6 +179,21 @@ async def sanction_agent_node(state: dict):
         await SessionManager.save_session(session_id, updates)
     except: pass
 
+    # Send email notification with the generated attachment
+    try:
+        from api.core.email_service import get_email_service
+        email_service = await get_email_service()
+        email_sent = await email_service.send_loan_application_notification(
+            customer_data=customer,
+            loan_terms={**terms, "principal": principal, "rate": rate, "tenure": tenure, "emi": emi},
+            decision=decision,
+            session_id=session_id,
+            attachment_path=filepath
+        )
+        print(f"📧 [SANCTION AGENT] Email notification sent to {customer.get('email')}: {email_sent}")
+    except Exception as email_err:
+        print(f"⚠️ [SANCTION AGENT] Failed to send email: {email_err}")
+
     # ── PERSIST LOAN TO loan_applications_collection ──────────────────────────
     try:
         from db.database import loan_applications_collection

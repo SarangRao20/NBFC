@@ -108,9 +108,10 @@ class EmailService:
         customer_data: dict, 
         loan_terms: dict, 
         decision: str,
-        session_id: str
+        session_id: str,
+        attachment_path: Optional[str] = None
     ) -> bool:
-        """Send loan application notification"""
+        """Send loan application notification with optional direct attachment path"""
         customer_name = customer_data.get('name', 'Customer')
         customer_email = customer_data.get('email', '')
         phone = customer_data.get('phone', '')
@@ -126,22 +127,28 @@ class EmailService:
             
             # Attach sanction letter if available
             attachments = []
-            sanction_pdf = f"data/sanctions/*{session_id}*.pdf"
-            import glob
-            pdf_files = glob.glob(sanction_pdf)
-            if pdf_files:
-                attachments.extend(pdf_files)
+            if attachment_path and os.path.exists(attachment_path):
+                attachments.append(attachment_path)
+            else:
+                sanction_pdf = f"data/sanctions/*{session_id}*.pdf"
+                import glob
+                pdf_files = glob.glob(sanction_pdf)
+                if pdf_files:
+                    attachments.extend(pdf_files)
         
         elif decision in ['reject', 'soft_reject']:
             subject = f"📝 Loan Application Update - FinServe NBFC"
             body = self._get_rejection_email_body(customer_name, loan_terms, decision)
             attachments = []
-            
-            # Attach rejection letter if available
-            rejection_pdf = f"data/sanctions/*{session_id}*Rejection*.pdf"
-            pdf_files = glob.glob(rejection_pdf)
-            if pdf_files:
-                attachments.extend(pdf_files)
+            if attachment_path and os.path.exists(attachment_path):
+                attachments.append(attachment_path)
+            else:
+                # Attach rejection letter if available
+                rejection_pdf = f"data/sanctions/*{session_id}*Rejection*.pdf"
+                import glob
+                pdf_files = glob.glob(rejection_pdf)
+                if pdf_files:
+                    attachments.extend(pdf_files)
         
         else:
             subject = f"📋 Loan Application Received - FinServe NBFC"
