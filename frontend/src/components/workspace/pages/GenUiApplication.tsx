@@ -19,6 +19,7 @@ interface ChatItem {
   showShapPill?: boolean;
   graphTrace?: string[];
   pdfDownloadUrl?: string;
+  pdfLabel?: string;
   timestamp: number;
 }
 
@@ -200,31 +201,47 @@ export default function GenUiApplication() {
     await runAgentStream([
       'POST /documents/upload verifying XML signatures...',
       'Invoking Vision AI Agent (OCR & Fraud Verification)...',
-      'Bypass Mode Active: Approved Aadhaar & PAN hashes',
       'POST /session/underwrite running Decision Engine...',
-      'StateGraph Underwriter: APPROVED for partner disbursal.',
     ], async () => {
+      let decision = 'approve';
+      let downloadUrl = '';
       if (sessionId) {
-        await api.underwrite(sessionId);
+        const underRes = await api.underwrite(sessionId);
+        decision = underRes.data?.decision || 'approve';
+        if (decision === 'reject' || decision === 'hard_reject') {
+          const sanRes = await api.generateSanction(sessionId);
+          if (sanRes.success) downloadUrl = api.getDownloadLetterUrl(sessionId);
+        }
       }
 
       setIsTyping(false);
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `StateGraph Underwriting Complete! Verified CIBIL Score: ${user?.creditScore || 785}. Evaluated 40,000+ risk vectors across partner lenders. Here are your pre-approved institutional offers:`,
-          component: 'OFFERS',
-          showShapPill: true,
-          graphTrace: [
-            'StateGraph Node: underwriting_agent -> lender_aggregator',
-            'Evaluated 5 Institutional Lenders (HDFC, ICICI, Bajaj, Muthoot, Saraswat)',
-            'Ranked offers by composite APR & approval score'
-          ],
-          timestamp: Date.now()
-        }
-      ]);
+
+      if (decision === 'reject' || decision === 'hard_reject') {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to your email (${user?.email || 'registered email'}):`,
+            component: 'SHAP',
+            pdfDownloadUrl: downloadUrl,
+            pdfLabel: 'Official Rejection Letter',
+            timestamp: Date.now()
+          }
+        ]);
+      } else {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `StateGraph Underwriting Complete! Verified CIBIL Score: ${user?.creditScore || 785}. Evaluated 40,000+ risk vectors across partner lenders. Here are your pre-approved institutional offers:`,
+            component: 'OFFERS',
+            showShapPill: true,
+            timestamp: Date.now()
+          }
+        ]);
+      }
     });
   };
 
@@ -232,34 +249,60 @@ export default function GenUiApplication() {
     setIsTyping(true);
     await runAgentStream([
       `POST /session/select-lender selected partner ${lenderId}...`,
-      'Executing Smart Contract & eNACH Mandate...',
-      'POST /session/sanction generating PDF Sanction Letter via ReportLab...',
-      'Sending email notification with attached PDF...',
+      'Running underwriting decision engine...',
+      'Compiling final decision & letter...',
     ], async () => {
       let downloadUrl = '';
+      let decision = 'approve';
       if (sessionId) {
-        await api.selectLender(sessionId, { selected_lender_id: lenderId });
-        await api.generateSanction(sessionId);
-        downloadUrl = api.getDownloadLetterUrl(sessionId);
+        const selRes = await api.selectLender(sessionId, { selected_lender_id: lenderId });
+        decision = selRes.data?.decision || 'approve';
+        if (decision === 'approve' || decision === 'reject' || decision === 'hard_reject') {
+          const sanRes = await api.generateSanction(sessionId);
+          if (sanRes.success) downloadUrl = api.getDownloadLetterUrl(sessionId);
+        }
       }
 
       setIsTyping(false);
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `Facility Approved & Smart Contract Locked! Your official PDF Sanction Letter has been generated and dispatched to your email (${user?.email || 'registered email'}). You can download the PDF directly below:`,
-          component: 'SANCTION',
-          pdfDownloadUrl: downloadUrl,
-          graphTrace: [
-            'StateGraph Node: sanction_agent -> pdf_generator',
-            'ReportLab PDF compiled at data/sanctions/',
-            'SMTP Email Dispatch: SENT with attached Sanction PDF'
-          ],
-          timestamp: Date.now()
-        }
-      ]);
+
+      if (decision === 'approve') {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Facility Approved & Smart Contract Locked! Your official PDF Sanction Letter has been generated and dispatched to your email (${user?.email || 'registered email'}). You can download the PDF directly below:`,
+            component: 'SANCTION',
+            pdfDownloadUrl: downloadUrl,
+            pdfLabel: 'Official Facility Sanction PDF',
+            timestamp: Date.now()
+          }
+        ]);
+      } else if (decision === 'pending_docs') {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `Your requested amount exceeds your instant pre-approved limit, so additional income verification is required before we can sanction this facility. Please complete document verification below:`,
+            component: 'KYC',
+            timestamp: Date.now()
+          }
+        ]);
+      } else {
+        setChatHistory((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to your email (${user?.email || 'registered email'}):`,
+            component: 'SHAP',
+            pdfDownloadUrl: downloadUrl,
+            pdfLabel: 'Official Rejection Letter',
+            timestamp: Date.now()
+          }
+        ]);
+      }
     });
   };
 
@@ -326,7 +369,20 @@ export default function GenUiApplication() {
         const isConfirmingTerms = pendingQuestion === 'confirmation' || explicitlyWantsSlider;
 
         const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
-        const isRejected = chatRes.data.decision === 'hard_reject' || chatRes.data.decision === 'soft_reject';
+        const isRejected = ['reject', 'hard_reject', 'soft_reject'].includes(chatRes.data.decision);
+        const isApproved = chatRes.data.decision === 'approve';
+        const isPendingDocs = chatRes.data.decision === 'pending_docs';
+        const hasOffers = Array.isArray(chatRes.data.eligible_offers) && chatRes.data.eligible_offers.length > 0;
+        const needsKyc = Array.isArray(chatRes.data.required_documents) && chatRes.data.required_documents.length > 0 && !chatRes.data.documents_uploaded;
+
+        // Render the matching premium widget from backend LangGraph structured state (not raw markdown)
+        const component =
+          isApproved ? 'SANCTION'
+          : isRejected || wantsShap ? 'SHAP'
+          : isPendingDocs || needsKyc ? 'KYC'
+          : hasOffers ? 'OFFERS'
+          : explicitlyWantsSlider ? 'ONBOARDING'
+          : undefined;
 
         setChatHistory((prev) => [
           ...prev,
@@ -334,7 +390,7 @@ export default function GenUiApplication() {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content: backendReply,
-            component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap || isRejected ? 'SHAP' : undefined),
+            component,
             showConfiguratorPill: isConfirmingTerms,
             showActiveLoansPill: isEmiStatus,
             graphTrace: graphTraces,
@@ -385,23 +441,20 @@ export default function GenUiApplication() {
     }
   };
 
-  // ── Simple inline markdown renderer (bold + bullets) ──────────────────
+  // ── Inline markdown: bold + bullets only ─────────────────────────────
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n');
     return lines.map((line, i) => {
-      // Bullet point
       if (line.match(/^[•\-\*]\s/)) {
         const content = line.replace(/^[•\-\*]\s/, '');
         return (
-          <div key={i} className="flex gap-2 items-start">
-            <span className="mt-[7px] w-1 h-1 rounded-full bg-white/40 shrink-0" />
+          <div key={i} className="flex gap-2 items-start my-0.5">
+            <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
             <span dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
           </div>
         );
       }
-      // Empty line → spacing
-      if (line.trim() === '') return <div key={i} className="h-1" />;
-      // Normal line (with inline bold)
+      if (line.trim() === '') return <div key={i} className="h-1.5" />;
       return (
         <p key={i} className="leading-relaxed" dangerouslySetInnerHTML={{
           __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -411,196 +464,179 @@ export default function GenUiApplication() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-140px)] w-full">
+    <div className="flex gap-4 h-[calc(100vh-140px)] w-full">
 
-      {/* ── Left: Chat Console ──────────────────────────────────── */}
-      <div className="lg:col-span-8 xl:col-span-9 flex flex-col min-h-0">
-        <div className="bg-[#111] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl h-full">
+      {/* ── Main Chat Card (restored original structure) ─────────────── */}
+      <div className="flex-1 bg-[#111] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
 
-          {/* Console Header */}
-          <div className="p-4 border-b border-white/10 bg-white/[0.02] flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-                <Bot className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-display font-medium text-white text-sm">System Intelligence Console</h3>
-                <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">LangGraph Multi-Agent Orchestrator DAG</p>
+        {/* Console Header */}
+        <div className="p-4 border-b border-white/10 bg-white/[0.02] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+              <Bot className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-display font-medium text-white text-sm">System Intelligence Console</h3>
+              <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">LangGraph Multi-Agent Orchestrator DAG</p>
+            </div>
+          </div>
+          <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
+            <Sparkles className="w-3.5 h-3.5" /> Generative StateGraph Active
+          </span>
+        </div>
+
+        {/* Chat Stream Feed */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scroll-smooth">
+          {chatHistory.map((item) => (
+            <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+              <div className={`max-w-[90%] flex gap-4 ${item.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${
+                  item.role === 'user' ? 'bg-white/10 border-white/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
+                }`}>
+                  {item.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4" />}
+                </div>
+
+                <div className="space-y-4 min-w-0 flex-1">
+                  {item.content && (
+                    <div className={`px-5 py-4 text-[15px] leading-relaxed rounded-2xl ${
+                      item.role === 'user'
+                        ? 'bg-white/10 text-white rounded-tr-sm border border-white/5'
+                        : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm space-y-3'
+                    }`}>
+                      {item.role === 'assistant'
+                        ? renderMarkdown(item.content)
+                        : <p className="whitespace-pre-line">{item.content}</p>
+                      }
+                    </div>
+                  )}
+
+                  {/* PDF Download Direct Banner */}
+                  {item.pdfDownloadUrl && (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <FileText className="w-6 h-6 text-emerald-400 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-white">{item.pdfLabel || 'Official Facility Sanction PDF'}</p>
+                          <p className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
+                            <Mail className="w-3 h-3" /> Dispatched to {user?.email || 'email'}
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={item.pdfDownloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2 bg-white text-black font-semibold rounded-lg text-xs hover:bg-white/90 transition-all shrink-0"
+                      >
+                        Download PDF →
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Initial Action Pills */}
+                  {item.id === 'init-1' && chatHistory.length === 1 && (
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      <button
+                        onClick={handleCheckBestTerms}
+                        className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-medium hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Check Best Terms for My Profile
+                      </button>
+                      <button
+                        onClick={handleStartConfigurator}
+                        className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
+                      >
+                        <Sliders className="w-3.5 h-3.5" /> Configure Capital Slider
+                      </button>
+                    </div>
+                  )}
+
+                  {item.showConfiguratorPill && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <button
+                        onClick={handleProceedToKyc}
+                        className="px-4 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-all flex items-center gap-2"
+                      >
+                        Confirm Terms & Proceed to KYC <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={handleStartConfigurator}
+                        className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
+                      >
+                        <Sliders className="w-3.5 h-3.5" /> Adjust Parameters Slider
+                      </button>
+                    </div>
+                  )}
+
+                  {item.showActiveLoansPill && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <button
+                        onClick={() => setView('ACTIVE_LOANS')}
+                        className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
+                      </button>
+                    </div>
+                  )}
+
+                  {item.showShapPill && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <button
+                        onClick={handleShowShap}
+                        className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" /> Explain Underwriting Decision (SHAP) →
+                      </button>
+                    </div>
+                  )}
+
+                  {item.component && (
+                    <div className="w-full">
+                      {renderComponent(item.component)}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
-              <Sparkles className="w-3.5 h-3.5" /> Generative StateGraph Active
-            </span>
-          </div>
+          ))}
 
-          {/* Chat Stream Feed */}
-          <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 scroll-smooth">
-            {chatHistory.map((item) => (
-              <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                <div className={`max-w-[90%] flex gap-4 ${item.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${
-                    item.role === 'user' ? 'bg-white/10 border-white/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
-                  }`}>
-                    {item.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4" />}
-                  </div>
-
-                  <div className="space-y-3 min-w-0 flex-1">
-                    {/* Agent trace strip — subtle, above the bubble */}
-                    {item.role === 'assistant' && item.graphTrace && item.graphTrace.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {item.graphTrace.map((trace, tIdx) => (
-                          <span key={tIdx} className="inline-flex items-center gap-1 text-[9px] font-mono text-white/35 bg-white/[0.03] border border-white/[0.06] px-2 py-0.5 rounded-full">
-                            <span className="w-1 h-1 rounded-full bg-emerald-500/50 shrink-0" />
-                            {trace}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Message bubble */}
-                    {item.content && (
-                      <div className={`px-5 py-4 text-[14.5px] leading-relaxed rounded-2xl space-y-1.5 ${
-                        item.role === 'user'
-                          ? 'bg-white/10 text-white rounded-tr-sm border border-white/5'
-                          : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm'
-                      }`}>
-                        {item.role === 'assistant' ? renderMarkdown(item.content) : <p>{item.content}</p>}
-                      </div>
-                    )}
-
-                    {/* PDF Download Banner */}
-                    {item.pdfDownloadUrl && (
-                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-6 h-6 text-emerald-400 shrink-0" />
-                          <div>
-                            <p className="text-sm font-semibold text-white">Official Facility Sanction PDF</p>
-                            <p className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
-                              <Mail className="w-3 h-3" /> Dispatched to {user?.email || 'email'}
-                            </p>
-                          </div>
-                        </div>
-                        <a
-                          href={item.pdfDownloadUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-4 py-2 bg-white text-black font-semibold rounded-lg text-xs hover:bg-white/90 transition-all shrink-0"
-                        >
-                          Download PDF →
-                        </a>
-                      </div>
-                    )}
-
-                    {/* Initial Action Pills */}
-                    {item.id === 'init-1' && chatHistory.length === 1 && (
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        <button
-                          onClick={handleCheckBestTerms}
-                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-medium hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" /> Check Best Terms for My Profile
-                        </button>
-                        <button
-                          onClick={handleStartConfigurator}
-                          className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
-                        >
-                          <Sliders className="w-3.5 h-3.5" /> Configure Capital Slider
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Confirm Terms pill */}
-                    {item.showConfiguratorPill && (
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        <button
-                          onClick={handleProceedToKyc}
-                          className="px-4 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-all flex items-center gap-2"
-                        >
-                          Confirm Terms & Proceed to KYC <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={handleStartConfigurator}
-                          className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
-                        >
-                          <Sliders className="w-3.5 h-3.5" /> Adjust Parameters Slider
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Active loans pill */}
-                    {item.showActiveLoansPill && (
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        <button
-                          onClick={() => setView('ACTIVE_LOANS')}
-                          className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
-                        >
-                          <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
-                        </button>
-                      </div>
-                    )}
-
-                    {/* SHAP pill */}
-                    {item.showShapPill && (
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        <button
-                          onClick={handleShowShap}
-                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-                        >
-                          <BarChart3 className="w-3.5 h-3.5" /> Explain Underwriting Decision (SHAP) →
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Inline Widget (OFFERS, KYC, ONBOARDING, SANCTION, SHAP) */}
-                    {item.component && (
-                      <div className="w-full pt-1">
-                        {renderComponent(item.component)}
-                      </div>
-                    )}
-                  </div>
+          {isTyping && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="flex gap-4">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border bg-emerald-500/10 border-emerald-500/30 text-emerald-500">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm px-5 py-4 text-sm shadow-sm flex items-center gap-3">
+                  <Loader2 className="w-4 h-4 animate-spin text-white/50" />
+                  <span className="text-white/50 tracking-wide font-mono text-xs uppercase">LangGraph Multi-Agent StateGraph Reasoning...</span>
                 </div>
               </div>
-            ))}
-
-            {/* Typing indicator */}
-            {isTyping && (
-              <div className="flex justify-start animate-fade-in">
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border bg-emerald-500/10 border-emerald-500/30 text-emerald-500">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                  <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm px-5 py-4 text-sm shadow-sm flex items-center gap-3">
-                    <Loader2 className="w-4 h-4 animate-spin text-white/50" />
-                    <span className="text-white/50 tracking-wide font-mono text-xs uppercase">LangGraph Multi-Agent StateGraph Reasoning...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={bottomRef} className="h-4" />
-          </div>
-
-          {/* Input Form */}
-          <form onSubmit={handleSendUserMessage} className="p-4 border-t border-white/10 bg-[#0A0A0A] relative shrink-0">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
-              className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="absolute right-6 top-5 text-white/70 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+            </div>
+          )}
+          <div ref={bottomRef} className="h-4" />
         </div>
+
+        {/* Input Form */}
+        <form onSubmit={handleSendUserMessage} className="p-4 border-t border-white/10 bg-[#0A0A0A] relative shrink-0">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
+            className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="absolute right-6 top-5 text-white/70 hover:text-white disabled:opacity-30 transition-all"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        </form>
       </div>
 
-      {/* ── Right: Live DAG Visualizer ────────────────────────── */}
-      <div className="hidden lg:flex lg:col-span-4 xl:col-span-3 flex-col min-h-0">
+      {/* ── Right: Live DAG Visualizer (lg+) ─────────────────────── */}
+      <div className="hidden lg:flex w-72 xl:w-80 shrink-0">
         <GraphVisualizer
           currentPhase={currentPhase}
           nextAgent={nextAgent}

@@ -86,10 +86,36 @@ def compute_shap_explainability(
         {"feature": "Location Tier", "rate_impact": city_rate_impact, "limit_impact": city_limit_impact, "direction": "positive" if city_rate_impact < 0 else "neutral", "description": city_desc},
     ]
 
+    # Decision-aware summary: compare requested amount against computed approved capacity
+    requested = float(requested_amount or 0)
+    excess = max(0, requested - final_limit)
+    if requested > final_limit:
+        decision_status = "limit_exceeded"
+        shap_summary = (
+            f"Your requested amount of ₹{requested:,.0f} exceeds your computed approved "
+            f"capacity of ₹{final_limit:,.0f} by ₹{excess:,.0f}. "
+            f"Each feature contributes to this capacity — CIBIL score ({credit_score}) adds "
+            f"₹{cibil_limit_impact:,.0f}, income adds ₹{income_limit_impact:,.0f}, FOIR adds "
+            f"₹{foir_limit_impact:,.0f} and location adds ₹{city_limit_impact:,.0f}. "
+            f"Reducing the amount to within ₹{final_limit:,.0f} or improving income / lowering "
+            f"existing debt would change this decision."
+        )
+    else:
+        decision_status = "approved"
+        shap_summary = (
+            f"Your approved rate of {final_rate}% p.a. was derived from a base rate of "
+            f"{base_rate}%, with a {abs(cibil_rate_impact)}% discount from your CIBIL score of "
+            f"{credit_score} and a {abs(income_rate_impact + city_rate_impact):.2f}% discount from "
+            f"income & location telemetry. Your request of ₹{requested:,.0f} is within your "
+            f"computed approved capacity of ₹{final_limit:,.0f}."
+        )
+
     return {
         "base_rate": base_rate,
         "final_approved_rate": final_rate,
         "final_approved_limit": final_limit,
+        "requested_amount": requested,
+        "decision_status": decision_status,
         "waterfall": waterfall,
-        "shap_summary": f"Your approved rate of {final_rate}% p.a. was derived from a base rate of {base_rate}%, with a {abs(cibil_rate_impact)}% discount from your CIBIL score of {credit_score} and a {abs(income_rate_impact + city_rate_impact):.2f}% discount from income & location telemetry."
+        "shap_summary": shap_summary,
     }

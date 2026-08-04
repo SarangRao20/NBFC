@@ -21,13 +21,15 @@ export default function ShapWidget() {
       setShapData({
         base_rate: 12.50,
         final_approved_rate: 10.50,
-        final_approved_limit: 1500000,
-        shap_summary: "Your approved interest rate of 10.50% p.a. includes a 2.0% discount for CIBIL score (800+) and a 0.25% discount for metropolitan location risk.",
+        final_approved_limit: 1200000,
+        requested_amount: 2000000,
+        decision_status: "limit_exceeded",
+        shap_summary: "Your requested amount of ₹2,000,000 exceeds your computed approved capacity of ₹1,200,000 by ₹800,000. Each feature contributes to this capacity — CIBIL score (800) adds ₹500,000, income adds ₹250,000, FOIR adds ₹50,000 and location adds ₹100,000. Reducing the amount to within ₹1,200,000 or improving income / lowering existing debt would change this decision.",
         waterfall: [
           { feature: "Base Benchmark", rate_impact: 12.50, limit_impact: 300000, direction: "neutral", description: "National Benchmark Pricing for Personal Loans." },
           { feature: "CIBIL Bureau Score", rate_impact: -2.00, limit_impact: 500000, direction: "positive", description: "Tier-1 Prime Score (800+) reduced risk premium significantly." },
-          { feature: "Monthly Net Income", rate_impact: -0.50, limit_impact: 450000, direction: "positive", description: "High income level qualified borrower for maximum leverage." },
-          { feature: "FOIR / Existing Debt", rate_impact: -0.25, limit_impact: 150000, direction: "positive", description: "Healthy debt-service ratio leaves high disposable buffer." },
+          { feature: "Monthly Net Income", rate_impact: -0.50, limit_impact: 250000, direction: "positive", description: "Upper Salaried Tier (₹75k-₹1.5L/mo)." },
+          { feature: "FOIR / Existing Debt", rate_impact: -0.25, limit_impact: 50000, direction: "positive", description: "Moderate Existing Debt Obligations (FOIR 25%-45%)." },
           { feature: "Location Tier", rate_impact: -0.25, limit_impact: 100000, direction: "positive", description: "Mumbai BKC address registered as low default metropolitan tier." }
         ]
       });
@@ -57,12 +59,34 @@ export default function ShapWidget() {
           </h3>
           <p className="text-xs text-white/40 mt-1">Algorithmic pricing feature-level contributions (SHAP values)</p>
         </div>
-        <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium font-mono">
-          <Sparkles className="w-3 h-3" /> Explainable AI (XAI)
+        <span className={`text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1 font-medium font-mono border ${
+          shapData?.decision_status === 'limit_exceeded'
+            ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+            : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+        }`}>
+          <Sparkles className="w-3 h-3" /> {shapData?.decision_status === 'limit_exceeded' ? 'LIMIT EXCEEDED' : 'APPROVED'}
         </span>
       </div>
 
       <div className="space-y-6 relative z-10">
+        {/* Requested vs Approved Capacity */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-[#0A0A0A] p-4 rounded-xl border border-white/5">
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold font-mono">Requested Amount</p>
+            <p className="text-xl font-bold text-white mt-1">₹{shapData?.requested_amount ? Math.round(shapData.requested_amount).toLocaleString('en-IN') : '—'}</p>
+          </div>
+          <div className={`p-4 rounded-xl border ${
+            shapData?.decision_status === 'limit_exceeded'
+              ? 'bg-amber-500/5 border-amber-500/30'
+              : 'bg-emerald-500/5 border-emerald-500/10'
+          }`}>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold font-mono">Max Approved Capacity</p>
+            <p className={`text-xl font-bold mt-1 ${
+              shapData?.decision_status === 'limit_exceeded' ? 'text-amber-400' : 'text-emerald-400'
+            }`}>₹{shapData?.final_approved_limit ? Math.round(shapData.final_approved_limit).toLocaleString('en-IN') : '—'}</p>
+          </div>
+        </div>
+
         {/* Summary Card */}
         <div className="bg-[#050505] p-4 rounded-xl border border-white/5 text-xs text-white/80 leading-relaxed font-sans">
           <strong>Decision Summary:</strong> {shapData?.shap_summary}
@@ -93,6 +117,39 @@ export default function ShapWidget() {
               </div>
             );
           })}
+        </div>
+
+        {/* Capacity Contribution by Feature */}
+        <div className="pt-2">
+          <div className="grid grid-cols-12 text-[10px] font-bold uppercase tracking-wider text-white/40 font-mono pb-2 border-b border-white/5">
+            <span className="col-span-5">Risk Variable</span>
+            <span className="col-span-3 text-right">Capacity Added</span>
+            <span className="col-span-4 pl-4">Impact Rationale</span>
+          </div>
+          {shapData?.waterfall?.map((row: any, idx: number) => {
+            const isBase = row.feature === 'Base Benchmark';
+            const isNegative = row.limit_impact < 0;
+            return (
+              <div key={`cap-${idx}`} className="grid grid-cols-12 items-center text-xs py-2.5 border-b border-white/5 hover:bg-white/[0.01] transition-all rounded-lg px-1">
+                <span className="col-span-5 font-semibold text-white/90">{row.feature}</span>
+                <span className={`col-span-3 text-right font-mono font-bold ${
+                  isBase ? 'text-white' : isNegative ? 'text-rose-400' : 'text-emerald-400'
+                }`}>
+                  {isBase ? '₹0' : `${isNegative ? '−' : '+'}₹${Math.abs(row.limit_impact).toLocaleString('en-IN')}`}
+                </span>
+                <span className="col-span-4 pl-4 text-white/50 text-[11px] leading-snug">
+                  {row.description}
+                </span>
+              </div>
+            );
+          })}
+          <div className="grid grid-cols-12 items-center text-xs pt-2.5 px-1">
+            <span className="col-span-5 font-bold text-white">Maximum Approved Capacity</span>
+            <span className="col-span-3 text-right font-mono font-bold text-white">
+              ₹{shapData?.final_approved_limit ? Math.round(shapData.final_approved_limit).toLocaleString('en-IN') : '—'}
+            </span>
+            <span className="col-span-4 pl-4 text-white/40 text-[11px]">Sum of all feature contributions</span>
+          </div>
         </div>
 
         {/* Dynamic Metric Comparison */}
