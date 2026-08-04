@@ -211,6 +211,16 @@ export const api = {
     }
   },
 
+  async getOffers(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/offers`);
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   // ── 6. Lender Selection ──────────────────────────────────────────
   
   async selectLender(sessionId: string, payload: { selected_lender_id: string }): Promise<ApiResponse> {
@@ -227,11 +237,31 @@ export const api = {
     }
   },
 
-  // ── 7. Sanction & Letter Generation ─────────────────────────────
+  // ── 7. Sanction, E-Sign & Disbursal ──────────────────────────────
   
   async generateSanction(sessionId: string): Promise<ApiResponse> {
     try {
       const res = await fetch(`${API_BASE}/session/${sessionId}/sanction`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async acceptEsign(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/esign-accept`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async disburseFunds(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/disburse`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       return { success: true, data: await res.json() };
     } catch (e: any) {
@@ -265,3 +295,4 @@ export const api = {
     }
   }
 };
+

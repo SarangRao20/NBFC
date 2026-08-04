@@ -58,3 +58,14 @@ async def download_letter(session_id: str):
             "Cache-Control": "no-cache, no-store, must-revalidate",
         }
     )
+
+
+@router.post("/{session_id}/disburse", summary="Trigger IMPS Disbursal of Loan Funds")
+async def disburse_funds(session_id: str):
+    """Initiates instant IMPS transfer for e-signed loan facility."""
+    from api.services.disbursement_service import initiate_imps_transfer
+    result = await initiate_imps_transfer(session_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Disbursement failed"))
+    return result
+

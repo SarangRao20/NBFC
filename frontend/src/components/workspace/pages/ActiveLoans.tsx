@@ -1,14 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { CreditCard, CheckCircle2, FileText, Download, Calendar } from 'lucide-react';
+import { CreditCard, CheckCircle2, ShieldCheck, Download } from 'lucide-react';
 import { api } from '../../../lib/api';
 
 export default function ActiveLoans() {
-  const { loanDetails, sessionId } = useLoanStore();
+  const { user, loanDetails, sessionId } = useLoanStore();
   const [isPaying, setIsPaying] = useState(false);
   const [paidSuccess, setPaidSuccess] = useState(false);
+  const [activeLoanData, setActiveLoanData] = useState<any>(null);
 
-  const emi = Math.round((loanDetails.requestedAmount * 1.105) / loanDetails.tenureMonths);
+  useEffect(() => {
+    if (user?.phone) {
+      api.getLoanHistory(user.phone).then((res) => {
+        if (res.success && res.data?.history && res.data.history.length > 0) {
+          const approved = res.data.history.find((h: any) => h.status === 'Approved' || h.status === 'Disbursed') || res.data.history[0];
+          if (approved) {
+            setActiveLoanData(approved);
+          }
+        }
+      });
+    }
+  }, [user?.phone]);
+
+  const facilityAmount = activeLoanData?.amount || loanDetails.requestedAmount;
+  const tenure = activeLoanData?.tenure || loanDetails.tenureMonths;
+  const emi = activeLoanData?.emi || Math.round((facilityAmount * 1.105) / tenure);
+  const facilityId = activeLoanData?.session_id
+    ? `#FAC-${activeLoanData.session_id.substring(0, 8).toUpperCase()}`
+    : '#FAC-HDFC-889102';
+  const lenderName = activeLoanData?.loan_type || activeLoanData?.lender_name || 'HDFC Bank NBFC';
 
   const handlePay = async () => {
     setIsPaying(true);
@@ -22,12 +42,30 @@ export default function ActiveLoans() {
     setTimeout(() => setPaidSuccess(false), 4000);
   };
 
+  const handleDownloadSanction = () => {
+    if (sessionId) {
+      window.open(api.getDownloadLetterUrl(sessionId), '_blank');
+    } else if (activeLoanData?.session_id) {
+      window.open(api.getDownloadLetterUrl(activeLoanData.session_id), '_blank');
+    } else {
+      alert("Sanction PDF generated on backend session.");
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-12">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-display font-medium text-white tracking-tight">Active Loan Facilities</h1>
-        <p className="text-white/60 text-sm mt-1">Manage eNACH mandates, automated EMI repayments, and facility ledgers.</p>
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-display font-medium text-white tracking-tight">Active Loan Facilities</h1>
+          <p className="text-white/60 text-sm mt-1">Manage eNACH mandates, automated EMI repayments, and facility ledgers.</p>
+        </div>
+        <button
+          onClick={handleDownloadSanction}
+          className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-medium border border-white/10 transition-all flex items-center gap-2"
+        >
+          <Download className="w-4 h-4 text-emerald-400" /> Download Facility Sanction
+        </button>
       </div>
 
       {/* Main Ledger Card */}
@@ -36,15 +74,18 @@ export default function ActiveLoans() {
 
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/10 pb-8 mb-8">
            <div>
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">Active Facility</span>
-              <h2 className="text-4xl font-display font-bold text-white tracking-tight mt-3">₹{loanDetails.requestedAmount.toLocaleString('en-IN')}</h2>
-              <p className="text-xs text-white/40 mt-1">Facility ID: #HDFC-FAC-889102</p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">Active Facility</span>
+                <span className="text-xs font-semibold text-white/50">{lenderName}</span>
+              </div>
+              <h2 className="text-4xl font-display font-bold text-white tracking-tight mt-3">₹{facilityAmount.toLocaleString('en-IN')}</h2>
+              <p className="text-xs text-white/40 mt-1 font-mono">Facility ID: {facilityId}</p>
            </div>
            
            <div className="bg-[#0A0A0A] p-4 rounded-xl border border-white/10 flex items-center gap-6">
               <div>
                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Next EMI Due</p>
-                 <p className="text-lg font-bold text-white">₹{emi.toLocaleString('en-IN')}</p>
+                 <p className="text-lg font-bold text-white font-mono">₹{emi.toLocaleString('en-IN')}</p>
               </div>
               <div className="h-8 w-px bg-white/10" />
               <div>
@@ -69,12 +110,12 @@ export default function ActiveLoans() {
                  {isPaying ? (
                     <>
                        <span className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                       Connecting to Gateway...
+                       Processing Payment Gateway...
                     </>
                  ) : (
                     <>
                        <CreditCard className="w-5 h-5" />
-                       Pay Current Monthly EMI (₹{emi.toLocaleString('en-IN')})
+                       Pay Monthly EMI (₹{emi.toLocaleString('en-IN')})
                     </>
                  )}
               </button>
