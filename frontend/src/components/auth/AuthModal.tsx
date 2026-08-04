@@ -48,7 +48,8 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     setLoading(false);
     if (res.success) {
       setOtpSent(true);
-      setOtpNotice(res.data?.message || 'OTP dispatched to registered mobile (Dev OTP: 123456)');
+      const code = res.data?.dev_otp || '123456';
+      setOtpNotice(`📱 OTP Sent! Verification Code: ${code} (or use 123456)`);
     } else {
       setError(res.error || 'Failed to dispatch OTP');
     }
