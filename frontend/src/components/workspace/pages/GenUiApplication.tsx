@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, FileText, Mail, CreditCard } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
@@ -309,6 +309,14 @@ export default function GenUiApplication() {
           });
         }
 
+        // Build graph execution traces (shown as subtle chips above message)
+        const graphTraces: string[] = [
+          `intent_agent → ${intent.toUpperCase()}`,
+          `phase: ${phase}`,
+        ];
+        if (chatRes.data.next_agent) graphTraces.push(`→ ${chatRes.data.next_agent}`);
+        if (chatRes.data.loan_terms?.emi) graphTraces.push(`EMI ₹${Math.round(chatRes.data.loan_terms.emi).toLocaleString('en-IN')}/mo`);
+
         const lowerText = text.toLowerCase();
         const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
         const wantsShap = lowerText.includes('shap') || lowerText.includes('explain') || lowerText.includes('why') || lowerText.includes('rationale') || lowerText.includes('decision');
@@ -329,6 +337,7 @@ export default function GenUiApplication() {
             component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap || isRejected ? 'SHAP' : undefined),
             showConfiguratorPill: isConfirmingTerms,
             showActiveLoansPill: isEmiStatus,
+            graphTrace: graphTraces,
             timestamp: Date.now()
           }
         ]);
@@ -376,181 +385,229 @@ export default function GenUiApplication() {
     }
   };
 
+  // ── Simple inline markdown renderer (bold + bullets) ──────────────────
+  const renderMarkdown = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
+      // Bullet point
+      if (line.match(/^[•\-\*]\s/)) {
+        const content = line.replace(/^[•\-\*]\s/, '');
+        return (
+          <div key={i} className="flex gap-2 items-start">
+            <span className="mt-[7px] w-1 h-1 rounded-full bg-white/40 shrink-0" />
+            <span dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+          </div>
+        );
+      }
+      // Empty line → spacing
+      if (line.trim() === '') return <div key={i} className="h-1" />;
+      // Normal line (with inline bold)
+      return (
+        <p key={i} className="leading-relaxed" dangerouslySetInnerHTML={{
+          __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        }} />
+      );
+    });
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-140px)] w-full">
-      {/* ── Left: Chat Console ─── */}
-      <div className="lg:col-span-8 xl:col-span-9 bg-[#111] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
-      {/* Console Header */}
-      <div className="p-4 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-            <Bot className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="font-display font-medium text-white text-sm">System Intelligence Console</h3>
-            <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">LangGraph Multi-Agent Orchestrator DAG</p>
-          </div>
-        </div>
-        <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
-          <Sparkles className="w-3.5 h-3.5" /> Generative StateGraph Active
-        </span>
-      </div>
 
-      {/* Chat Stream Feed */}
-      <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scroll-smooth">
-        {chatHistory.map((item) => (
-          <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-            <div className={`max-w-[90%] flex gap-4 ${item.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${
-                item.role === 'user' ? 'bg-white/10 border-white/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
-              }`}>
-                {item.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4" />}
+      {/* ── Left: Chat Console ──────────────────────────────────── */}
+      <div className="lg:col-span-8 xl:col-span-9 flex flex-col min-h-0">
+        <div className="bg-[#111] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl h-full">
+
+          {/* Console Header */}
+          <div className="p-4 border-b border-white/10 bg-white/[0.02] flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+                <Bot className="w-5 h-5" />
               </div>
+              <div>
+                <h3 className="font-display font-medium text-white text-sm">System Intelligence Console</h3>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono">LangGraph Multi-Agent Orchestrator DAG</p>
+              </div>
+            </div>
+            <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
+              <Sparkles className="w-3.5 h-3.5" /> Generative StateGraph Active
+            </span>
+          </div>
 
-              <div className="space-y-4 min-w-0 flex-1">
-                {item.content && (
-                  <div className={`px-5 py-4 text-[15px] leading-relaxed rounded-2xl ${
-                    item.role === 'user'
-                      ? 'bg-white/10 text-white rounded-tr-sm border border-white/5'
-                      : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm'
+          {/* Chat Stream Feed */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 scroll-smooth">
+            {chatHistory.map((item) => (
+              <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                <div className={`max-w-[90%] flex gap-4 ${item.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${
+                    item.role === 'user' ? 'bg-white/10 border-white/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
                   }`}>
-                    <p className="whitespace-pre-line">{item.content}</p>
+                    {item.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4" />}
                   </div>
-                )}
 
-                {/* PDF Download Direct Banner */}
-                {item.pdfDownloadUrl && (
-                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-6 h-6 text-emerald-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-white">Official Facility Sanction PDF</p>
-                        <p className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
-                          <Mail className="w-3 h-3" /> Dispatched to {user?.email || 'email'}
-                        </p>
+                  <div className="space-y-3 min-w-0 flex-1">
+                    {/* Agent trace strip — subtle, above the bubble */}
+                    {item.role === 'assistant' && item.graphTrace && item.graphTrace.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.graphTrace.map((trace, tIdx) => (
+                          <span key={tIdx} className="inline-flex items-center gap-1 text-[9px] font-mono text-white/35 bg-white/[0.03] border border-white/[0.06] px-2 py-0.5 rounded-full">
+                            <span className="w-1 h-1 rounded-full bg-emerald-500/50 shrink-0" />
+                            {trace}
+                          </span>
+                        ))}
                       </div>
-                    </div>
-                    <a
-                      href={item.pdfDownloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-4 py-2 bg-white text-black font-semibold rounded-lg text-xs hover:bg-white/90 transition-all shrink-0"
-                    >
-                      Download PDF →
-                    </a>
-                  </div>
-                )}
+                    )}
 
-                {/* Initial Action Pills */}
-                {item.id === 'init-1' && chatHistory.length === 1 && (
-                  <div className="flex flex-wrap gap-3 pt-2">
-                    <button
-                      onClick={handleCheckBestTerms}
-                      className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-medium hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" /> Check Best Terms for My Profile
-                    </button>
-                    <button
-                      onClick={handleStartConfigurator}
-                      className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
-                    >
-                      <Sliders className="w-3.5 h-3.5" /> Configure Capital Slider
-                    </button>
-                  </div>
-                )}
+                    {/* Message bubble */}
+                    {item.content && (
+                      <div className={`px-5 py-4 text-[14.5px] leading-relaxed rounded-2xl space-y-1.5 ${
+                        item.role === 'user'
+                          ? 'bg-white/10 text-white rounded-tr-sm border border-white/5'
+                          : 'bg-[#0A0A0A] text-white/90 border border-white/10 rounded-tl-sm'
+                      }`}>
+                        {item.role === 'assistant' ? renderMarkdown(item.content) : <p>{item.content}</p>}
+                      </div>
+                    )}
 
-                {item.showConfiguratorPill && (
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <button
-                      onClick={handleProceedToKyc}
-                      className="px-4 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-all flex items-center gap-2"
-                    >
-                      Confirm Terms & Proceed to KYC <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={handleStartConfigurator}
-                      className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
-                    >
-                      <Sliders className="w-3.5 h-3.5" /> Adjust Parameters Slider
-                    </button>
-                  </div>
-                )}
+                    {/* PDF Download Banner */}
+                    {item.pdfDownloadUrl && (
+                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <FileText className="w-6 h-6 text-emerald-400 shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold text-white">Official Facility Sanction PDF</p>
+                            <p className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
+                              <Mail className="w-3 h-3" /> Dispatched to {user?.email || 'email'}
+                            </p>
+                          </div>
+                        </div>
+                        <a
+                          href={item.pdfDownloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-4 py-2 bg-white text-black font-semibold rounded-lg text-xs hover:bg-white/90 transition-all shrink-0"
+                        >
+                          Download PDF →
+                        </a>
+                      </div>
+                    )}
 
-                {item.showActiveLoansPill && (
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <button
-                      onClick={() => setView('ACTIVE_LOANS')}
-                      className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
-                    </button>
-                  </div>
-                )}
+                    {/* Initial Action Pills */}
+                    {item.id === 'init-1' && chatHistory.length === 1 && (
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <button
+                          onClick={handleCheckBestTerms}
+                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-medium hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" /> Check Best Terms for My Profile
+                        </button>
+                        <button
+                          onClick={handleStartConfigurator}
+                          className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
+                        >
+                          <Sliders className="w-3.5 h-3.5" /> Configure Capital Slider
+                        </button>
+                      </div>
+                    )}
 
-                {item.showShapPill && (
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <button
-                      onClick={handleShowShap}
-                      className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-                    >
-                      <BarChart3 className="w-3.5 h-3.5" /> Explain Underwriting Decision (SHAP) →
-                    </button>
-                  </div>
-                )}
+                    {/* Confirm Terms pill */}
+                    {item.showConfiguratorPill && (
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <button
+                          onClick={handleProceedToKyc}
+                          className="px-4 py-2 bg-white text-black rounded-xl text-xs font-semibold hover:bg-white/90 transition-all flex items-center gap-2"
+                        >
+                          Confirm Terms & Proceed to KYC <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={handleStartConfigurator}
+                          className="px-4 py-2 bg-white/5 border border-white/10 text-white/80 rounded-xl text-xs font-medium hover:bg-white/10 transition-all flex items-center gap-2"
+                        >
+                          <Sliders className="w-3.5 h-3.5" /> Adjust Parameters Slider
+                        </button>
+                      </div>
+                    )}
 
-                {item.component && (
-                  <div className="w-full">
-                    {renderComponent(item.component)}
+                    {/* Active loans pill */}
+                    {item.showActiveLoansPill && (
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <button
+                          onClick={() => setView('ACTIVE_LOANS')}
+                          className="px-4 py-2 bg-emerald-500 text-black rounded-xl text-xs font-semibold hover:bg-emerald-400 transition-all flex items-center gap-2"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" /> View Active Loans & Repayment Ledger →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* SHAP pill */}
+                    {item.showShapPill && (
+                      <div className="flex flex-wrap gap-3 pt-1">
+                        <button
+                          onClick={handleShowShap}
+                          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" /> Explain Underwriting Decision (SHAP) →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Inline Widget (OFFERS, KYC, ONBOARDING, SANCTION, SHAP) */}
+                    {item.component && (
+                      <div className="w-full pt-1">
+                        {renderComponent(item.component)}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            ))}
+
+            {/* Typing indicator */}
+            {isTyping && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="flex gap-4">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border bg-emerald-500/10 border-emerald-500/30 text-emerald-500">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm px-5 py-4 text-sm shadow-sm flex items-center gap-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-white/50" />
+                    <span className="text-white/50 tracking-wide font-mono text-xs uppercase">LangGraph Multi-Agent StateGraph Reasoning...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} className="h-4" />
           </div>
-        ))}
 
-        {isTyping && (
-          <div className="flex justify-start animate-fade-in">
-            <div className="flex gap-4">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border bg-emerald-500/10 border-emerald-500/30 text-emerald-500">
-                <Bot className="w-4 h-4" />
-              </div>
-              <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm px-5 py-4 text-sm shadow-sm flex items-center gap-3">
-                <Loader2 className="w-4 h-4 animate-spin text-white/50" />
-                <span className="text-white/50 tracking-wide font-mono text-xs uppercase">LangGraph Multi-Agent StateGraph Reasoning...</span>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} className="h-4" />
+          {/* Input Form */}
+          <form onSubmit={handleSendUserMessage} className="p-4 border-t border-white/10 bg-[#0A0A0A] relative shrink-0">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
+              className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="absolute right-6 top-5 text-white/70 hover:text-white disabled:opacity-30 transition-all"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+        </div>
       </div>
 
-      {/* Input Form */}
-      <form onSubmit={handleSendUserMessage} className="p-4 border-t border-white/10 bg-[#0A0A0A] relative">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
-          className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
-        />
-        <button
-          type="submit"
-          disabled={!input.trim()}
-          className="absolute right-6 top-5 text-white/70 hover:text-white disabled:opacity-30 transition-all"
-        >
-          <Send className="w-4 h-4" />
-        </button>
-      </form>
-      </div>{/* end chat column */}
-
-      {/* ── Right: Live DAG Visualizer ─── */}
-      <div className="hidden lg:block lg:col-span-4 xl:col-span-3">
+      {/* ── Right: Live DAG Visualizer ────────────────────────── */}
+      <div className="hidden lg:flex lg:col-span-4 xl:col-span-3 flex-col min-h-0">
         <GraphVisualizer
           currentPhase={currentPhase}
           nextAgent={nextAgent}
           isStreaming={isTyping}
         />
       </div>
-    </div>{/* end grid */}
+
+    </div>
   );
 }
