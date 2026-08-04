@@ -19,20 +19,6 @@ interface ChatItem {
   timestamp: number;
 }
 
-function parseAmountInr(text: string): number | null {
-  const t = text.toLowerCase().replace(/,/g, '').trim();
-  const lakhMatch = t.match(/(\d+(?:\.\d+)?)\s*(lakh|lac|lakhs|lacs)/);
-  if (lakhMatch) return parseFloat(lakhMatch[1]) * 100000;
-
-  const kMatch = t.match(/(\d+(?:\.\d+)?)\s*(k|thousand|thousands)/);
-  if (kMatch) return parseFloat(kMatch[1]) * 1000;
-
-  const rsMatch = t.match(/(?:rs\.?|inr|rupees?)?\s*(\d{4,8})/);
-  if (rsMatch) return parseFloat(rsMatch[1]);
-
-  return null;
-}
-
 export default function GenUiApplication() {
   const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs, setView } = useLoanStore();
   const [input, setInput] = useState('');
@@ -245,63 +231,7 @@ export default function GenUiApplication() {
 
     setIsTyping(true);
 
-    const lower = text.toLowerCase();
-
-    // 1. Check for Active Loan Status / EMI Remaining Inquiry FIRST
-    const isEmiStatusInquiry = lower.includes('remaining') || lower.includes('loanfree') || lower.includes('loan free') || lower.includes('how many emi') || lower.includes('balance') || lower.includes('status of my loan') || lower.includes('active loan');
-
-    if (isEmiStatusInquiry) {
-      setTimeout(async () => {
-        setIsTyping(false);
-        let activeAmt = loanDetails.requestedAmount;
-        let activeTenure = loanDetails.tenureMonths;
-        let emiVal = Math.round((activeAmt * 1.105) / activeTenure);
-        let remainingEmis = activeTenure;
-
-        if (user?.phone) {
-          const res = await api.getLoanHistory(user.phone);
-          if (res.success && res.data?.history && res.data.history.length > 0) {
-            const latest = res.data.history[0];
-            activeAmt = latest.amount || activeAmt;
-            activeTenure = latest.tenure || activeTenure;
-            emiVal = latest.emi || emiVal;
-          }
-        }
-
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Hello ${firstName}. Based on your active facility ledger in MongoDB:\n\n• Active Facility Principal: ₹${activeAmt.toLocaleString('en-IN')}\n• Agreed Tenure: ${activeTenure} Months (~₹${emiVal.toLocaleString('en-IN')}/mo EMI)\n• **Remaining EMIs to become 100% Loan-Free: ${remainingEmis} EMIs**\n\nYou can pay individual EMIs directly or manage auto-debit in your Active Loans ledger below:`,
-            showActiveLoansPill: true,
-            graphTrace: [
-              'StateGraph Node: intent_agent (CLASSIFIED: Repayment / EMI Remaining Status Inquiry)',
-              'Queried MongoDB Loan Ledger collection',
-              `Active Facility Found: ₹${activeAmt.toLocaleString('en-IN')} | Remaining EMIs: ${remainingEmis}`
-            ],
-            timestamp: Date.now()
-          }
-        ]);
-      }, 600);
-      return;
-    }
-
-    // 2. Entity Extraction (Amount) for new loan inquiries
-    const extractedAmount = parseAmountInr(text);
-
-    let recommendedTenure = loanDetails.tenureMonths;
-    if (extractedAmount && extractedAmount >= 10000) {
-      if (extractedAmount <= 100000) recommendedTenure = 12;
-      else if (extractedAmount <= 300000) recommendedTenure = 24;
-      else if (extractedAmount <= 700000) recommendedTenure = 36;
-      else if (extractedAmount <= 1200000) recommendedTenure = 48;
-      else recommendedTenure = 60;
-
-      updateLoanDetails({ requestedAmount: extractedAmount, tenureMonths: recommendedTenure });
-    }
-
-    // 3. Start or get session & sync with backend
+    // 1. Ensure active backend session
     let activeSessionId = sessionId;
     if (!activeSessionId) {
       const startRes = await api.startSession();
@@ -311,55 +241,53 @@ export default function GenUiApplication() {
       }
     }
 
-    if (activeSessionId) {
-      const targetAmt = extractedAmount || loanDetails.requestedAmount;
-      await api.updateLoanParams(activeSessionId, {
-        requested_amount: targetAmt,
-        tenure_months: recommendedTenure
-      });
-      await api.chatWithAgent(activeSessionId, text);
-    }
-
-    setTimeout(() => {
+    // 2. Pass message directly to Backend LangGraph StateGraph & LLM NLP Classifier
+    try {
+      const chatRes = await api.chatWithAgent(activeSessionId!, text);
       setIsTyping(false);
-      const currentAmt = extractedAmount || loanDetails.requestedAmount;
-      const currentTenure = recommendedTenure;
-      const emiVal = Math.round((currentAmt * (1 + 0.105 * (currentTenure / 12))) / currentTenure);
 
-      const explicitlyWantsSlider = lower.includes('slider') || lower.includes('configure') || lower.includes('adjust slider') || lower.includes('show slider');
+      if (chatRes.success && chatRes.data) {
+        const backendReply = chatRes.data.reply || 'Understood.';
+        const intent = chatRes.data.intent || 'general';
+        const phase = chatRes.data.current_phase || 'active';
 
-      if (explicitlyWantsSlider) {
+        // Update local loan details if returned from backend NLP extraction
+        if (chatRes.data.loan_terms?.principal) {
+          updateLoanDetails({
+            requestedAmount: chatRes.data.loan_terms.principal,
+            tenureMonths: chatRes.data.loan_terms.tenure || loanDetails.tenureMonths
+          });
+        }
+
+        // Build authentic LangGraph execution traces
+        const graphTraces: string[] = [
+          `StateGraph Node: intent_agent (NLP Classified Intent: '${intent.toUpperCase()}')`,
+          `Current State Phase: ${phase}`
+        ];
+
+        if (chatRes.data.next_agent) {
+          graphTraces.push(`Routed to Agent: ${chatRes.data.next_agent}`);
+        }
+
+        if (chatRes.data.loan_terms?.emi) {
+          graphTraces.push(`EMI Engine: ₹${Math.round(chatRes.data.loan_terms.emi).toLocaleString('en-IN')}/month`);
+        }
+
+        const lowerText = text.toLowerCase();
+        const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
+
+        const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
+
         setChatHistory((prev) => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `Understood ${firstName}. Here is the interactive facility configurator pre-scaled to ₹${currentAmt.toLocaleString('en-IN')} over ${currentTenure} months:`,
-            component: 'ONBOARDING',
-            graphTrace: ['StateGraph Node: sales_agent -> onboarding_slider'],
-            timestamp: Date.now()
-          }
-        ]);
-      } else if (lower.includes('business') || lower.includes('personal') || lower.includes('medical') || lower.includes('purpose') || lower.includes('expansion') || lower.includes('debt') || lower.includes('home')) {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Understood! ${text.charAt(0).toUpperCase() + text.slice(1)} capital qualifies for our prime rate structure at 10.5% p.a.\n\nHow much loan principal and tenure (e.g. 12, 24, 36, or 60 months) would suit your cashflow best? Or you can specify an amount like "80k loan".`,
-            graphTrace: ['StateGraph Node: intent_agent (INTENT DETECTED: Purpose Captured)', 'SalesAgent -> Capital Structuring'],
-            timestamp: Date.now()
-          }
-        ]);
-      } else if (extractedAmount || lower.includes('terms') || lower.includes('profile') || lower.includes('best') || lower.includes('rate') || lower.includes('apply') || lower.includes('loan') || lower.includes('rupees') || lower.includes('k')) {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Understood ${firstName}. For a requested principal of ₹${currentAmt.toLocaleString('en-IN')}, the optimal recommended tenure is ${currentTenure} months (~₹${emiVal.toLocaleString('en-IN')}/mo EMI @ 10.5% p.a.).`,
-            showConfiguratorPill: true,
-            graphTrace: ['StateGraph Node: sales_agent (Entity Extracted)', 'Invoked EMI Engine: ~₹' + emiVal.toLocaleString('en-IN') + '/mo'],
+            content: backendReply,
+            component: explicitlyWantsSlider ? 'ONBOARDING' : undefined,
+            showConfiguratorPill: intent === 'loan' && !explicitlyWantsSlider,
+            showActiveLoansPill: isEmiStatus,
+            graphTrace: graphTraces,
             timestamp: Date.now()
           }
         ]);
@@ -369,13 +297,25 @@ export default function GenUiApplication() {
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `I have processed your inquiry. System Intelligence is ready to assist with facility origination, interest rate optimization, or document verification.`,
-            graphTrace: ['StateGraph Node: general_advisory_node'],
+            content: `I have processed your message: "${text}". System Intelligence is ready to assist with facility origination, interest rates, or KYC validation.`,
+            graphTrace: ['StateGraph Node: master_router'],
             timestamp: Date.now()
           }
         ]);
       }
-    }, 600);
+    } catch (err) {
+      setIsTyping(false);
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `I have received your request regarding "${text}". System Intelligence is ready to assist.`,
+          graphTrace: ['StateGraph Node: master_router (Fallback)'],
+          timestamp: Date.now()
+        }
+      ]);
+    }
   };
 
   const renderComponent = (compName?: string) => {
