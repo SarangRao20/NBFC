@@ -120,6 +120,10 @@ def route_next_agent(state: MasterState):
         
         if not state.get("sanction_pdf"):
             return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
+            
+        if decision == "approve" and state.get("enach_status") != "active":
+            return "bank_verification_agent", "Executing Bank Account verification and eNACH mandate setup."
+            
         return "sales_agent", "Documentation complete. Providing post-sanction orientation via advisor mode."
 
     # GLOBAL FALLBACK

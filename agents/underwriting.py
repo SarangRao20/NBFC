@@ -154,14 +154,14 @@ async def underwriting_agent_node(state: dict) -> dict:
 
     # Evaluation logic (with clear, documented thresholds)
     else:
-        # Hard reject: DTI exceeds ceiling (150% = 1.50)
+        # Hard reject: DTI exceeds ceiling
         if dti > HARD_DTI_CEILING:
             reasons.append(f"DTI Ratio ({dti:.2%}) exceeds absolute ceiling ({HARD_DTI_CEILING:.0%}). No loan possible.")
             decision = "hard_reject"
         
         # Hard reject: Extreme exposure
-        elif principal > 100 * pre_approved:
-            reasons.append(f"Requested loan (₹{principal:,}) exceeds extreme exposure limit (100× ₹{pre_approved:,}).")
+        elif principal > 2 * pre_approved:
+            reasons.append(f"Requested loan (₹{principal:,}) exceeds absolute exposure limit (2× ₹{pre_approved:,}).")
             decision = "hard_reject"
         
         # Hard reject: Credit score too low

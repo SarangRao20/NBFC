@@ -106,6 +106,12 @@ class MasterState(TypedDict):
     # ─── Sanction & Final Output ───────────────────────────────────────────────
     sanction_pdf: str  # path to generated PDF
     is_signed: bool
+    
+    # ─── Bank Verification & eNACH ─────────────────────────────────────────────
+    penny_drop_status: str  # "pending", "verified", "failed"
+    enach_status: str       # "pending", "active", "failed"
+    
+    # ─── Disbursement Tracking ─────────────────────────────────────────────────
     disbursement_step: str  # "ui_paused" | "processing" | "completed"
     disbursement_status: str  # "pending" | "processing" | "completed" | "failed"
     disbursement_id: str

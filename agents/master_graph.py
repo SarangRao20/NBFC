@@ -29,6 +29,7 @@ from agents.kyc_agent import verification_agent_node
 from agents.fraud_agent import fraud_agent_node
 from agents.underwriting import underwriting_agent_node
 from agents.sanction_agent import sanction_agent_node
+from agents.bank_verification_agent import bank_verification_agent_node
 from agents.document_query_agent import document_query_agent_node
 from agents.emi_engine import emi_engine_node
 from agents.repayment_agent import repayment_agent_node
@@ -228,6 +229,7 @@ def supervisor_router(state: MasterState):
         "fraud_agent": "fraud_agent",
         "underwriting_agent": "underwriting_agent",
         "sanction_agent": "sanction_agent",
+        "bank_verification_agent": "bank_verification_agent",
         "document_query_agent": "document_query_agent",
         "emi_engine": "emi_engine",
         "repayment_agent": "repayment_agent",
@@ -282,6 +284,7 @@ def compile_master_graph():
     workflow.add_node("join_verification",      node_wrapper(join_verification_node, "join_verification"))
     workflow.add_node("underwriting_agent",     node_wrapper(underwriting_agent_node, "underwriting_agent"))
     workflow.add_node("sanction_agent",         node_wrapper(sanction_agent_node, "sanction_agent"))
+    workflow.add_node("bank_verification_agent", node_wrapper(bank_verification_agent_node, "bank_verification_agent"))
     workflow.add_node("document_query_agent",   node_wrapper(document_query_agent_node, "document_query_agent"))
     workflow.add_node("emi_engine",             node_wrapper(emi_engine_node, "emi_engine"))
     workflow.add_node("repayment_agent",        node_wrapper(repayment_agent_node, "repayment_agent"))

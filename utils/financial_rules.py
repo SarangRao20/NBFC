@@ -8,7 +8,7 @@ Example: 45% DTI is stored as 0.45, NOT 45.0
 
 # ─── UNDERWRITING CONSTANTS (DTI as fractions) ──────────────────────────────
 MAX_SAFE_DTI = 0.50  # 50% max safe DTI
-HARD_DTI_CEILING = 1.5  # 150% absolute max (beyond this, no loan possible)
+HARD_DTI_CEILING = 0.65  # 65% absolute max (beyond this, no loan possible)
 MIN_CREDIT_SCORE = 650  # Minimum required credit score
 MIN_SALARY = 15000  # Minimum monthly salary
 FRAUD_SCORE_HARD_REJECT_THRESHOLD = 0.70  # Fraud score >= 0.70 → hard reject
