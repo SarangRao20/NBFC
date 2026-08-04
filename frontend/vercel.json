@@ -8,5 +8,11 @@
         "distDir": "dist"
       }
     }
+  ],
+  "routes": [
+    {
+      "src": "/docs",
+      "dest": "/index.html"
+    }
   ]
 }
