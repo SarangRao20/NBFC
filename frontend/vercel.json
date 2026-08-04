@@ -12,12 +12,10 @@
   "routes": [
     {
       "src": "/docs",
-      "status": 200,
       "dest": "/index.html"
     },
     {
       "src": "/(.*)",
-      "status": 200,
       "dest": "/index.html"
     }
   ]
