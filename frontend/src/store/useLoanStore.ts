@@ -2,13 +2,14 @@ import { create } from 'zustand';
 
 export type AppState = 
   | 'UNAUTHENTICATED'
-  | 'AUTHENTICATED' // Replaces the old flow states since we now use Views
+  | 'AUTHENTICATED' 
+  | 'PROFILE_COMPLETION'
   | 'ONBOARDING'
   | 'DOCUMENT_COLLECTION'
   | 'DECISION_READY'
   | 'ACTIVE_LOAN';
 
-export type DashboardView = 'DASHBOARD' | 'APPLICATION' | 'ACTIVE_LOANS' | 'ADVISOR';
+export type DashboardView = 'DASHBOARD' | 'APPLICATION' | 'ACTIVE_LOANS' | 'ADVISOR' | 'PROFILE';
 
 export interface UserProfile {
   name: string;
@@ -20,6 +21,7 @@ export interface UserProfile {
   creditScore?: number;
   pan?: string;
   aadhaar?: string;
+  preApprovedLimit?: number;
 }
 
 export interface LoanDetails {

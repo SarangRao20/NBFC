@@ -130,6 +130,8 @@ export default function GenUiApplication() {
         timestamp: Date.now()
       }
     ]);
+  };
+
   const handleShowShap = () => {
     setChatHistory((prev) => [
       ...prev,
