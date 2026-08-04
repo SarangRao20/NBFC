@@ -44,7 +44,7 @@ def _setup_redis_cache():
         if not redis_url:
             print("    No REDIS_URL found in environment; skipping Redis cache.")
             return
-        client = redis.Redis.from_url(redis_url)
+        client = redis.Redis.from_url(redis_url, ssl=True)
         client.ping()
         langchain.llm_cache = RedisCache(redis_=client)
         print("   Redis LLM Cache connected")
