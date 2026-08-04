@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { API_BASE } from '../lib/config';
 import type {
   AdminStatsOverviewResponse,
   LendersListResponse,
@@ -18,7 +19,7 @@ import type {
   SystemInfoResponse,
 } from '../types/admin';
 
-const API_BASE_URL = (import.meta.env.REACT_APP_API_URL as string) || 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.REACT_APP_API_URL as string) || API_BASE;
 
 interface UseAdminAPIReturn {
   // State

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_BASE } from '../lib/config';
 import { User, Phone, Mail, FileText, Lock, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
 
 interface UserData {
@@ -42,7 +43,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/auth/send-otp', {
+      const response = await fetch(`${API_BASE}/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `phone=${userData.phone}&email=${userData.email || ''}`
@@ -75,7 +76,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       formData.append('otp', otp);
       if (isDevMode) formData.append('use_dev_otp', 'true');
 
-      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+      const response = await fetch(`${API_BASE}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
@@ -99,7 +100,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/auth/send-otp', {
+      const response = await fetch(`${API_BASE}/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `phone=${userData.phone!}&email=${userData.email}`
@@ -132,7 +133,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete, onSwitchToLogin }) 
       formData.append('otp', otp);
       if (isDevMode) formData.append('use_dev_otp', 'true');
 
-      const response = await fetch('http://localhost:8000/auth/verify-otp', {
+      const response = await fetch(`${API_BASE}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData.toString()
