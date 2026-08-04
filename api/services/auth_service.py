@@ -3,6 +3,8 @@
 import os
 import json
 import uuid
+import random
+import string
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from api.core.redis_cache import get_cache, RedisCache
