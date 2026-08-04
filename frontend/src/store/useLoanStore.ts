@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export type AppState = 
   | 'UNAUTHENTICATED'
@@ -42,34 +43,37 @@ export interface Document {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
+  component?: string;
   timestamp: number;
-  component?: 'PROFILE_FORM' | 'ONBOARDING_FORM' | 'KYC_DROPZONE' | 'LENDER_CAROUSEL' | 'ACTIVE_CONTRACT' | 'SHAP_EXPLANATION';
-  componentProps?: Record<string, any>;
+  graphTrace?: string[];
+  pdfDownloadUrl?: string;
+  pdfLabel?: string;
+  showShapPill?: boolean;
+  allLenderRules?: any[];
+  showRulesButton?: boolean;
+  uiTrigger?: 'INITIAL_OFFERS' | 'REJECTION' | 'FINAL_LENDER';
+  disbursementDetails?: any;
+  decision?: string;
+  reasons?: string[];
 }
 
 interface LoanStore {
-  // New Layout State
   currentView: DashboardView;
-  setView: (view: DashboardView) => void;
-  
-  // API & Agent State
   sessionId: string | null;
-  setSessionId: (id: string) => void;
   isAgentActive: boolean;
   agentLogs: string[];
-  setAgentActive: (active: boolean) => void;
-  addAgentLog: (log: string) => void;
-  clearAgentLogs: () => void;
-
   currentState: AppState;
   user: UserProfile | null;
   loanDetails: LoanDetails;
   documents: Document[];
   chatHistory: ChatMessage[];
-  
-  // Actions
+  setView: (view: DashboardView) => void;
+  setSessionId: (id: string) => void;
+  setAgentActive: (active: boolean) => void;
+  addAgentLog: (log: string) => void;
+  clearAgentLogs: () => void;
   setState: (state: AppState) => void;
   setUser: (user: UserProfile) => void;
   updateLoanDetails: (details: Partial<LoanDetails>) => void;
@@ -79,60 +83,50 @@ interface LoanStore {
   clearSession: () => void;
 }
 
-export const useLoanStore = create<LoanStore>((set) => ({
-  currentView: 'DASHBOARD',
-  setView: (view) => set({ currentView: view }),
+export const useLoanStore = create<LoanStore>()(
+  persist(
+    (set) => ({
+      currentView: 'DASHBOARD',
+      sessionId: null,
+      isAgentActive: false,
+      agentLogs: [],
+      currentState: 'UNAUTHENTICATED',
+      user: null,
+      loanDetails: { requestedAmount: 500000, tenureMonths: 36 },
+      documents: [],
+      chatHistory: [],
 
-  sessionId: null,
-  setSessionId: (id) => set({ sessionId: id }),
-  isAgentActive: false,
-  agentLogs: [],
-  setAgentActive: (active) => set({ isAgentActive: active }),
-  addAgentLog: (log) => set((state) => ({ agentLogs: [...state.agentLogs, log] })),
-  clearAgentLogs: () => set({ agentLogs: [] }),
-
-  currentState: 'UNAUTHENTICATED',
-  user: null,
-  loanDetails: {
-    requestedAmount: 500000,
-    tenureMonths: 36,
-  },
-  documents: [],
-  chatHistory: [],
-
-  setState: (state) => set({ currentState: state }),
-  
-  setUser: (user) => set({ user, currentState: 'AUTHENTICATED' }),
-  
-  updateLoanDetails: (details) => 
-    set((state) => ({ 
-      loanDetails: { ...state.loanDetails, ...details } 
-    })),
-    
-  addDocument: (doc) => 
-    set((state) => ({ 
-      documents: [...state.documents, doc] 
-    })),
-    
-  updateDocument: (id, updates) =>
-    set((state) => ({
-      documents: state.documents.map(d => d.id === id ? { ...d, ...updates } : d)
-    })),
-    
-  addChatMessage: (msg) =>
-    set((state) => ({
-      chatHistory: [...state.chatHistory, msg]
-    })),
-    
-  clearSession: () => set({
-    currentView: 'DASHBOARD',
-    sessionId: null,
-    isAgentActive: false,
-    agentLogs: [],
-    currentState: 'UNAUTHENTICATED',
-    user: null,
-    loanDetails: { requestedAmount: 500000, tenureMonths: 36 },
-    documents: [],
-    chatHistory: []
-  })
-}));
+      setView: (view) => set({ currentView: view }),
+      setSessionId: (id) => set({ sessionId: id }),
+      setAgentActive: (active) => set({ isAgentActive: active }),
+      addAgentLog: (log) => set((s) => ({ agentLogs: [...s.agentLogs, log] })),
+      clearAgentLogs: () => set({ agentLogs: [] }),
+      setState: (state) => set({ currentState: state }),
+      setUser: (user) => set({ user, currentState: 'AUTHENTICATED' }),
+      updateLoanDetails: (details) => set((s) => ({ loanDetails: { ...s.loanDetails, ...details } })),
+      addDocument: (doc) => set((s) => ({ documents: [...s.documents, doc] })),
+      updateDocument: (id, updates) => set((s) => ({ documents: s.documents.map((d) => d.id === id ? { ...d, ...updates } : d) })),
+      addChatMessage: (msg) => set((s) => ({ chatHistory: [...s.chatHistory, msg] })),
+      clearSession: () => set({
+        currentView: 'DASHBOARD',
+        currentState: 'UNAUTHENTICATED',
+        user: null,
+        sessionId: null,
+        loanDetails: { requestedAmount: 500000, tenureMonths: 36 },
+        documents: [],
+        chatHistory: [],
+        isAgentActive: false,
+        agentLogs: []
+      }),
+    }),
+    {
+      name: 'nbfc-session',
+      partialize: (state) => ({
+        currentState: state.currentState,
+        user: state.user,
+        sessionId: state.sessionId,
+        currentView: state.currentView,
+      }),
+    }
+  )
+);

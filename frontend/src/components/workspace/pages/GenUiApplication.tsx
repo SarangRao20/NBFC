@@ -208,7 +208,7 @@ export default function GenUiApplication() {
       if (sessionId) {
         const underRes = await api.underwrite(sessionId);
         decision = underRes.data?.decision || 'approve';
-        if (decision === 'reject' || decision === 'hard_reject') {
+        if (decision === 'reject' || decision === 'hard_reject' || decision === 'soft_reject') {
           const sanRes = await api.generateSanction(sessionId);
           if (sanRes.success) downloadUrl = api.getDownloadLetterUrl(sessionId);
         }
@@ -216,7 +216,7 @@ export default function GenUiApplication() {
 
       setIsTyping(false);
 
-      if (decision === 'reject' || decision === 'hard_reject') {
+      if (decision === 'reject' || decision === 'hard_reject' || decision === 'soft_reject') {
         setChatHistory((prev) => [
           ...prev,
           {
