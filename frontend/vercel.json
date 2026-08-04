@@ -3,16 +3,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "cleanOutputs": true,
-  "trailingSlash": false,
   "routes": [
     {
       "src": "/docs",
-      "dest": "/index.html",
-      "status": 200
-    },
-    {
-      "src": "/docs/(.*)",
       "dest": "/index.html",
       "status": 200
     },
