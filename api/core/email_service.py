@@ -24,7 +24,7 @@ class EmailService:
         self.smtp_port = settings.SMTP_PORT
         self.smtp_user = settings.SMTP_USER
         self.smtp_password = settings.SMTP_PASSWORD
-        self.from_email = settings.EMAIL_FROM
+        self.from_email = settings.SMTP_USER if "gmail" in settings.SMTP_HOST.lower() else (settings.EMAIL_FROM or settings.SMTP_USER)
         self.from_name = settings.EMAIL_FROM_NAME
         self.connected = False
     
