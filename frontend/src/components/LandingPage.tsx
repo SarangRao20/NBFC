@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint, BookOpen } from 'lucide-react';
 import AuthModal from './auth/AuthModal';
 import { useLoanStore } from '../store/useLoanStore';
 
@@ -93,9 +93,15 @@ const LandingPage = () => {
               <Button size="lg" onClick={handleOpenAuth} className="w-full sm:w-auto min-w-[200px]">
                 Initialize Protocol
               </Button>
-               <Button size="lg" variant="outline" className="w-full sm:w-auto min-w-[200px]" onClick={handleOpenDocs}>
-                 View Documentation
-               </Button>
+               <Button 
+                size="lg" 
+                variant="outline" 
+                className="w-full sm:w-auto min-w-[200px]"
+                onClick={() => window.location.href = '/docs'}
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                View Documentation
+              </Button>
             </div>
           </div>
         </section>
