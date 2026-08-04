@@ -205,7 +205,8 @@ async def get_customer_loan_history(phone: str) -> dict:
                 "reasons": app.get("reasons", []),
                 "created_at": app.get("created_at", ""),
                 "pdf_path": app.get("pdf_path", ""),
-                "email_sent": app.get("email_sent", False)
+                "email_sent": app.get("email_sent", False),
+                "emi_schedule": app.get("emi_schedule", [])
             })
     
     # Sort by created_at descending
@@ -217,6 +218,7 @@ async def get_customer_loan_history(phone: str) -> dict:
     result = {
         "customer": customer,
         "loan_applications": customer_applications,
+        "history": customer_applications,
         "session_history": sessions,
         "total_applications": len(customer_applications),
         "approved_loans": len([a for a in customer_applications if a.get("status") == "Approved"]),

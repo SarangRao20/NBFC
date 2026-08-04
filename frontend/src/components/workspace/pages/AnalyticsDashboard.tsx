@@ -155,30 +155,11 @@ export default function AnalyticsDashboard() {
                   </tr>
                 ))
               ) : (
-                <>
-                  <tr>
-                    <td className="py-4 text-white">#FAC-2026-0891</td>
-                    <td className="py-4 text-white/60">03 Aug 2026</td>
-                    <td className="py-4 text-white font-medium">₹5,00,000</td>
-                    <td className="py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans text-xs">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Disbursed
-                      </span>
-                    </td>
-                    <td className="py-4 text-white/60">HDFC Bank NBFC</td>
-                  </tr>
-                  <tr>
-                    <td className="py-4 text-white">#FAC-2025-1102</td>
-                    <td className="py-4 text-white/60">12 Nov 2025</td>
-                    <td className="py-4 text-white font-medium">₹2,50,000</td>
-                    <td className="py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-white/60 border border-white/10 font-sans text-xs">
-                        <Clock className="w-3.5 h-3.5" /> Closed
-                      </span>
-                    </td>
-                    <td className="py-4 text-white/60">Bajaj Finance Ltd</td>
-                  </tr>
-                </>
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-white/40 font-sans text-xs">
+                    No active loan facility history recorded in MongoDB for this account. Apply for capital to initialize your first facility.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

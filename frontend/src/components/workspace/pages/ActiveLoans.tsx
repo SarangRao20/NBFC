@@ -125,18 +125,40 @@ export default function ActiveLoans() {
       <div className="bg-[#111] border border-white/10 rounded-2xl p-6">
          <h3 className="text-lg font-display font-medium text-white mb-4">Repayment Amortization Ledger</h3>
          <div className="space-y-3 font-mono text-xs">
-            <div className="flex justify-between items-center p-3 bg-[#0A0A0A] rounded-lg border border-white/5 text-white/70">
-               <span className="text-white font-medium">Installment #1</span>
-               <span>05 Sep 2026</span>
-               <span className="text-emerald-400 font-bold">₹{emi.toLocaleString('en-IN')}</span>
-               <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-sans font-medium">Upcoming</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-[#0A0A0A] rounded-lg border border-white/5 text-white/70">
-               <span className="text-white font-medium">Installment #2</span>
-               <span>05 Oct 2026</span>
-               <span className="text-white">₹{emi.toLocaleString('en-IN')}</span>
-               <span className="text-xs text-white/40 bg-white/5 px-2 py-0.5 rounded font-sans">Scheduled</span>
-            </div>
+            {(activeLoanData?.emi_schedule && activeLoanData.emi_schedule.length > 0
+              ? activeLoanData.emi_schedule.slice(0, 6)
+              : Array.from({ length: Math.min(tenure, 6) }).map((_, idx) => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() + idx + 1);
+                  d.setDate(5);
+                  return {
+                    installment: idx + 1,
+                    due_date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    amount: emi,
+                    status: idx === 0 ? 'Upcoming' : 'Scheduled'
+                  };
+                })
+            ).map((item: any, idx: number) => {
+               const isFirst = idx === 0;
+               const dateStr = item.due_date
+                 ? (new Date(item.due_date).toString() !== 'Invalid Date' 
+                    ? new Date(item.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) 
+                    : item.due_date)
+                 : '05th Next Month';
+
+               return (
+                 <div key={idx} className="flex justify-between items-center p-3 bg-[#0A0A0A] rounded-lg border border-white/5 text-white/70">
+                    <span className="text-white font-medium">Installment #{item.installment || idx + 1}</span>
+                    <span>{dateStr}</span>
+                    <span className={isFirst ? "text-emerald-400 font-bold" : "text-white"}>₹{(item.amount || emi).toLocaleString('en-IN')}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded font-sans font-medium ${
+                      isFirst ? "text-emerald-400 bg-emerald-500/10" : "text-white/40 bg-white/5"
+                    }`}>
+                      {item.status === 'pending' || isFirst ? 'Upcoming' : (item.status || 'Scheduled')}
+                    </span>
+                 </div>
+               );
+            })}
          </div>
       </div>
 
