@@ -1,21 +1,21 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
+  "builds": [
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    }
+  ],
   "routes": [
     {
       "src": "/docs",
-      "dest": "/index.html",
-      "status": 200
+      "status": 200,
+      "dest": "/index.html"
     },
     {
       "src": "/(.*)",
+      "status": 200,
       "dest": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_API_URL": "https://nbfc-inc.onrender.com",
-    "NODE_ENV": "production"
-  }
+  ]
 }
