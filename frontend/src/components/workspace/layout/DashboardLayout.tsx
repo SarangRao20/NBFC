@@ -1,6 +1,7 @@
 import { ShieldCheck, LayoutDashboard, FileText, CreditCard, Bot, LogOut } from 'lucide-react';
 import { useLoanStore } from '../../../store/useLoanStore';
 import AgentOverlay from '../../shared/AgentOverlay';
+import DemoPersonaBar from '../../shared/DemoPersonaBar';
 import AnalyticsDashboard from '../pages/AnalyticsDashboard';
 import GenUiApplication from '../pages/GenUiApplication';
 import ActiveLoans from '../pages/ActiveLoans';
@@ -94,6 +95,9 @@ export default function DashboardLayout() {
             </div>
           </div>
         </header>
+
+        {/* 1-Click Persona Switcher Bar */}
+        <DemoPersonaBar />
 
         {/* Main Content Area */}
         <main className="flex-1 w-full max-w-7xl mx-auto px-6 lg:px-10 py-8 relative">
