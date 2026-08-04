@@ -319,6 +319,7 @@ export default function GenUiApplication() {
         const lowerText = text.toLowerCase();
         const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
         const wantsShap = lowerText.includes('shap') || lowerText.includes('explain') || lowerText.includes('why') || lowerText.includes('rationale') || lowerText.includes('decision');
+        const isAskingQuestion = backendReply.trim().endsWith('?');
 
         const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
 
@@ -329,7 +330,7 @@ export default function GenUiApplication() {
             role: 'assistant',
             content: backendReply,
             component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap ? 'SHAP' : undefined),
-            showConfiguratorPill: intent === 'loan' && !explicitlyWantsSlider,
+            showConfiguratorPill: intent === 'loan' && !explicitlyWantsSlider && !isAskingQuestion,
             showActiveLoansPill: isEmiStatus,
             graphTrace: graphTraces,
             timestamp: Date.now()
