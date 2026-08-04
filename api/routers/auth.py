@@ -157,7 +157,8 @@ async def register(
             return {
                 "success": True,
                 "message": "Registration successful",
-                "customer_data": result["customer_data"]
+                "customer_data": result["customer_data"],
+                "session_id": result.get("session_id")
             }
         else:
             raise HTTPException(

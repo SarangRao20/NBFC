@@ -9,7 +9,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
-  const { setUser } = useLoanStore();
+  const { setUser, setSessionId } = useLoanStore();
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +64,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     setLoading(false);
 
     if (res.success) {
+      if (res.data?.session_id) {
+        setSessionId(res.data.session_id);
+      }
       setUser({
         name: 'Sarang Rao',
         email: 'sarang@nbfc-finserve.com',
@@ -89,6 +92,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     if (res.success && res.data) {
       const cust = res.data.customer_data || {};
+      if (res.data.session_id) {
+        setSessionId(res.data.session_id);
+      }
       setUser({
         name: cust.name || 'Sarang Rao',
         email: cust.email || 'sarang@nbfc-finserve.com',
@@ -123,6 +129,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     if (res.success && res.data) {
       const cust = res.data.customer_data || {};
+      if (res.data.session_id) {
+        setSessionId(res.data.session_id);
+      }
       setUser({
         name: cust.name || regName,
         email: cust.email || regEmail,

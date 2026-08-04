@@ -584,6 +584,7 @@ class AuthService:
         save_mock_customers(customers)
         
         # Also save to MongoDB users collection
+        session_id = None
         try:
             from db.database import users_collection
             await users_collection.update_one(
@@ -591,10 +592,17 @@ class AuthService:
                 {"$set": new_user},
                 upsert=True
             )
+            session_result = await self.create_login_session(phone)
+            session_id = session_result.get("session_id")
         except Exception as e:
-            print(f"⚠️ Failed to save to MongoDB: {e}")
+            print(f"⚠️ Failed to save to MongoDB or create session: {e}")
             
-        return {"success": True, "message": "Registration successful", "customer_data": new_user}
+        return {
+            "success": True, 
+            "message": "Registration successful", 
+            "customer_data": new_user,
+            "session_id": session_id
+        }
 
     async def verify_session(self, session_id: str) -> Dict[str, Any]:
         """Verify if a session exists and return customer data."""
