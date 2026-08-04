@@ -163,12 +163,11 @@ async def intent_node(state: dict):
 
     if intent == "loan":
         # Reset Logic for Re-application
-        if state.get("decision") or state.get("sanction_pdf"):
-            log.append("🔄 Resetting stale application state for new request.")
-            updates.update({
-                "decision": "", "is_signed": False, "sanction_pdf": "",
-                "kyc_status": "pending", "fraud_score": -1, "documents_uploaded": False
-            })
+        log.append("🔄 Resetting document & KYC state for new loan application.")
+        updates.update({
+            "decision": "", "is_signed": False, "sanction_pdf": "",
+            "kyc_status": "pending", "fraud_score": -1, "documents_uploaded": False
+        })
         
         if extracted_amount > 0:
             # Prime terms

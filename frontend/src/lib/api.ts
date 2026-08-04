@@ -288,7 +288,7 @@ export const api = {
   },
 
   getDownloadLetterUrl(sessionId: string): string {
-    return `${API_BASE}/session/${sessionId}/download-letter`;
+    return `${API_BASE}/sanction/${sessionId}/download-letter`;
   },
 
   // ── 8. Repayments & EMI ──────────────────────────────────────────
