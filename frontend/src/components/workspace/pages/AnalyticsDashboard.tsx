@@ -84,7 +84,9 @@ export default function AnalyticsDashboard() {
           <div className="flex justify-between items-start mb-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-white/50 mb-1">Instant Pre-Approved Limit</p>
-              <h3 className="text-3xl font-display font-bold text-white tracking-tight">₹25,00,000</h3>
+              <h3 className="text-3xl font-display font-bold text-white tracking-tight">
+                ₹{(user?.preApprovedLimit || (user?.salary ? user.salary * 10 : 1500000)).toLocaleString('en-IN')}
+              </h3>
             </div>
             <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
               <CreditCard className="w-5 h-5" />
