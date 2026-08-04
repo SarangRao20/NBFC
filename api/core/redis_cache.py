@@ -4,6 +4,7 @@ Provides caching for sessions, customer data, and performance optimization.
 """
 
 import json
+import os
 import pickle
 from typing import Any, Optional, Dict, List
 from datetime import timedelta
@@ -22,11 +23,14 @@ class RedisCache:
     async def connect(self):
         """Initialize Redis connection"""
         try:
-            self.redis_client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
+            redis_url = os.getenv("REDIS_URL", settings.REDIS_HOST)
+            # Ensure we use secure connection
+            if not redis_url.startswith("rediss://"):
+                redis_url = redis_url.replace("redis://", "rediss://", 1)
+            
+            self.redis_client = redis.from_url(
+                redis_url,
                 db=settings.REDIS_DB,
-                password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
                 decode_responses=True
             )
             # Test connection
