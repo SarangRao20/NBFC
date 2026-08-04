@@ -70,8 +70,8 @@ async def underwriting_agent_node(state: dict) -> dict:
     pre_approved = customer.get("pre_approved_limit", customer.get("limit", 0))
     existing_emi = customer.get("existing_emi_total", 0)
     
-    emi = terms.get("emi", 0)
-    principal = terms.get("principal", 0)
+    emi = terms.get("emi") or 0
+    principal = terms.get("principal") or 0
     
     # ⚠️ GUARD: Do not evaluate if loan amount isn't captured yet
     if principal <= 0:
