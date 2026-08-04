@@ -325,6 +325,7 @@ export default function GenUiApplication() {
         const isConfirmingTerms = pendingQuestion === 'confirmation' || explicitlyWantsSlider;
 
         const isEmiStatus = intent === 'payment' || lowerText.includes('remaining') || lowerText.includes('loanfree') || lowerText.includes('loan free') || lowerText.includes('balance') || lowerText.includes('status');
+        const isRejected = chatRes.data.decision === 'hard_reject' || chatRes.data.decision === 'soft_reject';
 
         setChatHistory((prev) => [
           ...prev,
@@ -332,7 +333,7 @@ export default function GenUiApplication() {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
             content: backendReply,
-            component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap ? 'SHAP' : undefined),
+            component: explicitlyWantsSlider ? 'ONBOARDING' : (wantsShap || isRejected ? 'SHAP' : undefined),
             showConfiguratorPill: isConfirmingTerms,
             showActiveLoansPill: isEmiStatus,
             graphTrace: graphTraces,

@@ -451,6 +451,7 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             "required_documents": final_state.get("required_documents", []),
             "documents_uploaded": final_state.get("documents_uploaded", False),
             "sales_output": final_state.get("sales_output", {}),
+            "decision": final_state.get("decision", ""),
             # Explainability fields
             "rejection_details": final_state.get("rejection_details", []),
             "all_lender_rules": final_state.get("all_lender_rules", []),
