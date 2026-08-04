@@ -214,6 +214,21 @@ export const api = {
     }
   },
 
+  async fetchDigiLocker(sessionId: string, aadhaar?: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/${sessionId}/digilocker-fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aadhaar: aadhaar || '987654321012', otp: '123456' }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+
   // ── 5. Underwriting Decision Engine ──────────────────────────────
   
   async underwrite(sessionId: string): Promise<ApiResponse> {

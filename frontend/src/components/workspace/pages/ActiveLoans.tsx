@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { CreditCard, CheckCircle2, ShieldCheck, Download } from 'lucide-react';
+import { CreditCard, CheckCircle2, ShieldCheck, Download, X, Lock, Smartphone, Building2 } from 'lucide-react';
 import { api } from '../../../lib/api';
 
 export default function ActiveLoans() {
   const { user, loanDetails, sessionId } = useLoanStore();
   const [isPaying, setIsPaying] = useState(false);
   const [paidSuccess, setPaidSuccess] = useState(false);
+  const [showRazorpayModal, setShowRazorpayModal] = useState(false);
   const [activeLoanData, setActiveLoanData] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'CARD' | 'NETBANKING'>('UPI');
 
   useEffect(() => {
     if (user?.phone) {
@@ -30,16 +32,22 @@ export default function ActiveLoans() {
     : '#FAC-HDFC-889102';
   const lenderName = activeLoanData?.loan_type || activeLoanData?.lender_name || 'HDFC Bank NBFC';
 
-  const handlePay = async () => {
+  const handleExecutePayment = async () => {
     setIsPaying(true);
-    if (sessionId) {
-      await api.payEmi(sessionId);
-    } else {
-      await new Promise((r) => setTimeout(r, 1200));
+    try {
+      if (sessionId) {
+        await api.payEmi(sessionId);
+      } else {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+      setPaidSuccess(true);
+      setShowRazorpayModal(false);
+      setTimeout(() => setPaidSuccess(false), 5000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsPaying(false);
     }
-    setIsPaying(false);
-    setPaidSuccess(true);
-    setTimeout(() => setPaidSuccess(false), 4000);
   };
 
   const handleDownloadSanction = () => {
@@ -103,21 +111,11 @@ export default function ActiveLoans() {
               </div>
            ) : (
               <button
-                 onClick={handlePay}
-                 disabled={isPaying}
-                 className="w-full h-14 bg-white text-black font-semibold rounded-xl hover:bg-white/90 shadow-lg shadow-white/10 transition-all flex items-center justify-center gap-3 text-base disabled:opacity-50"
+                 onClick={() => setShowRazorpayModal(true)}
+                 className="w-full h-14 bg-white text-black font-semibold rounded-xl hover:bg-white/90 shadow-lg shadow-white/10 transition-all flex items-center justify-center gap-3 text-base"
               >
-                 {isPaying ? (
-                    <>
-                       <span className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                       Processing Payment Gateway...
-                    </>
-                 ) : (
-                    <>
-                       <CreditCard className="w-5 h-5" />
-                       Pay Monthly EMI (₹{emi.toLocaleString('en-IN')})
-                    </>
-                 )}
+                 <CreditCard className="w-5 h-5" />
+                 Pay Monthly EMI via Razorpay (₹{emi.toLocaleString('en-IN')})
               </button>
            )}
         </div>
@@ -130,8 +128,8 @@ export default function ActiveLoans() {
             <div className="flex justify-between items-center p-3 bg-[#0A0A0A] rounded-lg border border-white/5 text-white/70">
                <span className="text-white font-medium">Installment #1</span>
                <span>05 Sep 2026</span>
-               <span className="text-emerald-400">₹{emi.toLocaleString('en-IN')}</span>
-               <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-sans">Upcoming</span>
+               <span className="text-emerald-400 font-bold">₹{emi.toLocaleString('en-IN')}</span>
+               <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-sans font-medium">Upcoming</span>
             </div>
             <div className="flex justify-between items-center p-3 bg-[#0A0A0A] rounded-lg border border-white/5 text-white/70">
                <span className="text-white font-medium">Installment #2</span>
@@ -141,6 +139,100 @@ export default function ActiveLoans() {
             </div>
          </div>
       </div>
+
+      {/* Razorpay Gateway Modal */}
+      {showRazorpayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/15 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl relative">
+            <div className="p-5 border-b border-white/10 bg-white/[0.02] flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs">
+                  RZP
+                </div>
+                <div>
+                  <h4 className="font-display font-semibold text-white text-sm">Razorpay Checkout Gateway</h4>
+                  <p className="text-[10px] text-white/40 font-mono uppercase">Merchant: FinServe NBFC Facilities</p>
+                </div>
+              </div>
+              <button onClick={() => setShowRazorpayModal(false)} className="text-white/40 hover:text-white transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="bg-[#0A0A0A] p-4 rounded-xl border border-white/5 flex justify-between items-center">
+                <div>
+                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Total Payable EMI</p>
+                  <p className="text-2xl font-bold text-white font-mono">₹{emi.toLocaleString('en-IN')}</p>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+                  <Lock className="w-3 h-3" /> 256-Bit Encrypted
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setPaymentMethod('UPI')}
+                  className={`p-3 rounded-xl border text-xs font-medium flex flex-col items-center gap-1.5 transition-all ${
+                    paymentMethod === 'UPI'
+                      ? 'bg-blue-500/10 border-blue-500/40 text-blue-400'
+                      : 'bg-[#0A0A0A] border-white/10 text-white/60 hover:bg-white/5'
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" /> UPI Apps
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('CARD')}
+                  className={`p-3 rounded-xl border text-xs font-medium flex flex-col items-center gap-1.5 transition-all ${
+                    paymentMethod === 'CARD'
+                      ? 'bg-blue-500/10 border-blue-500/40 text-blue-400'
+                      : 'bg-[#0A0A0A] border-white/10 text-white/60 hover:bg-white/5'
+                  }`}
+                >
+                  <CreditCard className="w-4 h-4" /> Card
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('NETBANKING')}
+                  className={`p-3 rounded-xl border text-xs font-medium flex flex-col items-center gap-1.5 transition-all ${
+                    paymentMethod === 'NETBANKING'
+                      ? 'bg-blue-500/10 border-blue-500/40 text-blue-400'
+                      : 'bg-[#0A0A0A] border-white/10 text-white/60 hover:bg-white/5'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" /> NetBanking
+                </button>
+              </div>
+
+              {paymentMethod === 'UPI' && (
+                <div className="bg-[#0A0A0A] p-4 rounded-xl border border-white/5 space-y-2">
+                  <p className="text-xs text-white/70">Select your preferred UPI App:</p>
+                  <div className="flex gap-3 text-xs font-medium">
+                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white">Google Pay</span>
+                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white">PhonePe</span>
+                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white">Paytm</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleExecutePayment}
+                disabled={isPaying}
+                className="w-full h-12 bg-white text-black font-semibold rounded-xl hover:bg-white/90 shadow-lg shadow-white/10 transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+              >
+                {isPaying ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                    Authorizing Razorpay Payment...
+                  </>
+                ) : (
+                  <>Pay ₹{emi.toLocaleString('en-IN')} via Razorpay →</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
