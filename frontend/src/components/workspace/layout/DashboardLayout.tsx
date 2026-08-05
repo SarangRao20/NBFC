@@ -14,7 +14,6 @@ export default function DashboardLayout() {
     { name: 'Dashboard', id: 'DASHBOARD', icon: LayoutDashboard },
     { name: 'System Intelligence', id: 'APPLICATION', icon: Bot },
     { name: 'Active Loans & Ledgers', id: 'ACTIVE_LOANS', icon: CreditCard },
-    { name: 'Documentation', id: 'DOCS', icon: Book },
   ];
 
   const renderContent = () => {

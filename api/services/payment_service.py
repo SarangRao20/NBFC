@@ -158,6 +158,24 @@ async def process_emi_payment(session_id: str, razorpay_payment_id: Optional[str
 
     await update_session(session_id, {"loan_terms": updated_terms})
 
+    # Persist payment to MongoDB loan_applications_collection
+    try:
+        from db.database import loan_applications_collection
+        await loan_applications_collection.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "payments_made": new_payments_made,
+                    "remaining_balance": round(remaining_balance, 2),
+                    "last_payment_date": updated_terms["last_payment_date"],
+                    "next_emi_date": updated_terms["next_emi_date"]
+                }
+            }
+        )
+        print(f"📊 Persisted EMI payment in MongoDB for session {session_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to update DB loan record on payment: {e}")
+
     # Broadcast update to frontend
     asyncio.create_task(manager.broadcast_to_session(session_id, {
         "type": "PHASE_UPDATE",

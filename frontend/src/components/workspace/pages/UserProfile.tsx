@@ -8,8 +8,10 @@ export default function UserProfile() {
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [city, setCity] = useState(user?.city || 'Mumbai, Maharashtra');
   const [salary, setSalary] = useState(user?.salary || 75000);
+  const [picture, setPicture] = useState(user?.picture || '');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -20,14 +22,16 @@ export default function UserProfile() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      if (user?.phone) {
+      const targetIdentifier = phone || user?.phone || email || user?.email || '';
+      if (targetIdentifier) {
         await api.updateProfile({
-          phone: user.phone,
+          phone: targetIdentifier,
           name,
           email,
           city,
           salary: Number(salary),
-          credit_score: creditScore
+          credit_score: creditScore,
+          picture
         });
       }
 
@@ -35,8 +39,10 @@ export default function UserProfile() {
         ...user!,
         name,
         email,
+        phone: phone || user?.phone || '',
         city,
         salary: Number(salary),
+        picture,
         creditScore
       });
 
@@ -62,16 +68,16 @@ export default function UserProfile() {
         {/* Left Telemetry Card */}
         <div className="bg-[#111] border border-white/10 rounded-2xl p-6 space-y-6">
           <div className="flex flex-col items-center text-center space-y-3 pb-6 border-b border-white/10">
-            <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-emerald-500/40 p-1 flex items-center justify-center overflow-hidden">
-              {user?.picture ? (
-                <img src={user.picture} alt={user.name} className="w-full h-full object-cover rounded-full" />
+            <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-emerald-500/40 p-1 flex items-center justify-center overflow-hidden relative group">
+              {picture || user?.picture ? (
+                <img src={picture || user?.picture} alt={name} className="w-full h-full object-cover rounded-full" />
               ) : (
                 <span className="font-display font-bold text-2xl text-white">{name.charAt(0) || 'U'}</span>
               )}
             </div>
             <div>
               <h3 className="font-display font-bold text-lg text-white">{name || 'Verified User'}</h3>
-              <p className="text-xs text-white/50">{user?.phone || '+91 98765 43210'}</p>
+              <p className="text-xs text-white/50">{phone || user?.phone || email || 'No phone set'}</p>
             </div>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
               <ShieldCheck className="w-3.5 h-3.5" /> Tier-1 Verified Entity
@@ -130,6 +136,34 @@ export default function UserProfile() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-widest text-white/50">Phone Number</label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-white/30 absolute left-3 top-3.5" />
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-widest text-white/50">Profile Picture URL</label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-white/30 absolute left-3 top-3.5" />
+                  <input
+                    type="text"
+                    value={picture}
+                    onChange={(e) => setPicture(e.target.value)}
+                    placeholder="https://lh3.googleusercontent.com/..."
                     className="w-full bg-[#0A0A0A] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-white/30"
                   />
                 </div>

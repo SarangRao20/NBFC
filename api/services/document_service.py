@@ -73,16 +73,13 @@ async def request_documents(session_id: str) -> dict:
     principal = terms.get("principal", 0)
     pre_approved = customer.get("pre_approved_limit", 0)
 
-    required = ["PAN Card or Aadhaar Card (for KYC)"]
-
-    if principal > pre_approved:
-        required.append("Salary Slip (latest month — income verification required)")
+    required = ["PAN Card or Aadhaar Card (for Identity Verification)"]
 
     await advance_phase(session_id, "documents_requested")
 
     return {
         "required_documents": required,
-        "message": f"Please upload the required documents. Accepted formats: JPG, PNG, PDF."
+        "message": f"Please upload your PAN Card or Aadhaar Card. Accepted formats: JPG, PNG, PDF."
     }
 
 

@@ -5,6 +5,7 @@ import ProfileCompletionModal from './components/auth/ProfileCompletionModal';
 import Docs from './pages/Docs';
 import { useLoanStore } from './store/useLoanStore';
 import { ShieldCheck } from 'lucide-react';
+import { api } from './lib/api';
 
 function App() {
   const { currentState, user, setUser, setSessionId } = useLoanStore();
@@ -14,21 +15,50 @@ function App() {
     // Check URL for OAuth callback parameters
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
-    const token = params.get('token');
     const name = params.get('name');
+    const email = params.get('email');
+    const picture = params.get('picture');
+    const phone = params.get('phone');
 
-    if (sessionId && name) {
-      if (sessionId) setSessionId(sessionId);
+    if (sessionId) {
+      setSessionId(sessionId);
       
-      setUser({
-        name,
-        email: 'user@example.com',
-        picture: '',
-        creditScore: 785,
-      });
+      api.verifySession(sessionId).then((res) => {
+        if (res.success && res.data?.customer_data) {
+          const cust = res.data.customer_data;
+          const userObj = {
+            name: cust.name || name || 'Borrower',
+            email: cust.email || email || '',
+            picture: cust.picture || picture || '',
+            phone: cust.phone || phone || '',
+            salary: cust.salary || 75000,
+            city: cust.city || 'Mumbai',
+            creditScore: cust.credit_score || 750,
+            preApprovedLimit: cust.pre_approved_limit || 500000,
+          };
+          setUser(userObj);
 
-      // Prompt for remaining fields if missing
-      setShowProfileCompletion(true);
+          // Only prompt for profile completion if phone is missing or contains dummy placeholder
+          if (!userObj.phone || userObj.phone.startsWith('g_') || userObj.phone.length < 10) {
+            setShowProfileCompletion(true);
+          } else {
+            setShowProfileCompletion(false);
+          }
+        } else if (name || email) {
+          const userObj = {
+            name: name || 'Borrower',
+            email: email || '',
+            picture: picture || '',
+            phone: phone || '',
+            salary: 75000,
+            creditScore: 750,
+          };
+          setUser(userObj);
+          if (!userObj.phone || userObj.phone.length < 10) {
+            setShowProfileCompletion(true);
+          }
+        }
+      });
 
       // Clean up URL parameters
       window.history.replaceState({}, document.title, window.location.pathname);

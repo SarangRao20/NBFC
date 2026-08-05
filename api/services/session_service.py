@@ -185,29 +185,38 @@ async def get_customer_loan_history(phone: str) -> dict:
     print(f"⚡ Loan history cache MISS for {phone}")
     
     # Get customer profile
-    customer = await users_collection.find_one({"phone": clean_phone})
-    
-    # Get all loan applications
-    cursor = loan_applications_collection.find()
+    customer = await users_collection.find_one({"$or": [{"phone": clean_phone}, {"email": phone}, {"_id": phone}]})
+    cust_phone = customer.get("phone", clean_phone) if customer else clean_phone
+    cust_email = customer.get("email", phone) if customer else phone
+
+    # Get matching loan applications from MongoDB
+    query = {"$or": []}
+    if cust_phone: query["$or"].append({"phone": cust_phone})
+    if cust_email: query["$or"].append({"email": cust_email})
+    if clean_phone: query["$or"].append({"phone": clean_phone})
+    if not query["$or"]: query = {}
+
+    cursor = loan_applications_collection.find(query)
     all_applications = await cursor.to_list(length=100)
     customer_applications = []
     
     for app in all_applications:
-        if app.get("phone") == clean_phone:
-            customer_applications.append({
-                "session_id": app.get("session_id"),
-                "amount": app.get("amount", 0),
-                "loan_type": app.get("loan_type", ""),
-                "interest_rate": app.get("interest_rate", 0),
-                "tenure": app.get("tenure", 0),
-                "emi": app.get("emi", 0),
-                "status": app.get("status", "Unknown"),
-                "reasons": app.get("reasons", []),
-                "created_at": app.get("created_at", ""),
-                "pdf_path": app.get("pdf_path", ""),
-                "email_sent": app.get("email_sent", False),
-                "emi_schedule": app.get("emi_schedule", [])
-            })
+        customer_applications.append({
+            "session_id": app.get("session_id"),
+            "amount": app.get("amount", 0),
+            "loan_type": app.get("loan_type", ""),
+            "interest_rate": app.get("interest_rate", 0),
+            "tenure": app.get("tenure", 0),
+            "emi": app.get("emi", 0),
+            "status": app.get("status", "Unknown"),
+            "reasons": app.get("reasons", []),
+            "created_at": app.get("created_at", ""),
+            "pdf_path": app.get("pdf_path", ""),
+            "email_sent": app.get("email_sent", False),
+            "emi_schedule": app.get("emi_schedule", []),
+            "payments_made": app.get("payments_made", 0),
+            "remaining_balance": app.get("remaining_balance", 0)
+        })
     
     # Sort by created_at descending
     customer_applications.sort(key=lambda x: x.get("created_at", ""), reverse=True)

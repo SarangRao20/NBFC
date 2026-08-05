@@ -218,22 +218,21 @@ class AuthService:
                 "phone": phone
             }
     
-    async def check_profile_completeness(self, phone: str) -> Dict[str, Any]:
-        """Check if customer profile is complete"""
+    async def check_profile_completeness(self, identifier: str) -> Dict[str, Any]:
+        """Check if customer profile is complete by phone or email."""
         await self._get_services()
         
         try:
-            # Get customer data from cache first, then DB
-            customer_data = await self.cache.get_customer(phone)
+            customer_data = await self.cache.get_customer(identifier)
             
             if not customer_data:
-                # Try to get from database
                 from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({
+                    "$or": [{"phone": identifier}, {"email": identifier}, {"_id": identifier}]
+                })
                 
                 if customer_data:
-                    # Cache for future use
-                    await self.cache.set_customer(phone, customer_data)
+                    await self.cache.set_customer(identifier, customer_data)
             
             if not customer_data:
                 return {
@@ -243,7 +242,6 @@ class AuthService:
                     "message": "Customer not found. Please register first."
                 }
             
-            # Check required fields
             missing_fields = []
             filled_fields = 0
             
@@ -259,14 +257,12 @@ class AuthService:
             
             is_complete = len(missing_fields) == 0
             
-            # Create temporary session for incomplete profiles
             session_id = None
             if not is_complete:
                 from api.core.state_manager import create_session
                 session = await create_session()
                 session_id = session["session_id"]
                 
-                # Update session with partial customer data
                 await update_session(session_id, {
                     "customer_data": customer_data,
                     "current_phase": "profile_incomplete"
@@ -293,35 +289,36 @@ class AuthService:
                 "message": f"Profile check failed: {str(e)}"
             }
     
-    async def create_login_session(self, phone: str) -> Dict[str, Any]:
-        """Create session after successful login"""
+    async def create_login_session(self, identifier: str) -> Dict[str, Any]:
+        """Create session after successful login by phone or email."""
         await self._get_services()
         
         try:
-            # Get customer data
-            customer_data = await self.cache.get_customer(phone)
+            customer_data = await self.cache.get_customer(identifier)
             
             if not customer_data:
                 from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({
+                    "$or": [{"phone": identifier}, {"email": identifier}, {"_id": identifier}]
+                })
                 
                 if customer_data:
-                    await self.cache.set_customer(phone, customer_data)
+                    await self.cache.set_customer(identifier, customer_data)
             
             if not customer_data:
                 customers = load_mock_customers()
-                customer_data = next((c for c in customers if c.get("phone") == phone), None)
+                customer_data = next((c for c in customers if c.get("phone") == identifier or c.get("email") == identifier), None)
                 if customer_data:
-                    await self.cache.set_customer(phone, customer_data)
+                    await self.cache.set_customer(identifier, customer_data)
             
             if not customer_data:
                 raise Exception("Customer not found")
 
-            # Ensure credit score is available for underwriting.
+            user_phone = customer_data.get("phone") or identifier
             score_missing = not isinstance(customer_data.get("credit_score"), (int, float)) or customer_data.get("credit_score", 0) <= 0
             if score_missing:
                 credit_result = await self.fetch_credit_score(
-                    phone=phone,
+                    phone=user_phone,
                     full_name=customer_data.get("name"),
                     dob=customer_data.get("dob"),
                     persist=True,
@@ -331,39 +328,30 @@ class AuthService:
                     profile_updates = credit_result.get("profile_updates", {})
                     if "pre_approved_limit" in profile_updates:
                         customer_data["pre_approved_limit"] = profile_updates["pre_approved_limit"]
-                    print(f"✅ Auto-fetched credit score for {phone}: {customer_data.get('credit_score')}")
-                else:
-                    print(f"⚠️ Credit score auto-fetch failed for {phone}: {credit_result.get('message')}")
             
-            # Get loan history to enrich profile
-            history_result = await self.get_customer_loan_history(phone)
+            history_result = await self.get_customer_loan_history(user_phone)
             past_loans = history_result.get("history", [])
             customer_data["past_loans"] = past_loans
             customer_data["is_new_customer"] = len(past_loans) == 0
             
-            # Aggregate active EMI from historical loans (Exclude Closed/Rejected)
             active_emi = sum(loan.get("emi", 0) for loan in past_loans 
-                            if loan.get("status") == "Approved" and not loan.get("is_closed"))
+                            if loan.get("status") in ("Approved", "Disbursed") and not loan.get("is_closed"))
             customer_data["existing_emi_total"] = active_emi
-            print(f"💰 Aggregated active EMI for {phone}: ₹{active_emi:,.2f}")
             
-            # Create new session
             from api.core.state_manager import create_session
             session = await create_session()
             session_id = session["session_id"]
             
-            # Update session with customer data
             await update_session(session_id, {
                 "customer_data": customer_data,
-                "customer_id": str(customer_data.get("_id", phone)),
+                "customer_id": str(customer_data.get("_id", identifier)),
                 "current_phase": "logged_in",
                 "login_time": datetime.utcnow().isoformat()
             })
             
-            # Cache session for performance
             await self.cache.set_session(session_id, session)
             
-            print(f"✅ Login session created for {phone}: {session_id}")
+            print(f"✅ Login session created for {identifier}: {session_id}")
             
             return {
                 "session_id": session_id,
@@ -375,17 +363,18 @@ class AuthService:
             print(f"❌ Login session creation failed: {e}")
             raise e
     
-    async def update_customer_profile(self, phone: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        """Update customer profile fields"""
+    async def update_customer_profile(self, identifier: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update customer profile fields by phone or email."""
         await self._get_services()
         
         try:
-            # Get existing customer data
-            customer_data = await self.cache.get_customer(phone)
+            from db.database import users_collection
+            customer_data = await self.cache.get_customer(identifier)
             
             if not customer_data:
-                from db.database import users_collection
-                customer_data = await users_collection.find_one({"phone": phone})
+                customer_data = await users_collection.find_one({
+                    "$or": [{"phone": identifier}, {"email": identifier}, {"_id": identifier}]
+                })
                 
                 if not customer_data:
                     return {
@@ -393,21 +382,17 @@ class AuthService:
                         "message": "Customer not found"
                     }
             
-            # Update customer data
             updated_data = {**customer_data, **updates}
             
-            # Update in database
-            from db.database import users_collection
+            user_key = customer_data.get("email") or customer_data.get("phone") or identifier
             await users_collection.update_one(
-                {"phone": phone},
-                {"$set": updates}
+                {"$or": [{"phone": user_key}, {"email": user_key}, {"_id": user_key}]},
+                {"$set": updates},
+                upsert=True
             )
             
-            # Update cache
-            await self.cache.set_customer(phone, updated_data)
-            
-            # Check if profile is now complete
-            profile_check = await self.check_profile_completeness(phone)
+            await self.cache.set_customer(identifier, updated_data)
+            profile_check = await self.check_profile_completeness(user_key)
             
             return {
                 "success": True,

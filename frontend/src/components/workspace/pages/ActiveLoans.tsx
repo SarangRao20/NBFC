@@ -14,8 +14,9 @@ export default function ActiveLoans() {
   const [paidInstallments, setPaidInstallments] = useState<number[]>([]);
 
   useEffect(() => {
-    if (user?.phone) {
-      api.getLoanHistory(user.phone).then((res) => {
+    const identifier = user?.phone || user?.email;
+    if (identifier) {
+      api.getLoanHistory(identifier).then((res) => {
         if (res.success && res.data?.history && res.data.history.length > 0) {
           const approved = res.data.history.find((h: any) => h.status === 'Approved' || h.status === 'Disbursed') || res.data.history[0];
           if (approved) {
@@ -24,7 +25,7 @@ export default function ActiveLoans() {
         }
       });
     }
-  }, [user?.phone]);
+  }, [user?.phone, user?.email]);
 
   const facilityAmount = activeLoanData?.amount || loanDetails.requestedAmount;
   const tenure = activeLoanData?.tenure || loanDetails.tenureMonths;
@@ -59,8 +60,9 @@ export default function ActiveLoans() {
     setIsPaying(true);
 
     try {
-      if (sessionId) {
-        await api.payEmi(sessionId);
+      const targetSessionId = activeLoanData?.session_id || sessionId;
+      if (targetSessionId) {
+        await api.payEmi(targetSessionId);
       } else {
         await new Promise((r) => setTimeout(r, 1200));
       }
@@ -68,6 +70,16 @@ export default function ActiveLoans() {
       setPaidInstallments((prev) => [...prev, selectedInstallment.number]);
       setPaidSuccessMessage(`Installment #${selectedInstallment.number} (₹${selectedInstallment.amount.toLocaleString('en-IN')}) successfully paid via Razorpay! Transaction ID: RZP-${Math.random().toString(36).substring(2, 10).toUpperCase()}`);
       setShowRazorpayModal(false);
+
+      if (user?.phone) {
+        api.getLoanHistory(user.phone).then((res) => {
+          if (res.success && res.data?.history && res.data.history.length > 0) {
+            const approved = res.data.history.find((h: any) => h.status === 'Approved' || h.status === 'Disbursed') || res.data.history[0];
+            if (approved) setActiveLoanData(approved);
+          }
+        });
+      }
+
       setTimeout(() => setPaidSuccessMessage(''), 6000);
     } catch (e) {
       console.error(e);

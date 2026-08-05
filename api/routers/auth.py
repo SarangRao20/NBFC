@@ -360,30 +360,36 @@ async def google_callback(
             if userinfo_response.status_code != 200:
                 return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=failed_userinfo")
                 
-            user_info = userinfo_response.json()
-            email = user_info.get("email", "")
-            name = user_info.get("name", "Google User")
-            picture = user_info.get("picture", "")
-            google_id = user_info.get("id", email)
+            from urllib.parse import quote
+            from db.database import users_collection
+            from datetime import datetime
+
+            existing_user = await users_collection.find_one({"$or": [{"email": email}, {"_id": email}]})
             
-            phone_ref = f"g_{google_id[:10]}"
-            
-            # Ensure user profile exists
-            customer_data = {
-                "name": name,
-                "email": email,
-                "phone": phone_ref,
-                "picture": picture,
-                "salary": 75000,
-                "credit_score": 750,
-                "pre_approved_limit": 500000
-            }
-            try:
-                await auth_service.register_customer(customer_data)
-            except Exception:
-                pass
-            
-            session_data = await auth_service.create_login_session(phone_ref)
+            if existing_user:
+                user_phone = existing_user.get("phone", "")
+                updates = {"picture": picture or existing_user.get("picture", "")}
+                if name and not existing_user.get("name"):
+                    updates["name"] = name
+                await users_collection.update_one({"_id": existing_user["_id"]}, {"$set": updates})
+                lookup_key = existing_user.get("phone") or email
+            else:
+                user_phone = ""
+                new_user_doc = {
+                    "_id": email,
+                    "email": email,
+                    "name": name,
+                    "phone": "",
+                    "picture": picture,
+                    "salary": 75000,
+                    "credit_score": 750,
+                    "pre_approved_limit": 500000,
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                await users_collection.update_one({"_id": email}, {"$set": new_user_doc}, upsert=True)
+                lookup_key = email
+
+            session_data = await auth_service.create_login_session(lookup_key)
             session_id = session_data.get("session_id")
             
             app_token = generate_app_jwt({
@@ -393,7 +399,7 @@ async def google_callback(
                 "session_id": session_id
             })
             
-            redirect_target = f"{settings.FRONTEND_URL}/?session_id={session_id}&token={app_token}&name={name}"
+            redirect_target = f"{settings.FRONTEND_URL}/?session_id={session_id}&token={app_token}&name={quote(name)}&email={quote(email)}&picture={quote(picture)}&phone={quote(user_phone)}"
             return RedirectResponse(url=redirect_target)
             
     except Exception as e:

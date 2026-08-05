@@ -69,6 +69,17 @@ export const api = {
   },
 
 
+  async verifySession(sessionId: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/auth/verify?session_id=${sessionId}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || 'Session verification failed');
+      return { success: true, data };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   async checkProfileCompleteness(phone: string): Promise<ApiResponse> {
     try {
       const res = await fetch(`${API_BASE}/auth/check-profile/${phone}`);
@@ -87,6 +98,7 @@ export const api = {
     city?: string;
     salary?: number;
     credit_score?: number;
+    picture?: string;
   }): Promise<ApiResponse> {
     try {
       const queryParams = new URLSearchParams();
@@ -288,7 +300,7 @@ export const api = {
   },
 
   getDownloadLetterUrl(sessionId: string): string {
-    return `${API_BASE}/sanction/${sessionId}/download-letter`;
+    return `${API_BASE}/session/${sessionId}/download-letter`;
   },
 
   // ── 8. Repayments & EMI ──────────────────────────────────────────

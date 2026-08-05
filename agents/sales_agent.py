@@ -398,6 +398,18 @@ async def _advisor_mode(state: dict):
 
     # Past loans summary
     past_loans = customer.get("past_loans", [])
+    if not past_loans and customer.get("phone"):
+        try:
+            from db.database import loan_applications_collection
+            from api.services.sales_service import _normalize_phone
+            clean_phone = _normalize_phone(customer.get("phone"))
+            cursor = loan_applications_collection.find({"phone": clean_phone})
+            db_loans = await cursor.to_list(length=100)
+            if db_loans:
+                past_loans = db_loans
+        except Exception as e:
+            print(f"⚠️ Failed to load past loans in advisor mode: {e}")
+
     past_loans_summary = ""
     active_loans_found = False
     if past_loans:
@@ -406,7 +418,7 @@ async def _advisor_mode(state: dict):
             status = pl.get('status', 'Unknown')
             emi_val = pl.get('emi') or 0
             amount = pl.get('amount') or 0
-            if status == "Approved":
+            if status in ("Approved", "Disbursed"):
                 active_loans_found = True
                 past_loans_summary += f"✅ ACTIVE: ₹{amount:,} loan with ₹{emi_val:,} monthly EMI. "
                 if pl.get('tenure'):

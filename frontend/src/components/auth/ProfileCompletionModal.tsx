@@ -22,21 +22,28 @@ export default function ProfileCompletionModal({ isOpen, phoneInitial = '', onCo
     e.preventDefault();
     setLoading(true);
 
-    const targetPhone = phone || user?.phone || 'g_user';
-    const res = await api.updateProfile({
-      phone: targetPhone,
-      salary: Number(salary),
-      city,
-    });
+    const targetIdentifier = phone || user?.phone || user?.email || '';
+    if (targetIdentifier) {
+      await api.updateProfile({
+        phone: targetIdentifier,
+        name: user?.name,
+        email: user?.email,
+        picture: user?.picture,
+        salary: Number(salary) || 75000,
+        city: city || 'Mumbai',
+      });
+    }
 
     setLoading(false);
 
-    setUser({
-      ...user!,
-      phone: targetPhone,
-      salary: Number(salary),
-      city,
-    });
+    if (user) {
+      setUser({
+        ...user,
+        phone: phone || user.phone || '',
+        salary: Number(salary) || user.salary || 75000,
+        city: city || user.city || 'Mumbai',
+      });
+    }
 
     onCompleted();
   };

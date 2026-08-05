@@ -28,18 +28,31 @@ async def repayment_agent_node(state: dict) -> dict:
     tenure = terms.get("tenure", 0)
     next_due = terms.get("next_emi_date")
     
+    # Fetch real active loans from MongoDB loan_applications_collection
+    past_loans = customer.get("past_loans", [])
+    phone = customer.get("phone", "")
+    if phone:
+        try:
+            from db.database import loan_applications_collection
+            from api.services.sales_service import _normalize_phone
+            clean_phone = _normalize_phone(phone)
+            cursor = loan_applications_collection.find({"phone": clean_phone})
+            db_loans = await cursor.to_list(length=100)
+            if db_loans:
+                past_loans = db_loans
+        except Exception as e:
+            print(f"⚠️ Failed to query db_loans in repayment_agent: {e}")
+
     # Fallback to past_loans if current terms are empty (returning user scenario)
-    if principal <= 0:
-        past_loans = customer.get("past_loans", [])
-        active_loan = next((l for l in past_loans if l.get("status") == "Approved"), None)
+    if principal <= 0 and past_loans:
+        active_loan = next((l for l in past_loans if l.get("status") in ("Approved", "Disbursed")), past_loans[0])
         if active_loan:
             principal = active_loan.get("amount", 0)
             emi = active_loan.get("emi", 0)
             tenure = active_loan.get("tenure", 0)
-            payments_made = active_loan.get("payments_made", 0) # Assuming this is tracked in past_loans
-            next_due = active_loan.get("next_emi_date")
+            payments_made = active_loan.get("payments_made", 0)
+            next_due = active_loan.get("next_emi_date") or active_loan.get("first_emi_due_date")
             
-            # Hydrate state for other agents
             terms.update({
                 "principal": principal,
                 "emi": emi,
@@ -48,15 +61,12 @@ async def repayment_agent_node(state: dict) -> dict:
                 "next_emi_date": next_due
             })
 
-    # Count only active (non-closed) loans
-    past_loans = customer.get("past_loans", []) # Ensure past_loans is defined for this block
-    active_loans = [l for l in past_loans if l.get("status") == "Approved" and not l.get("is_closed")]
+    # Count active (non-closed) loans
+    active_loans = [l for l in past_loans if l.get("status") in ("Approved", "Disbursed") and not l.get("is_closed")]
     num_active = len(active_loans)
     total_monthly = sum(l.get("emi", 0) for l in active_loans)
     
-    # If the current session loan is active but not in past_loans yet (rare but possible), add it
     if terms.get("principal", 0) > 0 and not terms.get("is_closed"):
-        # Check if already counted
         if not any(l.get("session_id") == state.get("session_id") for l in active_loans):
             num_active += 1
             total_monthly += terms.get("emi", 0)

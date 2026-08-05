@@ -23,31 +23,36 @@ async def generate_sanction(session_id: str) -> dict:
 
     customer = state.get("customer_data", {})
     terms = state.get("loan_terms", {})
-    decision = state.get("decision", "")
-    reasons = state.get("reasons", [])
-
-    cust_name = customer.get("name", "Customer")
-    cust_id = state.get("customer_id", "UNKNOWN")
-    principal = terms.get("principal", 0)
-    rate = terms.get("rate", 0)
-    tenure = terms.get("tenure", 0)
-    emi = terms.get("emi", 0)
-    dti = state.get("dti_ratio", 0)
-    score = customer.get("credit_score", 0)
+    if not decision:
+        from api.services.underwriting_service import underwrite
+        uw_res = await underwrite(session_id)
+        if uw_res:
+            state = await get_session(session_id)
+            customer = state.get("customer_data", {})
+            terms = state.get("loan_terms", {})
+            decision = state.get("decision", "")
+            reasons = state.get("reasons", [])
+            principal = terms.get("principal", principal)
+            rate = terms.get("rate", rate)
+            tenure = terms.get("tenure", tenure)
+            emi = terms.get("emi", emi)
+            dti = state.get("dti_ratio", dti)
+            score = customer.get("credit_score", score)
 
     # Handle different decision types
     if decision == "approve":
         is_approved = True
         letter_type = "Sanction"
-    elif decision in ["reject", "soft_reject"]:
+    elif decision in ["reject", "soft_reject", "hard_reject"]:
         is_approved = False
         letter_type = "Rejection"
     else:
-        # If no decision, default to rejection for safety
+        # If still no decision, default to rejection for safety
         is_approved = False
         letter_type = "Rejection"
         decision = "reject"
-        reasons.append("No clear decision recorded in underwriting")
+        if not reasons:
+            reasons.append("Underwriting evaluation completed with rejection status")
     filename = f"{cust_id}_{letter_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     filepath = os.path.join(settings.SANCTION_DIR, filename)
 

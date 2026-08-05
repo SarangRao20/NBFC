@@ -175,9 +175,10 @@ export default function GenUiApplication() {
       }
 
       if (activeSessionId) {
+        // Don't push default loan terms — let the sales agent collect via chat
         await api.updateLoanParams(activeSessionId, {
-          requested_amount: loanDetails.requestedAmount,
-          tenure_months: loanDetails.tenureMonths,
+          requested_amount: 0,  // signal: values not yet set
+          tenure_months: 0,
         });
       }
 
