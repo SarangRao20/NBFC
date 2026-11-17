@@ -68,7 +68,7 @@ export default function KycWidget({ onNext }: KycWidgetProps) {
     label: string,
     sub: string,
     state: UploadState,
-    inputRef: React.RefObject<HTMLInputElement>,
+    inputRef: React.RefObject<HTMLInputElement | null>,
     docType: 'AADHAAR' | 'PAN',
   ) => (
     <div

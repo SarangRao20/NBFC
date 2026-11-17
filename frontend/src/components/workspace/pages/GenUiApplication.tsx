@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { useLoanStore, ChatMessage } from '../../../store/useLoanStore';
+import { useLoanStore } from '../../../store/useLoanStore';
+import type { ChatMessage } from '../../../store/useLoanStore';
 import { Bot, User, Send, Sparkles, Sliders, ArrowRight, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
