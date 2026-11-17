@@ -68,7 +68,8 @@ export default function OffersWidget({ onSelect }: OffersWidgetProps) {
 
   const handleAccept = (lenderId: string) => {
     setSelectedOfferId(lenderId);
-    setState('ACTIVE_LOAN');
+    // setState('ACTIVE_LOAN') is NOT called here — it fires only after the parent
+    // confirms decision === 'approve' from the API, preventing a premature state flip.
     if (onSelect) onSelect(lenderId);
   };
 

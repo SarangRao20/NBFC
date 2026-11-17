@@ -51,6 +51,8 @@ export interface ChatMessage {
   pdfDownloadUrl?: string;
   pdfLabel?: string;
   showShapPill?: boolean;
+  showConfiguratorPill?: boolean;
+  showActiveLoansPill?: boolean;
   allLenderRules?: any[];
   showRulesButton?: boolean;
   uiTrigger?: 'INITIAL_OFFERS' | 'REJECTION' | 'FINAL_LENDER';
@@ -80,6 +82,7 @@ interface LoanStore {
   addDocument: (doc: Document) => void;
   updateDocument: (id: string, updates: Partial<Document>) => void;
   addChatMessage: (msg: ChatMessage) => void;
+  setChatHistory: (msgs: ChatMessage[]) => void;
   clearSession: () => void;
 }
 
@@ -107,6 +110,7 @@ export const useLoanStore = create<LoanStore>()(
       addDocument: (doc) => set((s) => ({ documents: [...s.documents, doc] })),
       updateDocument: (id, updates) => set((s) => ({ documents: s.documents.map((d) => d.id === id ? { ...d, ...updates } : d) })),
       addChatMessage: (msg) => set((s) => ({ chatHistory: [...s.chatHistory, msg] })),
+      setChatHistory: (msgs) => set({ chatHistory: msgs }),
       clearSession: () => set({
         currentView: 'DASHBOARD',
         currentState: 'UNAUTHENTICATED',

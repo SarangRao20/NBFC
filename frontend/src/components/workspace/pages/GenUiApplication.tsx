@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useLoanStore } from '../../../store/useLoanStore';
+import { useLoanStore, ChatMessage } from '../../../store/useLoanStore';
 import { Bot, User, Send, Sparkles, Sliders, ArrowRight, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
@@ -10,22 +10,9 @@ import GraphVisualizer from '../widgets/GraphVisualizer';
 import AgentTypingIndicator from '../../AgentTypingIndicator';
 import { api } from '../../../lib/api';
 
-interface ChatItem {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  component?: 'ONBOARDING' | 'KYC' | 'OFFERS' | 'SANCTION' | 'SHAP';
-  showConfiguratorPill?: boolean;
-  showActiveLoansPill?: boolean;
-  showShapPill?: boolean;
-  graphTrace?: string[];
-  pdfDownloadUrl?: string;
-  pdfLabel?: string;
-  timestamp: number;
-}
 
 export default function GenUiApplication() {
-  const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs, setView } = useLoanStore();
+  const { user, sessionId, setSessionId, loanDetails, updateLoanDetails, setAgentActive, addAgentLog, clearAgentLogs, setView, setState: setAppState, chatHistory, addChatMessage, setChatHistory } = useLoanStore();
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [currentPhase, setCurrentPhase] = useState('load_session');
@@ -33,30 +20,37 @@ export default function GenUiApplication() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const firstName = user?.name ? user.name.split(' ')[0] : 'Partner';
+  const preApprovedLimit = user?.preApprovedLimit ?? 1500000;
+  const creditScore = user?.creditScore ?? 785;
 
-  const [chatHistory, setChatHistory] = useState<ChatItem[]>([
-    {
-      id: 'init-1',
-      role: 'assistant',
-      content: `Hello ${firstName}. System Intelligence is active. Based on your verified profile (CIBIL: ${user?.creditScore || 785}), you are pre-approved for instant credit facilities up to ₹15,00,000. \n\nTo structure your capital, what is the primary purpose or goal for your loan today? (e.g. Business Expansion, Medical Emergency, Debt Consolidation, Personal)`,
-      graphTrace: [
-        'StateGraph initialized: load_session_node',
-        'CIBIL Bureau Lookup: 785 (Tier-1 Prime)',
-        'Pre-approved Limit Engine: ₹15,00,000'
-      ],
-      timestamp: Date.now()
+  // Initialize welcome message once if chat is empty
+  useEffect(() => {
+    if (chatHistory.length === 0) {
+      addChatMessage({
+        id: 'init-1',
+        role: 'assistant',
+        content: `Hello ${firstName}. System Intelligence is active. Based on your verified profile (CIBIL: ${creditScore}), you are pre-approved for instant credit facilities up to ₹${preApprovedLimit.toLocaleString('en-IN')}.\n\nTo structure your capital, what is the primary purpose or goal for your loan today? (e.g. Business Expansion, Medical Emergency, Debt Consolidation, Personal)`,
+        graphTrace: [
+          'StateGraph initialized: load_session_node',
+          `CIBIL Bureau Lookup: ${creditScore}`,
+          `Pre-approved Limit Engine: ₹${preApprovedLimit.toLocaleString('en-IN')}`
+        ],
+        timestamp: Date.now()
+      });
     }
-  ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isTyping]);
 
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && chatHistory.length <= 1) {
+      // Only restore from backend if we have no real conversation yet (just the welcome msg)
       api.getChatHistory(sessionId).then((res) => {
         if (res.success && res.data?.history && res.data.history.length > 0) {
-          const loadedMsgs: ChatItem[] = res.data.history.map((m: any, idx: number) => ({
+          const loadedMsgs: ChatMessage[] = res.data.history.map((m: any, idx: number) => ({
             id: `restored-${idx}`,
             role: m.role === 'user' || m.type === 'human' ? 'user' : 'assistant',
             content: m.content || m.text || '',
@@ -69,7 +63,7 @@ export default function GenUiApplication() {
         }
       });
     }
-  }, [sessionId]);
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runAgentStream = async (logs: string[], taskFn: () => Promise<void>) => {
     clearAgentLogs();
@@ -90,23 +84,8 @@ export default function GenUiApplication() {
   };
 
   const handleStartConfigurator = () => {
-    setChatHistory((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        role: 'user',
-        content: 'I would like to open the capital parameter slider.',
-        timestamp: Date.now()
-      },
-      {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Understood. Please adjust your requested principal amount and tenure using the interactive facility configurator below:`,
-        component: 'ONBOARDING',
-        graphTrace: ['StateGraph Node: sales_agent -> onboarding_configurator'],
-        timestamp: Date.now()
-      }
-    ]);
+    addChatMessage({ id: Date.now().toString(), role: 'user', content: 'I would like to open the capital parameter slider.', timestamp: Date.now() });
+    addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: 'Understood. Please adjust your requested principal amount and tenure using the interactive facility configurator below:', component: 'ONBOARDING', graphTrace: ['StateGraph Node: sales_agent -> onboarding_configurator'], timestamp: Date.now() });
   };
 
   const handleProceedToKyc = () => {
@@ -114,47 +93,29 @@ export default function GenUiApplication() {
   };
 
   const handleCheckBestTerms = () => {
-    setChatHistory((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        role: 'user',
-        content: 'Considering my profile, what are the best terms you can provide me?',
-        timestamp: Date.now()
-      },
-      {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Based on your Tier-1 credit score of ${user?.creditScore || 785} and monthly income telemetry, your optimal pre-approved facility is ₹5,00,000 at a prime rate of 10.5% p.a. over 36 months (~₹16,250/mo EMI). You can confirm these parameters to proceed to KYC, or adjust them using the configurator below:`,
-        showConfiguratorPill: true,
-        graphTrace: [
-          'StateGraph Node: intent_agent (CLASSIFIED: Best Terms Inquiry)',
-          'Invoking Underwriting Engine: FOIR = 18%, Risk Premium = 0%',
-          'Calculated Optimal Facility: ₹5,00,000 @ 10.5% p.a.'
-        ],
-        timestamp: Date.now()
-      }
-    ]);
+    // Use actual user profile data — creditScore and preApprovedLimit from store
+    const optimalAmount = Math.min(preApprovedLimit, 500000);
+    const r = 10.5 / 100 / 12;
+    const n = 36;
+    const optimalEmi = Math.round(optimalAmount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1));
+    addChatMessage({ id: Date.now().toString(), role: 'user', content: 'Considering my profile, what are the best terms you can provide me?', timestamp: Date.now() });
+    addChatMessage({
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: `Based on your credit score of ${creditScore} and monthly income, your optimal pre-approved facility is ₹${optimalAmount.toLocaleString('en-IN')} at a prime rate of 10.5% p.a. over 36 months (~₹${optimalEmi.toLocaleString('en-IN')}/mo EMI). You can confirm these parameters to proceed to KYC, or adjust them using the configurator below:`,
+      showConfiguratorPill: true,
+      graphTrace: [
+        `StateGraph Node: intent_agent (CLASSIFIED: Best Terms Inquiry)`,
+        `CIBIL Score: ${creditScore}`,
+        `Pre-approved Limit: ₹${preApprovedLimit.toLocaleString('en-IN')}`,
+      ],
+      timestamp: Date.now()
+    });
   };
 
   const handleShowShap = () => {
-    setChatHistory((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        role: 'user',
-        content: 'Explain my underwriting pricing using SHAP feature contributions.',
-        timestamp: Date.now()
-      },
-      {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Here is the SHAP Feature Importance Waterfall showing exactly how your credit score, income levels, debt obligations, and location metrics contributed to your final approved interest rate:`,
-        component: 'SHAP',
-        graphTrace: ['StateGraph Node: underwriting_agent -> shap_explainer_mcp'],
-        timestamp: Date.now()
-      }
-    ]);
+    addChatMessage({ id: Date.now().toString(), role: 'user', content: 'Explain my underwriting pricing using SHAP feature contributions.', timestamp: Date.now() });
+    addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: 'Here is the SHAP Feature Importance Waterfall showing exactly how your credit score, income levels, debt obligations, and location metrics contributed to your final approved interest rate:', component: 'SHAP', graphTrace: ['StateGraph Node: underwriting_agent -> shap_explainer_mcp'], timestamp: Date.now() });
   };
 
 
@@ -184,17 +145,7 @@ export default function GenUiApplication() {
       }
 
       setIsTyping(false);
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `Capital parameters confirmed (Principal: ₹${loanDetails.requestedAmount.toLocaleString('en-IN')}, Tenure: ${loanDetails.tenureMonths} Months). For Vision AI identity verification, please complete 1-Click DigiLocker or upload your Aadhaar & PAN below:`,
-          component: 'KYC',
-          graphTrace: ['StateGraph Node: kyc_agent (Aadhaar & PAN Verification Node)'],
-          timestamp: Date.now()
-        }
-      ]);
+      addChatMessage({ id: Date.now().toString(), role: 'assistant', content: `Capital parameters confirmed (Principal: ₹${loanDetails.requestedAmount.toLocaleString('en-IN')}, Tenure: ${loanDetails.tenureMonths} Months). For Vision AI identity verification, please complete 1-Click DigiLocker or upload your Aadhaar & PAN below:`, component: 'KYC', graphTrace: ['StateGraph Node: kyc_agent (Aadhaar & PAN Verification Node)'], timestamp: Date.now() });
     });
   };
 
@@ -219,30 +170,9 @@ export default function GenUiApplication() {
       setIsTyping(false);
 
       if (decision === 'reject' || decision === 'hard_reject' || decision === 'soft_reject') {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to your email (${user?.email || 'registered email'}):`,
-            component: 'SHAP',
-            pdfDownloadUrl: downloadUrl,
-            pdfLabel: 'Official Rejection Letter',
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: Date.now().toString(), role: 'assistant', content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to your email (${user?.email || 'registered email'}):`, component: 'SHAP', pdfDownloadUrl: downloadUrl, pdfLabel: 'Official Rejection Letter', timestamp: Date.now() });
       } else {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: `StateGraph Underwriting Complete! Verified CIBIL Score: ${user?.creditScore || 785}. Evaluated 40,000+ risk vectors across partner lenders. Here are your pre-approved institutional offers:`,
-            component: 'OFFERS',
-            showShapPill: true,
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: Date.now().toString(), role: 'assistant', content: `Underwriting complete. CIBIL Score: ${creditScore}. Here are your pre-approved institutional offers:`, component: 'OFFERS', showShapPill: true, timestamp: Date.now() });
       }
     });
   };
@@ -268,42 +198,12 @@ export default function GenUiApplication() {
       setIsTyping(false);
 
       if (decision === 'approve') {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Facility Approved & Smart Contract Locked! Your official PDF Sanction Letter has been generated and dispatched to your email (${user?.email || 'registered email'}). You can download the PDF directly below:`,
-            component: 'SANCTION',
-            pdfDownloadUrl: downloadUrl,
-            pdfLabel: 'Official Facility Sanction PDF',
-            timestamp: Date.now()
-          }
-        ]);
+        setAppState('ACTIVE_LOAN');
+        addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: `Facility Approved & Sanction Letter generated! Dispatched to ${user?.email || 'your registered email'}. Download below:`, component: 'SANCTION', pdfDownloadUrl: downloadUrl, pdfLabel: 'Official Facility Sanction PDF', timestamp: Date.now() });
       } else if (decision === 'pending_docs') {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `Your requested amount exceeds your instant pre-approved limit, so additional income verification is required before we can sanction this facility. Please complete document verification below:`,
-            component: 'KYC',
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: 'Your requested amount exceeds your instant pre-approved limit, so additional income verification is required. Please upload your salary slip below:', component: 'KYC', timestamp: Date.now() });
       } else {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to your email (${user?.email || 'registered email'}):`,
-            component: 'SHAP',
-            pdfDownloadUrl: downloadUrl,
-            pdfLabel: 'Official Rejection Letter',
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: `We regret to inform you that your application could not be approved at this amount. The underwriting engine has flagged the request — see the decision explainability below, and the official rejection letter has been dispatched to ${user?.email || 'your registered email'}:`, component: 'SHAP', pdfDownloadUrl: downloadUrl, pdfLabel: 'Official Rejection Letter', timestamp: Date.now() });
       }
     });
   };
@@ -315,11 +215,7 @@ export default function GenUiApplication() {
     const text = input;
     setInput('');
 
-    setChatHistory((prev) => [
-      ...prev,
-      { id: Date.now().toString(), role: 'user', content: text, timestamp: Date.now() }
-    ]);
-
+    addChatMessage({ id: Date.now().toString(), role: 'user', content: text, timestamp: Date.now() });
     setIsTyping(true);
 
     // 1. Ensure active backend session
@@ -389,45 +285,13 @@ export default function GenUiApplication() {
           : explicitlyWantsSlider ? 'ONBOARDING'
           : undefined;
 
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: backendReply,
-            component,
-            showConfiguratorPill: isConfirmingTerms,
-            showActiveLoansPill: isEmiStatus,
-            graphTrace: graphTraces,
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: backendReply, component, showConfiguratorPill: isConfirmingTerms, showActiveLoansPill: isEmiStatus, graphTrace: graphTraces, timestamp: Date.now() });
       } else {
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: chatRes.error
-              ? `Sorry, I ran into an issue: ${chatRes.error}. Please try again.`
-              : 'Something went wrong. Please try again.',
-            graphTrace: ['StateGraph Node: master_router'],
-            timestamp: Date.now()
-          }
-        ]);
+        addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: chatRes.error ? `Sorry, I ran into an issue: ${chatRes.error}. Please try again.` : 'Something went wrong. Please try again.', graphTrace: ['StateGraph Node: master_router'], timestamp: Date.now() });
       }
     } catch (err: any) {
       setIsTyping(false);
-      setChatHistory((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `Connection error: ${err?.message || 'Unable to reach the server.'}. Please check your connection and try again.`,
-          graphTrace: ['StateGraph Node: master_router (error)'],
-          timestamp: Date.now()
-        }
-      ]);
+      addChatMessage({ id: (Date.now() + 1).toString(), role: 'assistant', content: `Connection error: ${err?.message || 'Unable to reach the server.'}. Please check your connection and try again.`, graphTrace: ['StateGraph Node: master_router (error)'], timestamp: Date.now() });
     }
   };
 
