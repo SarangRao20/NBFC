@@ -28,8 +28,11 @@ export default function OffersWidget({ onSelect }: OffersWidgetProps) {
       // Fallback dynamically calculated using requested amount & tenure
       const fallbackAmount = loanDetails.requestedAmount;
       const fallbackTenure = loanDetails.tenureMonths;
-      const calculatedEmi = (rate: number) =>
-        Math.round((fallbackAmount * (1 + (rate / 100) * (fallbackTenure / 12))) / fallbackTenure);
+      const calculatedEmi = (rate: number) => {
+        const r = rate / 100 / 12;
+        if (r === 0 || fallbackTenure === 0) return Math.round(fallbackAmount / (fallbackTenure || 1));
+        return Math.round(fallbackAmount * r * Math.pow(1 + r, fallbackTenure) / (Math.pow(1 + r, fallbackTenure) - 1));
+      };
 
       setOffersList([
         {

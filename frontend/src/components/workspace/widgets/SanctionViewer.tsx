@@ -11,7 +11,12 @@ export default function SanctionViewer() {
   const [showPdfCanvasPreview, setShowPdfCanvasPreview] = useState(true);
 
   const rate = loanDetails.interestRate ?? 10.5;
-  const emi = loanDetails.monthlyEmi ?? Math.round((loanDetails.requestedAmount * (1 + (rate / 100) * (loanDetails.tenureMonths / 12))) / loanDetails.tenureMonths);
+  const calcEmi = (p: number, annualRate: number, n: number) => {
+    const r = annualRate / 100 / 12;
+    if (r === 0 || n === 0) return Math.round(p / (n || 1));
+    return Math.round(p * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1));
+  };
+  const emi = loanDetails.monthlyEmi ?? calcEmi(loanDetails.requestedAmount, rate, loanDetails.tenureMonths);
 
   const handleDownloadPdf = () => {
     if (sessionId) {

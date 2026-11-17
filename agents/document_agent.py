@@ -251,15 +251,27 @@ async def document_agent_node(state: dict) -> dict:
   print(f"📄 [DOCUMENT AGENT] Processing document phase for session: {session_id}")
 
   docs_state = state.get("documents", {}) or {}
-  doc_paths = docs_state.get("document_paths") or docs_state.get("salary_slip_path")
   required_docs = state.get("required_documents", ["Identity Proof (PAN Card or Aadhaar Card)"])
 
-  # Normalize to first path if list
+  # document_paths is a TOP-LEVEL MasterState field: Dict[str, str]
+  doc_paths_map = state.get("document_paths") or {}
+  top_level_paths = list(doc_paths_map.values()) if isinstance(doc_paths_map, dict) else []
+
+  # Legacy: some paths were stored inside state["documents"]
+  legacy = docs_state.get("document_paths") or docs_state.get("salary_slip_path")
+  if isinstance(legacy, list):
+    top_level_paths = top_level_paths or legacy
+  elif isinstance(legacy, str) and legacy:
+    top_level_paths = top_level_paths or [legacy]
+
+  # Pick first path that exists on disk; fall back to first path if none exist yet
   doc_path = None
-  if isinstance(doc_paths, list) and doc_paths:
-    doc_path = doc_paths[0]
-  elif isinstance(doc_paths, str) and doc_paths:
-    doc_path = doc_paths
+  for p in top_level_paths:
+    if p and os.path.exists(p):
+      doc_path = p
+      break
+  if doc_path is None and top_level_paths:
+    doc_path = top_level_paths[0]
 
   if not doc_path or not os.path.exists(doc_path):
     await manager.broadcast_thinking(session_id, "Document Agent", False)

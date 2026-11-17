@@ -144,7 +144,7 @@ async def sanction_agent_node(state: dict):
         msg = (f"📜 **Your Sanction Letter is Ready!**\n\n"
                f"I've generated your official agreement (ID: {filename}).\n\n"
                f"**Lender**: {selected_lender_name or 'FinServe NBFC'}\n"
-               f"**Rate**: {rate:.1f}% p.a.\n"
+               f"**Rate**: {rate * 100 if rate < 1 else rate:.1f}% p.a.\n"
                f"**Amount**: ₹{principal:,}\n\n"
                f"**NEXT STEP**: Please click the button below to **E-sign** and authorize the disbursement of ₹{principal:,} to your linked account.")
         options = ["✍️ E-sign & Disburse", "📄 View Letter", "Talk to Arjun"]

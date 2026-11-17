@@ -62,7 +62,7 @@ async def document_query_agent_node(state: dict) -> dict:
             "VALID: <YES or NO based on whether it appears to be a genuine government/official document>"
         )
 
-        response = llm.invoke([
+        response = await llm.ainvoke([
             {
                 "role": "user",
                 "content": [

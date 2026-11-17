@@ -149,7 +149,7 @@ export const api = {
       const res = await fetch(`${API_BASE}/session/${sessionId}/history`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
-      return { success: true, data: json.history || [] };
+      return { success: true, data: { history: json.history || [] } };
     } catch (e: any) {
       return { success: false, error: e.message };
     }

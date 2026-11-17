@@ -108,11 +108,15 @@ async def repayment_agent_node(state: dict) -> dict:
     
     response = await llm_invoke_with_retry(llm, [
         SystemMessage(content=REPAYMENT_PROMPT),
-        HumanMessage(content=f"Help me with my payment. Context: {prompt_context}\n\nIMPORTANT: Your entire response must be valid JSON: {{\"type\": \"text\", \"content\": \"your message here\", \"ui_trigger\": \"payment_modal\"}}\nWhen user wants to pay, set ui_trigger to \"payment_modal\". Otherwise omit ui_trigger.")  # noqa: E501
+        HumanMessage(content=f"Help me with my payment. Context: {prompt_context}\n\nRespond in 1-2 friendly sentences only. No headers, no JSON, no lists.")
     ])
 
+    reply_text = (response.content or "").strip()
+    if not reply_text:
+        reply_text = f"Your next EMI of ₹{emi:,.0f} is due on {next_due}. Use the 'Pay Next EMI' button in your dashboard to make a payment."
+
     return {
-        "messages": [AIMessage(content=response.content)],
+        "messages": [AIMessage(content=reply_text)],
         "current_phase": "payment",
         "intent": "none",
         "payment_handled": True,
