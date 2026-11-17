@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const AGENT_PHASES = [
-  '🤖 Master Agent analyzing...',
-  '📊 Underwriting Agent calculating risk...',
-  '🤝 Sales Agent drafting response...'
+  'Intent Agent classifying...',
+  'Supervisor routing...',
+  'Sales Agent drafting response...',
+  'LangGraph StateGraph reasoning...',
+  'Loading session state...',
 ];
 
 export default function AgentTypingIndicator() {
@@ -18,22 +20,22 @@ export default function AgentTypingIndicator() {
   }, []);
 
   return (
-    <div className="bg-slate-50 border border-slate-200/60 shadow-sm text-slate-500 rounded-[20px] rounded-bl-[4px] p-4 max-w-[75%] flex flex-col space-y-2 relative overflow-hidden">
-      <div className="flex space-x-1.5 items-center mr-1">
-        <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0 }} />
-        <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }} />
-        <motion.div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }} />
+    <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm p-4 max-w-[75%] flex flex-col space-y-2 relative overflow-hidden shadow-sm">
+      <div className="flex space-x-1.5 items-center">
+        <motion.div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0 }} />
+        <motion.div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }} />
+        <motion.div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }} />
       </div>
 
-      <div className="h-5 relative w-full flex items-center min-w-[300px]">
+      <div className="h-5 relative w-full flex items-center min-w-[260px]">
         <AnimatePresence mode="wait">
           <motion.span
             key={phaseIndex}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
-            className="text-sm font-semibold text-slate-600 absolute left-0 whitespace-nowrap"
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+            className="text-xs font-mono text-white/50 uppercase tracking-wide absolute left-0 whitespace-nowrap"
           >
             {AGENT_PHASES[phaseIndex]}
           </motion.span>

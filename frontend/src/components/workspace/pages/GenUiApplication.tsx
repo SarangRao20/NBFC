@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLoanStore } from '../../../store/useLoanStore';
-import { Bot, User, Send, Sparkles, Loader2, Sliders, ArrowRight, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
+import { Bot, User, Send, Sparkles, Sliders, ArrowRight, FileText, Mail, CreditCard, BarChart3 } from 'lucide-react';
 import OnboardingWidget from '../widgets/OnboardingWidget';
 import KycWidget from '../widgets/KycWidget';
 import OffersWidget from '../widgets/OffersWidget';
 import SanctionViewer from '../widgets/SanctionViewer';
 import ShapWidget from '../widgets/ShapWidget';
 import GraphVisualizer from '../widgets/GraphVisualizer';
+import AgentTypingIndicator from '../../AgentTypingIndicator';
 import { api } from '../../../lib/api';
 
 interface ChatItem {
@@ -349,7 +350,10 @@ export default function GenUiApplication() {
         if (chatRes.data.loan_terms?.principal) {
           updateLoanDetails({
             requestedAmount: chatRes.data.loan_terms.principal,
-            tenureMonths: chatRes.data.loan_terms.tenure || loanDetails.tenureMonths
+            tenureMonths: chatRes.data.loan_terms.tenure || loanDetails.tenureMonths,
+            ...(chatRes.data.loan_terms.interest_rate && { interestRate: chatRes.data.loan_terms.interest_rate }),
+            ...(chatRes.data.loan_terms.emi && { monthlyEmi: Math.round(chatRes.data.loan_terms.emi) }),
+            ...(chatRes.data.loan_terms.principal && { sanctionedAmount: chatRes.data.loan_terms.principal }),
           });
         }
 
@@ -404,21 +408,23 @@ export default function GenUiApplication() {
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: `I have processed your message: "${text}". System Intelligence is ready to assist with facility origination, interest rates, or KYC validation.`,
+            content: chatRes.error
+              ? `Sorry, I ran into an issue: ${chatRes.error}. Please try again.`
+              : 'Something went wrong. Please try again.',
             graphTrace: ['StateGraph Node: master_router'],
             timestamp: Date.now()
           }
         ]);
       }
-    } catch (err) {
+    } catch (err: any) {
       setIsTyping(false);
       setChatHistory((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `I have received your request regarding "${text}". System Intelligence is ready to assist.`,
-          graphTrace: ['StateGraph Node: master_router (Fallback)'],
+          content: `Connection error: ${err?.message || 'Unable to reach the server.'}. Please check your connection and try again.`,
+          graphTrace: ['StateGraph Node: master_router (error)'],
           timestamp: Date.now()
         }
       ]);
@@ -442,7 +448,14 @@ export default function GenUiApplication() {
     }
   };
 
-  // ── Inline markdown: bold + bullets only ─────────────────────────────
+  // ── Inline markdown: bold + bullets only — no dangerouslySetInnerHTML ──────
+  const renderBoldSegments = (line: string) => {
+    const parts = line.split(/\*\*(.*?)\*\*/g);
+    return parts.map((part, i) =>
+      i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>
+    );
+  };
+
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n');
     return lines.map((line, i) => {
@@ -451,16 +464,12 @@ export default function GenUiApplication() {
         return (
           <div key={i} className="flex gap-2 items-start my-0.5">
             <span className="mt-[7px] w-1.5 h-1.5 rounded-full bg-emerald-500/60 shrink-0" />
-            <span dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+            <span>{renderBoldSegments(content)}</span>
           </div>
         );
       }
       if (line.trim() === '') return <div key={i} className="h-1.5" />;
-      return (
-        <p key={i} className="leading-relaxed" dangerouslySetInnerHTML={{
-          __html: line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        }} />
-      );
+      return <p key={i} className="leading-relaxed">{renderBoldSegments(line)}</p>;
     });
   };
 
@@ -607,10 +616,7 @@ export default function GenUiApplication() {
                 <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border bg-emerald-500/10 border-emerald-500/30 text-emerald-500">
                   <Bot className="w-4 h-4" />
                 </div>
-                <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl rounded-tl-sm px-5 py-4 text-sm shadow-sm flex items-center gap-3">
-                  <Loader2 className="w-4 h-4 animate-spin text-white/50" />
-                  <span className="text-white/50 tracking-wide font-mono text-xs uppercase">LangGraph Multi-Agent StateGraph Reasoning...</span>
-                </div>
+                <AgentTypingIndicator />
               </div>
             </div>
           )}
@@ -623,12 +629,13 @@ export default function GenUiApplication() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            disabled={isTyping}
             placeholder="Ask System Intelligence (e.g. 'check remaining EMIs to be loan free')..."
-            className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30"
+            className="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-sm text-white focus:outline-none focus:border-white/30 placeholder:text-white/30 disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isTyping}
             className="absolute right-6 top-5 text-white/70 hover:text-white disabled:opacity-30 transition-all"
           >
             <Send className="w-4 h-4" />

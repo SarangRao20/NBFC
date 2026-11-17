@@ -181,6 +181,10 @@ async def supervisor_node(state: MasterState):
     new_entry = f"🔀 {next_agent} — {reasoning}"
     trimmed_log = (existing_log + [new_entry])[-50:]
 
+    # Cap messages at last 40 to prevent unbounded MongoDB growth (keep context window sensible)
+    existing_msgs = list(state.get("messages") or [])
+    trimmed_msgs = existing_msgs[-40:] if len(existing_msgs) > 40 else existing_msgs
+
     return {
         "next_agent": next_agent,
         "routing_reasoning": reasoning,
@@ -188,6 +192,7 @@ async def supervisor_node(state: MasterState):
         "loan_terms": loan_terms,
         "documents": documents,
         "action_log": trimmed_log,
+        "messages": trimmed_msgs,
     }
 
 

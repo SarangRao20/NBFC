@@ -10,7 +10,8 @@ export default function SanctionViewer() {
   const [disbursementData, setDisbursementData] = useState<any>(null);
   const [showPdfCanvasPreview, setShowPdfCanvasPreview] = useState(true);
 
-  const emi = Math.round((loanDetails.requestedAmount * 1.105) / loanDetails.tenureMonths);
+  const rate = loanDetails.interestRate ?? 10.5;
+  const emi = loanDetails.monthlyEmi ?? Math.round((loanDetails.requestedAmount * (1 + (rate / 100) * (loanDetails.tenureMonths / 12))) / loanDetails.tenureMonths);
 
   const handleDownloadPdf = () => {
     if (sessionId) {
@@ -133,7 +134,7 @@ export default function SanctionViewer() {
             </div>
             <div className="grid grid-cols-2 p-3 border-b border-white/5 bg-white/[0.01]">
               <span className="text-white/60">Interest Rate</span>
-              <span className="text-emerald-400 font-bold">10.50% p.a. (Fixed Prime)</span>
+              <span className="text-emerald-400 font-bold">{rate.toFixed(2)}% p.a. (Fixed Prime)</span>
             </div>
             <div className="grid grid-cols-2 p-3 border-b border-white/5">
               <span className="text-white/60">Tenure</span>

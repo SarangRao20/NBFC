@@ -79,6 +79,10 @@ def route_next_agent(state: MasterState):
     if decision == "pending_docs":
         return "document_agent", "Underwriting requires additional documents before credit decision."
 
+    # ─── KYC FAILED (allow re-upload, don't loop back to verification) ────────
+    if kyc == "failed":
+        return "document_agent", "KYC verification failed. Requesting corrected document upload."
+
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
         # 4a. Collect and verify terms (Amount, Tenure, Purpose)
