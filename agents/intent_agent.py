@@ -162,11 +162,23 @@ async def intent_node(state: dict):
         log.append(f"📝 Profile updated with new salary: ₹{extracted_salary:,.0f}")
 
     if intent == "loan":
-        # Reset Logic for Re-application
-        log.append("🔄 Resetting document & KYC state for new loan application.")
+        # Full reset for re-application — clears prior decision, docs, lender, and confirmation
+        log.append("🔄 Resetting loan state for new application.")
         updates.update({
-            "decision": "", "is_signed": False, "sanction_pdf": "",
-            "kyc_status": "pending", "fraud_score": -1, "documents_uploaded": False
+            "decision": "",
+            "is_signed": False,
+            "sanction_pdf": "",
+            "kyc_status": "pending",
+            "fraud_score": -1,
+            "documents_uploaded": False,
+            "loan_confirmed": False,
+            "selected_lender_id": None,
+            "selected_lender_name": None,
+            "selected_interest_rate": None,
+            "negotiation_round": 0,
+            "esign_completed": False,
+            "disbursement_step": "",
+            "disbursement_status": "",
         })
         
         if extracted_amount > 0:

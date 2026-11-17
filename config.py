@@ -11,8 +11,14 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Feature flags
-# Disable usage of DTI score in decisioning when False
 USE_DTI_SCORE = True
+
+# ── LangSmith Observability (optional — set LANGCHAIN_API_KEY to enable) ──────
+_langsmith_key = os.getenv("LANGCHAIN_API_KEY")
+if _langsmith_key:
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGCHAIN_PROJECT", "finserve-nbfc"))
+    print("🔍 LangSmith tracing enabled")
 
 
 async def llm_invoke_with_retry(llm, messages, max_retries=3, base_delay=1.5):

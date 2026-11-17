@@ -70,6 +70,7 @@ class SessionStateResponse(BaseModel):
     action_log: Optional[list[str]] = []
     options: Optional[list[str]] = []
     phase_history: Optional[list[dict]] = []
+    trace_events: Optional[list[dict]] = []  # per-node timing spans
 
 
 

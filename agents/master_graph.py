@@ -41,29 +41,44 @@ from api.core.websockets import manager
 from langchain_core.messages import HumanMessage, AIMessage
 
 
-# ─── Node Wrapper (Auto-track previous_agent) ────────────────────────────────
+# ─── Node Wrapper (Timing + Observability) ────────────────────────────────────
 def node_wrapper(node_func, node_name):
-    """Wraps a node function to automatically update 'previous_agent' in state."""
+    """Wraps a node function to track timing, previous_agent, and emit trace spans."""
     async def wrapper(state: MasterState):
-        print(f"🚀 [NODE] Starting: {node_name}")
-        
-        # Call original node
-        # Check if it's async or sync
         import inspect
-        if inspect.iscoroutinefunction(node_func):
-            result = await node_func(state)
-        else:
-            result = node_func(state)
-            
-        # Ensure result is a dict and set previous_agent
-        if result is None:
-            result = {}
-        
-        # Result might be a dict to update state
-        if isinstance(result, dict):
-            # Special case for Load Session which returns current_phase
-            result["previous_agent"] = node_name
-            
+        from agents.tracer import Span, append_span
+
+        span = Span(
+            node=node_name,
+            phase=state.get("current_phase", "unknown"),
+            intent=state.get("intent"),
+            decision=state.get("decision") or None,
+        )
+        print(f"🚀 [NODE:{node_name}] phase={span.phase} intent={span.intent}")
+
+        try:
+            if inspect.iscoroutinefunction(node_func):
+                result = await node_func(state)
+            else:
+                result = node_func(state)
+
+            if result is None:
+                result = {}
+
+            if isinstance(result, dict):
+                result["previous_agent"] = node_name
+                span.end(
+                    success=True,
+                    decision=result.get("decision") or state.get("decision") or None,
+                )
+                result["trace_events"] = append_span(state.get("trace_events", []), span)
+                print(f"   ✅ [{node_name}] done in {span.duration_ms}ms")
+
+        except Exception as exc:
+            span.end(success=False, error=str(exc))
+            print(f"   ❌ [{node_name}] failed in {span.duration_ms}ms: {exc}")
+            raise
+
         return result
     return wrapper
 
@@ -197,63 +212,31 @@ async def supervisor_node(state: MasterState):
 
 
 # ─── Supervisor Router (Agent Name → Graph Node) ────────────────────────────
-def supervisor_router(state: MasterState):
-    """Map agent name to graph node with loop prevention and parallel execution."""
+def supervisor_router(state: MasterState) -> str:
+    """Map next_agent → graph node with loop-prevention. No fan-out; sequential only."""
     next_agent = state.get("next_agent", "sales_agent")
-    
-    # ── Parallel execution for verification ──────────────────────────────────
-    documents_verified = state.get("documents_uploaded", False)
-    kyc_done = state.get("kyc_status") == "verified"
-    fraud_checked = state.get("fraud_score", -1) != -1
-    
-    # If documents are uploaded but verification is pending, run both
-    if documents_verified and (not kyc_done or not fraud_checked):
-        # Only do this if we aren't ALREADY running them to avoid loops
-        prev = state.get("previous_agent")
-        if prev not in ["verification_agent", "fraud_agent", "join_verification"]:
-            targets = []
-            if not kyc_done:
-                targets.append("verification_agent")
-            if not fraud_checked:
-                targets.append("fraud_agent")
-            if targets:
-                print(f"🏎️ [ROUTER] Running Parallel: {targets}")
-                return targets
 
-    # ── Standard Agent Mapping ──────────────────────────────────────────────
-    mapping = {
-        "intent_agent": "intent_agent",
-        "sales_agent": "sales_agent",
-        "document_agent": "document_agent",
-        "verification_agent": "verification_agent",
-        "fraud_agent": "fraud_agent",
-        "underwriting_agent": "underwriting_agent",
-        "sanction_agent": "sanction_agent",
-        "bank_verification_agent": "bank_verification_agent",
-        "document_query_agent": "document_query_agent",
-        "emi_engine": "emi_engine",
-        "repayment_agent": "repayment_agent",
+    valid_nodes = {
+        "intent_agent", "sales_agent", "document_agent",
+        "verification_agent", "fraud_agent", "underwriting_agent",
+        "sanction_agent", "bank_verification_agent",
+        "document_query_agent", "emi_engine", "repayment_agent",
     }
-    
-    target = mapping.get(next_agent, "sales_agent")
-    
-    # ── Loop Prevention ──────────────────────────────────────────────────────
-    # If any agent already ran and produced a message, STOP.
-    # We check if the last message is an AIMessage and if we have a previous_agent.
-    # This prevents Supervisor -> Agent A -> Supervisor -> Agent B chains in one turn.
+    target = next_agent if next_agent in valid_nodes else "sales_agent"
+
+    # Loop prevention: if the last message is already an AI reply, stop.
     msgs = state.get("messages", [])
     previous = state.get("previous_agent")
-    
+
     if msgs and isinstance(msgs[-1], AIMessage) and previous:
-        print(f"🛑 [ROUTER] Agent {previous} already spoke. Waiting for user...")
-        return END
+        print(f"🛑 [ROUTER] {previous} already responded. Waiting for user.")
+        return "__end__"
 
     if target == previous:
-        # Fallback safety if the above didn't catch it
-        print(f"🛑 [ROUTER] Agent {target} already ran. Waiting for user...")
-        return END
-            
-    print(f"🔀 [ROUTER] Routing to: {target}")
+        print(f"🛑 [ROUTER] {target} already ran. Waiting for user.")
+        return "__end__"
+
+    print(f"🔀 [ROUTER] → {target}")
     return target
 
 
@@ -289,41 +272,50 @@ def compile_master_graph():
     workflow.add_node("emi_engine",             node_wrapper(emi_engine_node, "emi_engine"))
     workflow.add_node("repayment_agent",        node_wrapper(repayment_agent_node, "repayment_agent"))
 
-    # ── Entry: Load session first, then engine, then supervisor ──────────────
+    # ── Entry: Load session, then conditionally EMI engine, then supervisor ───
     workflow.add_edge(START, "load_session")
-    workflow.add_edge("load_session", "emi_engine")
+    workflow.add_conditional_edges(
+        "load_session",
+        lambda s: "emi_engine" if (
+            s.get("loan_terms", {}).get("principal", 0) > 0 and
+            s.get("loan_terms", {}).get("next_emi_date")
+        ) else "supervisor",
+        {"emi_engine": "emi_engine", "supervisor": "supervisor"}
+    )
     workflow.add_edge("emi_engine", "supervisor")
 
     # ── Dynamic routing from supervisor ──────────────────────────────────────
     workflow.add_conditional_edges(
-        "supervisor", 
+        "supervisor",
         supervisor_router,
         {
-            "intent_agent": "intent_agent",
-            "sales_agent": "sales_agent",
-            "document_agent": "document_agent",
-            "verification_agent": "verification_agent",
-            "fraud_agent": "fraud_agent",
-            "underwriting_agent": "underwriting_agent",
-            "sanction_agent": "sanction_agent",
-            "document_query_agent": "document_query_agent",
-            "emi_engine": "emi_engine",
-            "repayment_agent": "repayment_agent",
-            "__end__": END
+            "intent_agent":             "intent_agent",
+            "sales_agent":              "sales_agent",
+            "document_agent":           "document_agent",
+            "verification_agent":       "verification_agent",
+            "fraud_agent":              "fraud_agent",
+            "underwriting_agent":       "underwriting_agent",
+            "sanction_agent":           "sanction_agent",
+            "bank_verification_agent":  "bank_verification_agent",
+            "document_query_agent":     "document_query_agent",
+            "emi_engine":               "emi_engine",
+            "repayment_agent":          "repayment_agent",
+            "__end__":                  END
         }
     )
 
     # ── ALL nodes - Chain back to supervisor to continue processing ──────────
     # (Router handles END logic based on state change/human messages)
-    workflow.add_edge("intent_agent",           "supervisor")
-    workflow.add_edge("sales_agent",            "supervisor")
-    workflow.add_edge("document_agent",         "supervisor")
-    workflow.add_edge("document_query_agent",   "supervisor")
-    workflow.add_edge("repayment_agent",        "supervisor")
-    workflow.add_edge("underwriting_agent",     "supervisor")
-    workflow.add_edge("sanction_agent",         "supervisor")
-    
-    # Parallel verification join still goes back to supervisor
+    workflow.add_edge("intent_agent",             "supervisor")
+    workflow.add_edge("sales_agent",              "supervisor")
+    workflow.add_edge("document_agent",           "supervisor")
+    workflow.add_edge("document_query_agent",     "supervisor")
+    workflow.add_edge("repayment_agent",          "supervisor")
+    workflow.add_edge("underwriting_agent",       "supervisor")
+    workflow.add_edge("sanction_agent",           "supervisor")
+    workflow.add_edge("bank_verification_agent",  "supervisor")
+
+    # Verification nodes merge at join before continuing
     workflow.add_edge("verification_agent", "join_verification")
     workflow.add_edge("fraud_agent",        "join_verification")
     workflow.add_edge("join_verification",  "supervisor")

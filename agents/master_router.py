@@ -58,10 +58,14 @@ def route_next_agent(state: MasterState):
             if "Intent Agent" not in recent_logs and "✅ Intent" not in recent_logs and intent == "none":
                 return "intent_agent", "New human message detected. Re-evaluating vague/unclear intent."
 
-    # ─── PHASE 3: ADVICE ONLY (Now handled by Sales Agent in advisor mode) ────
+    # ─── PHASE 3: ADVICE ONLY (Handled by Sales Agent in advisor mode) ─────────
     if intent == "advice":
         return "sales_agent", "Routing to Sales Agent for financial advisory mode."
-        
+
+    # ─── E-SIGN (Sales Agent advisor mode handles the e-sign flow) ────────────
+    if intent == "sign":
+        return "sales_agent", "E-sign intent detected — Sales Agent (advisor mode) handles signing."
+
     if intent == "kyc" and not state.get("documents_uploaded"):
         return "document_query_agent", "User asking about documents/KYC rules."
 
@@ -70,6 +74,10 @@ def route_next_agent(state: MasterState):
 
     if intent == "document_request":
         return "sanction_agent", "User requesting official loan documentation (Sanction/Rejection)."
+
+    # ─── PENDING DOCS (Underwriting requested more documents) ─────────────────
+    if decision == "pending_docs":
+        return "document_agent", "Underwriting requires additional documents before credit decision."
 
     # ─── PHASE 4: SALES DISCOVERY (Arjun - Collecting Terms) ─────────────────
     if intent == "loan":
@@ -112,19 +120,15 @@ def route_next_agent(state: MasterState):
         return "__end__", "Waiting for user clarification (general greeting)."
 
     if decision in ("approve", "hard_reject"):
-        # If hard reject, we stay in sales (Arjun) for final communication
-        if decision == "hard_reject" and current_phase != "sanction_esign" and not state.get("sanction_pdf"):
-            # Only go to sanction if the user has accepted the negotiation (this would be set by Arjun)
-            if not state.get("negotiation_signed_off"):
-                return "sales_agent", "Loan soft-rejected. Arjun is handling the persuasion/negotiation loop."
-        
+        # Both approve and hard_reject need a sanction/rejection letter first
         if not state.get("sanction_pdf"):
-            return "sanction_agent", "Generating finalized loan agreement and sanction documentation."
-            
+            return "sanction_agent", "Generating finalized loan agreement / rejection letter."
+
+        # Approved + letter generated → bank verification for eNACH setup
         if decision == "approve" and state.get("enach_status") != "active":
-            return "bank_verification_agent", "Executing Bank Account verification and eNACH mandate setup."
-            
-        return "sales_agent", "Documentation complete. Providing post-sanction orientation via advisor mode."
+            return "bank_verification_agent", "Executing bank account verification and eNACH mandate setup."
+
+        return "sales_agent", "Documentation complete. Post-sanction advisor mode."
 
     # GLOBAL FALLBACK
     if intent == "loan" or current_phase in ("sales", "document", "verification", "underwriting"):

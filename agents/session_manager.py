@@ -61,7 +61,8 @@ class SessionManager:
                 "is_signed": state.get("is_signed", False),
                 "loan_confirmed": state.get("loan_confirmed", False),
                 "esign_completed": state.get("esign_completed", False),
-                "documents_uploaded": state.get("documents_uploaded", False)
+                "documents_uploaded": state.get("documents_uploaded", False),
+                "trace_events": state.get("trace_events", [])
             }
             
             # Upsert (save or update)
@@ -164,6 +165,8 @@ class SessionManager:
                 session_doc["documents_uploaded"] = False
             if "esign_completed" not in session_doc:
                 session_doc["esign_completed"] = False
+            if "trace_events" not in session_doc:
+                session_doc["trace_events"] = []
             
             return session_doc
         except Exception as e:

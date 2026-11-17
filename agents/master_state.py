@@ -130,3 +130,6 @@ class MasterState(TypedDict):
     eligible_offers: List[Dict] # ✅ NEW: NBFC offers for selection
     sales_output: Dict # ✅ NEW: Structured sales data for UI
 
+    # ─── Observability ─────────────────────────────────────────────────────────
+    trace_events: List[Dict]  # [{node, phase, duration_ms, intent, decision, success, ...}]
+
