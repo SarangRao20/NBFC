@@ -181,22 +181,39 @@ async def login_otp():
     raise HTTPException(status_code=status.HTTP_410_GONE, detail="OTP login removed. Use password login or Google OAuth.")
 
 
+async def _resolve_caller_phone(session_id: Optional[str]) -> Optional[str]:
+    """Return the phone number that owns this session, or None if session is invalid."""
+    if not session_id:
+        return None
+    result = await auth_service.verify_session(session_id)
+    if not result.get("success"):
+        return None
+    return result.get("customer_data", {}).get("phone")
+
+
+def _normalize_phone_for_compare(p: str) -> str:
+    return (p or "").strip().lstrip("+").lstrip("91").lstrip("0")
+
+
 @router.get("/check-profile/{phone}", response_model=ProfileCheckResponse,
             summary="Check Profile Completeness")
-async def check_profile(phone: str):
-    """Check if customer profile is complete."""
+async def check_profile(phone: str, session_id: Optional[str] = None):
+    """Check if customer profile is complete. Requires a valid session_id that owns this phone."""
+    caller_phone = await _resolve_caller_phone(session_id)
+    if caller_phone is None or _normalize_phone_for_compare(caller_phone) != _normalize_phone_for_compare(phone):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this profile")
     try:
         result = await auth_service.check_profile_completeness(phone)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Profile check failed: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Profile check failed: {str(e)}")
 
 
 @router.post("/update-profile", summary="Update Missing Profile Fields")
 async def update_profile(
+    session_id: str,
     phone: str,
     name: Optional[str] = None,
     email: Optional[str] = None,
@@ -205,38 +222,27 @@ async def update_profile(
     credit_score: Optional[int] = None,
     existing_emi_total: Optional[float] = None
 ):
-    """Update missing profile fields."""
+    """Update missing profile fields. session_id must own the phone being updated."""
+    caller_phone = await _resolve_caller_phone(session_id)
+    if caller_phone is None or _normalize_phone_for_compare(caller_phone) != _normalize_phone_for_compare(phone):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this profile")
     try:
-        updates = {}
-        if name is not None:
-            updates["name"] = name
-        if email is not None:
-            updates["email"] = email
-        if city is not None:
-            updates["city"] = city
-        if salary is not None:
-            updates["salary"] = salary
-        if credit_score is not None:
-            updates["credit_score"] = credit_score
-        if existing_emi_total is not None:
-            updates["existing_emi_total"] = existing_emi_total
-        
+        updates = {k: v for k, v in {
+            "name": name, "email": email, "city": city,
+            "salary": salary, "credit_score": credit_score,
+            "existing_emi_total": existing_emi_total,
+        }.items() if v is not None}
+
         if not updates:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No fields to update"
-            )
-        
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+
         result = await auth_service.update_customer_profile(phone, updates)
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Profile update failed: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Profile update failed: {str(e)}")
 
 
 @router.get("/dev-status", summary="Get Development Mode Status")

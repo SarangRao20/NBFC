@@ -10,7 +10,7 @@ interface ProfileCompletionModalProps {
 }
 
 export default function ProfileCompletionModal({ isOpen, phoneInitial = '', onCompleted }: ProfileCompletionModalProps) {
-  const { user, setUser } = useLoanStore();
+  const { user, setUser, sessionId } = useLoanStore();
   const [phone, setPhone] = useState(phoneInitial || user?.phone || '');
   const [salary, setSalary] = useState(user?.salary ? String(user.salary) : '');
   const [city, setCity] = useState(user?.city || '');
@@ -23,9 +23,10 @@ export default function ProfileCompletionModal({ isOpen, phoneInitial = '', onCo
     setLoading(true);
 
     const targetIdentifier = phone || user?.phone || user?.email || '';
-    if (targetIdentifier) {
+    if (targetIdentifier && sessionId) {
       await api.updateProfile({
         phone: targetIdentifier,
+        session_id: sessionId,
         name: user?.name,
         email: user?.email,
         picture: user?.picture,

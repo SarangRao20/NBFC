@@ -80,9 +80,9 @@ export const api = {
     }
   },
 
-  async checkProfileCompleteness(phone: string): Promise<ApiResponse> {
+  async checkProfileCompleteness(phone: string, sessionId: string): Promise<ApiResponse> {
     try {
-      const res = await fetch(`${API_BASE}/auth/check-profile/${phone}`);
+      const res = await fetch(`${API_BASE}/auth/check-profile/${phone}?session_id=${encodeURIComponent(sessionId)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Profile check failed');
       return { success: true, data };
@@ -93,6 +93,7 @@ export const api = {
 
   async updateProfile(params: {
     phone: string;
+    session_id: string;
     name?: string;
     email?: string;
     city?: string;

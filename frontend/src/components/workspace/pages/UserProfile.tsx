@@ -4,7 +4,7 @@ import { User, Phone, Mail, MapPin, Briefcase, TrendingUp, ShieldCheck, CheckCir
 import { api } from '../../../lib/api';
 
 export default function UserProfile() {
-  const { user, setUser } = useLoanStore();
+  const { user, setUser, sessionId } = useLoanStore();
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -23,9 +23,10 @@ export default function UserProfile() {
     setIsSaving(true);
     try {
       const targetIdentifier = phone || user?.phone || email || user?.email || '';
-      if (targetIdentifier) {
+      if (targetIdentifier && sessionId) {
         await api.updateProfile({
           phone: targetIdentifier,
+          session_id: sessionId,
           name,
           email,
           city,

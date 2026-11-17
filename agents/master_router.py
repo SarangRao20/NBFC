@@ -112,8 +112,12 @@ def route_next_agent(state: MasterState):
         if not decision:
             if kyc == "verified":
                 return "underwriting_agent", "KYC verified. Reviewing for credit decision."
+            elif state.get("documents_uploaded"):
+                # Docs uploaded but KYC not yet run → verification is safe to run
+                return "verification_agent", "Documents uploaded. Running KYC verification."
             else:
-                return "verification_agent", "Awaiting KYC completion before underwriting."
+                # No docs, no decision — stay in sales to collect documents
+                return "sales_agent", "Awaiting document upload before KYC verification can run."
 
     # ─── PHASE 8: SANCTION & ADVICE (Priya - Now via Sales Agent advisor mode) ──
     if intent == "unclear" or intent == "unclear_greeting" or intent == "none":

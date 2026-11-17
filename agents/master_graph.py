@@ -156,58 +156,38 @@ async def supervisor_node(state: MasterState):
     print(f"\n🔀 [SUPERVISOR] Starting for session {session_id}")
     print(f"   Current state keys: {list(state.keys())[:10]}...")
     
-    # SAFETY: Ensure state has all required fields (defensive against incomplete state)
-    try:
-        if not isinstance(state.get("customer_data"), dict):
-            print(f"   ⚠️ customer_data is not dict, resetting")
-            state["customer_data"] = {}
-        
-        required_customer_fields = ["name", "email", "phone", "city", "salary", "dob", "credit_score", "existing_emi_total", "pre_approved_limit"]
-        for field in required_customer_fields:
-            if field not in state["customer_data"]:
-                print(f"   ➕ Adding missing customer_data.{field}")
-                if field == "salary" or field == "credit_score" or field == "existing_emi_total":
-                    state["customer_data"][field] = 0
-                elif field == "pre_approved_limit":
-                    state["customer_data"][field] = 100000
-                else:
-                    state["customer_data"][field] = ""
-        
-        if not isinstance(state.get("loan_terms"), dict):
-            state["loan_terms"] = {}
-        for field in ["principal", "tenure"]:
-            if field not in state["loan_terms"]:
-                state["loan_terms"][field] = 0
-        
-        if not isinstance(state.get("documents"), dict):
-            state["documents"] = {}
-        if "verified" not in state["documents"]:
-            state["documents"]["verified"] = False
-        
-        print(f"   ✅ State safety check passed")
-    except Exception as safety_err:
-        print(f"   ❌ Safety initialization failed: {safety_err}")
-        import traceback
-        traceback.print_exc()
-        raise
+    # Build safe defaults as a NEW dict — never mutate state directly in a node
+    _cust = state.get("customer_data") if isinstance(state.get("customer_data"), dict) else {}
+    customer_data = {
+        "name": "", "email": "", "phone": "", "city": "",
+        "salary": 0, "dob": "", "credit_score": 0,
+        "existing_emi_total": 0, "pre_approved_limit": 100000,
+        **_cust,
+    }
+    _terms = state.get("loan_terms") if isinstance(state.get("loan_terms"), dict) else {}
+    loan_terms = {"principal": 0, "tenure": 0, **_terms}
+    _docs = state.get("documents") if isinstance(state.get("documents"), dict) else {}
+    documents = {"verified": False, **_docs}
     
-    # Broadcast thinking indicator
+    # Build a patched view of state for the router without mutating the real state
+    patched_state = {**state, "customer_data": customer_data, "loan_terms": loan_terms, "documents": documents}
+
     await manager.broadcast_thinking(session_id, "Router", True)
-    
-    print("🔀 [DETERMINISTIC ROUTER] Analyzing state...")
-    
-    # Get next agent via rule-based router
-    next_agent, reasoning = route_next_agent(state)
-    
-    print(f"  → Next Agent: {next_agent}")
-    print(f"  → Reason: {reasoning}")
-    
+    next_agent, reasoning = route_next_agent(patched_state)
     await manager.broadcast_thinking(session_id, "Router", False)
-    
+
+    # Cap action_log at 50 entries to prevent unbounded MongoDB growth
+    existing_log = list(state.get("action_log") or [])
+    new_entry = f"🔀 {next_agent} — {reasoning}"
+    trimmed_log = (existing_log + [new_entry])[-50:]
+
     return {
         "next_agent": next_agent,
         "routing_reasoning": reasoning,
-        "action_log": [f"🔀 Router Decision: {next_agent} — {reasoning}"],
+        "customer_data": customer_data,
+        "loan_terms": loan_terms,
+        "documents": documents,
+        "action_log": trimmed_log,
     }
 
 
