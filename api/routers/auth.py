@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from api.schemas.auth import LoginResponse, ProfileCheckResponse
 from api.services.auth_service import auth_service
 from api.config import get_settings
+from api.core.auth_deps import check_rate_limit
 
 settings = get_settings()
 
@@ -34,10 +35,12 @@ async def verify_otp():
 @router.post("/login", response_model=LoginResponse,
              summary="Login with email or phone and password")
 async def login(
+    request: Request,
     phone: str = Form(..., description="Email or Phone number"),
     password: str = Form(...)
 ):
     """Login with email/phone and password using MongoDB database."""
+    check_rate_limit(request.client.host if request.client else "unknown", limit=10, window_secs=60)
     try:
         result = await auth_service.login_with_password(phone, password)
         
@@ -68,6 +71,7 @@ async def login(
 @router.post("/register", response_model=dict,
              summary="Register new customer")
 async def register(
+    request: Request,
     phone: str = Form(...),
     email: str = Form(...),
     name: str = Form(...),
@@ -79,6 +83,7 @@ async def register(
     address: Optional[str] = Form(None)
 ):
     """Register new customer with OTP verification."""
+    check_rate_limit(request.client.host if request.client else "unknown", limit=5, window_secs=300)
     try:
         user_data = {
             "phone": phone,
@@ -239,7 +244,6 @@ async def get_dev_status():
     """Get current development mode settings."""
     return {
         "otp_disabled": settings.DISABLE_OTP,
-        "dev_otp": settings.DEV_OTP if settings.DISABLE_OTP else None,
         "debug_mode": settings.DEBUG,
         "message": "Development features are enabled" if settings.DISABLE_OTP else "Production mode"
     }
@@ -359,7 +363,15 @@ async def google_callback(
             
             if userinfo_response.status_code != 200:
                 return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=failed_userinfo")
-                
+
+            userinfo = userinfo_response.json()
+            email = userinfo.get("email", "")
+            name = userinfo.get("name", "")
+            picture = userinfo.get("picture", "")
+
+            if not email:
+                return RedirectResponse(url=f"{settings.FRONTEND_URL}/?error=missing_email")
+
             from urllib.parse import quote
             from db.database import users_collection
             from datetime import datetime

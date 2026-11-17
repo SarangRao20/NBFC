@@ -95,12 +95,40 @@ export default function DashboardLayout() {
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-6 lg:px-10 py-8 relative">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 lg:px-10 py-6 pb-24 md:pb-8 relative">
           <div className="animate-fade-in slide-in-from-bottom-2">
              {renderContent()}
           </div>
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#0A0A0A]/95 backdrop-blur-xl flex items-center justify-around px-2 h-16 safe-area-pb">
+        {navigation.map((item) => {
+          const isActive = currentView === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setView(item.id as any)}
+              className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                isActive ? 'text-white' : 'text-white/40'
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${isActive ? 'text-emerald-400' : ''}`} />
+              <span className="text-[9px] uppercase tracking-widest font-semibold">{item.name.split(' ')[0]}</span>
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setView('PROFILE')}
+          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${currentView === 'PROFILE' ? 'text-white' : 'text-white/40'}`}
+        >
+          <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[9px] font-bold">
+            {user?.name?.charAt(0) || 'U'}
+          </div>
+          <span className="text-[9px] uppercase tracking-widest font-semibold">Profile</span>
+        </button>
+      </nav>
 
       {/* Global Agent Overlay (Tool Calling UI) */}
       <AgentOverlay logs={agentLogs} isActive={isAgentActive} />

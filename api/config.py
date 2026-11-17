@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
     BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+    # Admin security
+    ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "")
+
     # Underwriting thresholds
     MIN_CREDIT_SCORE: int = int(os.getenv("MIN_CREDIT_SCORE", "700"))
     MAX_DTI_RATIO: float = float(os.getenv("MAX_DTI_RATIO", "0.50"))  # 50% maximum DTI

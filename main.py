@@ -2,7 +2,7 @@
 
 import traceback
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
@@ -16,6 +16,7 @@ from api.routers import (
     underwriting, sanction, advisory, payment, admin
 )
 from api.routers.auth import router as auth_router
+from api.core.auth_deps import require_admin
 
 settings = get_settings()
 
@@ -64,7 +65,6 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal Server Error. Check terminal logs."},
-        headers={"Access-Control-Allow-Origin": "*"}
     )
 
 # Enable CORS for frontend integration
@@ -113,7 +113,6 @@ async def response_validation_exception_handler(request: Request, exc: ResponseV
     return JSONResponse(
         status_code=500,
         content={"detail": f"Response validation error: {str(exc)}"},
-        headers={"Access-Control-Allow-Origin": "*"} # Ensure browser sees the 500
     )
 
 @asynccontextmanager
@@ -153,7 +152,7 @@ async def startup_db():
 
 # ── 1. Users CRUD (MongoDB Atlas) ──────────────────────────────────────────
 
-@app.post("/users", tags=["Users"])
+@app.post("/users", tags=["Users"], dependencies=[Depends(require_admin)])
 async def create_user(user: User):
     try:
         user_dict = user.dict()
@@ -162,7 +161,7 @@ async def create_user(user: User):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-@app.get("/users", tags=["Users"])
+@app.get("/users", tags=["Users"], dependencies=[Depends(require_admin)])
 async def get_users():
     users = []
     cursor = users_collection.find()
@@ -171,7 +170,7 @@ async def get_users():
         users.append(user)
     return users
 
-@app.get("/users/{user_id}", tags=["Users"])
+@app.get("/users/{user_id}", tags=["Users"], dependencies=[Depends(require_admin)])
 async def get_user(user_id: str):
     user = await users_collection.find_one({"_id": ObjectId(user_id)})
     if not user:
@@ -179,7 +178,7 @@ async def get_user(user_id: str):
     user["_id"] = str(user["_id"])
     return user
 
-@app.put("/users/{user_id}", tags=["Users"])
+@app.put("/users/{user_id}", tags=["Users"], dependencies=[Depends(require_admin)])
 async def update_user(user_id: str, user: User):
     result = await users_collection.update_one(
         {"_id": ObjectId(user_id)}, {"$set": user.dict()}
@@ -188,7 +187,7 @@ async def update_user(user_id: str, user: User):
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Updated", "modified": result.modified_count}
 
-@app.delete("/users/{user_id}", tags=["Users"])
+@app.delete("/users/{user_id}", tags=["Users"], dependencies=[Depends(require_admin)])
 async def delete_user(user_id: str):
     result = await users_collection.delete_one({"_id": ObjectId(user_id)})
     if result.deleted_count == 0:

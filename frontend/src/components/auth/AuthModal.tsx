@@ -49,13 +49,13 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         setSessionId(res.data.session_id);
       }
       setUser({
-        name: cust.name || 'Sarang Rao',
-        email: cust.email || 'sarang@nbfc-finserve.com',
+        name: cust.name || loginPhone,
+        email: cust.email || '',
         picture: cust.picture || '',
         phone: cust.phone || loginPhone,
-        salary: cust.salary || 150000,
-        city: cust.city || 'Mumbai',
-        creditScore: cust.credit_score || 800,
+        salary: cust.salary || 0,
+        city: cust.city || '',
+        creditScore: cust.credit_score || 0,
       });
       const targetView = localStorage.getItem('postAuthView');
       if (targetView) {
@@ -97,7 +97,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         phone: cust.phone || regPhone,
         salary: cust.salary || Number(regSalary),
         city: cust.city || regCity,
-        creditScore: cust.credit_score || 785,
+        creditScore: cust.credit_score || 0,
       });
       const targetView = localStorage.getItem('postAuthView');
       if (targetView) {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint, BookOpen } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint, BookOpen, Menu, X as CloseIcon } from 'lucide-react';
 import AuthModal from './auth/AuthModal';
 import { useLoanStore } from '../store/useLoanStore';
 
@@ -27,6 +27,7 @@ const Button = ({ children, className = "", variant = "default", size = "default
 
 const LandingPage = () => {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { setView, setSessionId } = useLoanStore();
 
   const handleOpenAuth = () => {
@@ -48,7 +49,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay" />
       </div>
 
-      {/* Ultra Minimal Navbar */}
+      {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.05] bg-[#0A0A0A]/80 backdrop-blur-xl">
         <div className="container mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -63,12 +64,34 @@ const LandingPage = () => {
             <a href="#leadership" className="text-sm text-white/60 hover:text-white transition-colors tracking-wide">Company</a>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={handleOpenAuth}>Sign In</Button>
+            <Button variant="ghost" onClick={handleOpenAuth} className="hidden sm:inline-flex">Sign In</Button>
             <Button onClick={handleOpenAuth} className="hidden sm:inline-flex">
               Get Started <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden p-2 text-white/60 hover:text-white transition-colors"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {isMobileMenuOpen ? <CloseIcon className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
+        {/* Mobile menu dropdown */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden border-t border-white/[0.05] bg-[#0A0A0A]/95 backdrop-blur-xl px-6 py-4 flex flex-col gap-4">
+            <a href="#platform" onClick={() => setIsMobileMenuOpen(false)} className="text-sm text-white/60 hover:text-white transition-colors py-2">Platform</a>
+            <a href="#security" onClick={() => setIsMobileMenuOpen(false)} className="text-sm text-white/60 hover:text-white transition-colors py-2">Security</a>
+            <a href="#leadership" onClick={() => setIsMobileMenuOpen(false)} className="text-sm text-white/60 hover:text-white transition-colors py-2">Company</a>
+            <div className="border-t border-white/[0.05] pt-4 flex flex-col gap-3">
+              <Button variant="outline" onClick={() => { handleOpenAuth(); setIsMobileMenuOpen(false); }} className="w-full justify-center">Sign In</Button>
+              <Button onClick={() => { handleOpenAuth(); setIsMobileMenuOpen(false); }} className="w-full justify-center">
+                Get Started <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        )}
       </nav>
 
       <main className="relative z-10 pt-20">
@@ -207,9 +230,9 @@ const LandingPage = () => {
         <div className="container mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <p>© {new Date().getFullYear()} FinServe Technologies Inc.</p>
           <div className="flex gap-6">
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
-            <a href="#" className="hover:text-white transition-colors">System Status</a>
+            <a href="/docs" className="hover:text-white transition-colors">Documentation</a>
+            <a href="mailto:sarang@finserve-nbfc.com" className="hover:text-white transition-colors">Contact</a>
+            <a href="https://github.com/sarangrao/NBFC" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a>
           </div>
         </div>
       </footer>

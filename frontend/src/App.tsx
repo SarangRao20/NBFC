@@ -3,6 +3,7 @@ import LandingPage from './components/LandingPage';
 import DashboardLayout from './components/workspace/layout/DashboardLayout';
 import ProfileCompletionModal from './components/auth/ProfileCompletionModal';
 import Docs from './pages/Docs';
+import NotFound from './pages/NotFound';
 import { useLoanStore } from './store/useLoanStore';
 import { ShieldCheck } from 'lucide-react';
 import { api } from './lib/api';
@@ -64,6 +65,12 @@ function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [setUser, setSessionId]);
+
+  // 404: unknown paths
+  const knownPaths = ['/', '/docs'];
+  if (!knownPaths.includes(window.location.pathname)) {
+    return <NotFound />;
+  }
 
   // Public routes accessible without authentication
   const isDocsPath = window.location.pathname === '/docs';

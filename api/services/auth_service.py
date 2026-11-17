@@ -7,6 +7,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
+from api.core.auth_deps import hash_password, verify_password
 from api.core.redis_cache import get_cache, RedisCache
 from api.core.email_service import get_email_service, EmailService
 from api.core.state_manager import get_session, update_session
@@ -491,9 +492,8 @@ class AuthService:
                     "message": "User not found"
                 }
             
-            # Check password (assuming plain text for now - should be hashed in production)
             stored_password = user.get("password", "")
-            if stored_password != password:
+            if not verify_password(password, stored_password):
                 return {
                     "success": False,
                     "message": "Invalid password"
@@ -554,6 +554,10 @@ class AuthService:
                 user_data.get("salary")
             )
             
+        # Hash password before persisting
+        if "password" in user_data and user_data["password"]:
+            user_data = {**user_data, "password": hash_password(user_data["password"])}
+
         # Add to mock database
         new_user = {
             "id": f"CUST{len(customers) + 1:03d}",

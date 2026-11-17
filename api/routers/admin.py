@@ -2,9 +2,10 @@
 Admin API Router - REST endpoints for admin operations
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from api.services.admin_service import admin_service
+from api.core.auth_deps import require_admin
 from api.schemas.admin import (
     AdminStatsOverviewResponse,
     LendersListResponse,
@@ -17,7 +18,7 @@ from api.schemas.admin import (
     AdminHealthResponse,
 )
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
 # ============================================================================
