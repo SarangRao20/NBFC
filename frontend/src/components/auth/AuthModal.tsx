@@ -45,17 +45,26 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     if (res.success && res.data) {
       const cust = res.data.customer_data || {};
-      if (res.data.session_id) {
+      const phone = cust.phone || loginPhone;
+
+      // Restore most-recent active session instead of always starting fresh
+      const sessRes = await api.getSessionsByPhone(phone);
+      if (sessRes.success && sessRes.data?.sessions?.length > 0) {
+        const latest = sessRes.data.sessions[0];
+        if (latest.session_id) setSessionId(latest.session_id);
+      } else if (res.data.session_id) {
         setSessionId(res.data.session_id);
       }
+
       setUser({
         name: cust.name || loginPhone,
         email: cust.email || '',
         picture: cust.picture || '',
-        phone: cust.phone || loginPhone,
+        phone,
         salary: cust.salary || 0,
         city: cust.city || '',
         creditScore: cust.credit_score || 0,
+        preApprovedLimit: cust.pre_approved_limit || (cust.salary ? cust.salary * 10 : undefined),
       });
       const targetView = localStorage.getItem('postAuthView');
       if (targetView) {
@@ -87,9 +96,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     if (res.success && res.data) {
       const cust = res.data.customer_data || {};
-      if (res.data.session_id) {
-        setSessionId(res.data.session_id);
-      }
+      if (res.data.session_id) setSessionId(res.data.session_id);
       setUser({
         name: cust.name || regName,
         email: cust.email || regEmail,
@@ -98,6 +105,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         salary: cust.salary || Number(regSalary),
         city: cust.city || regCity,
         creditScore: cust.credit_score || 0,
+        preApprovedLimit: cust.pre_approved_limit || (Number(regSalary) ? Number(regSalary) * 10 : undefined),
       });
       const targetView = localStorage.getItem('postAuthView');
       if (targetView) {

@@ -54,6 +54,7 @@ class SessionManager:
                 "dti_ratio": state.get("dti_ratio", 0.0),
                 "risk_level": state.get("risk_level", ""),
                 "sanction_pdf": state.get("sanction_pdf", ""),
+                "sanction_pdf_b64": state.get("sanction_pdf_b64", ""),
                 "messages_count": len(serializable_messages),
                 "messages": serializable_messages,
                 "action_log": state.get("action_log", []),

@@ -324,6 +324,16 @@ export const api = {
     } catch (e: any) {
       return { success: false, error: e.message };
     }
+  },
+
+  async getSessionsByPhone(phone: string): Promise<ApiResponse> {
+    try {
+      const res = await fetch(`${API_BASE}/session/by-phone/${encodeURIComponent(phone)}`);
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true, data: await res.json() };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
 };
 

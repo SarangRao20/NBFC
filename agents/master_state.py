@@ -104,7 +104,8 @@ class MasterState(TypedDict):
     alternative_offer: float  # for soft_reject negotiation
     
     # ─── Sanction & Final Output ───────────────────────────────────────────────
-    sanction_pdf: str  # path to generated PDF
+    sanction_pdf: str       # filename marker (non-empty = sanction was generated)
+    sanction_pdf_b64: str   # base64-encoded PDF bytes stored in MongoDB (no disk/S3 needed)
     is_signed: bool
     
     # ─── Bank Verification & eNACH ─────────────────────────────────────────────

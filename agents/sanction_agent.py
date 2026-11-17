@@ -1,13 +1,10 @@
 """Sanction Letter Generator Agent — produces a professional PDF sanction letter."""
 
-import os, sys, datetime
+import io, os, sys, base64, datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.messages import AIMessage
 from agents.session_manager import SessionManager
-
-# Ensure output directories exist
-os.makedirs("data/sanctions", exist_ok=True)
 
 
 async def sanction_agent_node(state: dict):
@@ -82,7 +79,7 @@ async def sanction_agent_node(state: dict):
     log.append(f"✍️ Drafting {letter_label} Letter for {cust_name}...")
 
     filename = f"{cust_phone}_{letter_label}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    filepath = os.path.join("data", "sanctions", filename)
+    pdf_b64 = ""
 
     try:
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -90,7 +87,8 @@ async def sanction_agent_node(state: dict):
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.pagesizes import letter
 
-        doc = SimpleDocTemplate(filepath, pagesize=letter)
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
         styles = getSampleStyleSheet()
         elements = []
 
@@ -99,7 +97,6 @@ async def sanction_agent_node(state: dict):
         lender_office = reg_details.get("office", "FinServe complex, Mumbai-Pune Road, Pune - 411035")
         lender_web = reg_details.get("web", "www.finserve-nbfc.com")
 
-        # Header
         elements.append(Paragraph(f"<b>{selected_lender_name or 'FinServe NBFC Ltd.'}</b>", styles["Title"]))
         elements.append(Paragraph(f"<font size=8>CIN: {lender_cin} | Registered Office: {lender_office}</font>", styles["Normal"]))
         elements.append(Paragraph(f"<font size=8>Website: {lender_web}</font>", styles["Normal"]))
@@ -108,7 +105,6 @@ async def sanction_agent_node(state: dict):
         elements.append(Paragraph(f"Date: {current_date}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-        # Applicant Table
         app_data = [
             ["Lender", selected_lender_name or "FinServe NBFC Ltd."],
             ["Applicant Name", cust_name],
@@ -121,24 +117,23 @@ async def sanction_agent_node(state: dict):
         elements.append(table)
         elements.append(Spacer(1, 12))
 
-        # Loan Table
         if is_approved:
             loan_data = [
                 ["Amount", f"INR {principal:,.0f}"],
-                ["Rate", f"{rate*100 if rate < 1 else rate}% p.a."],
+                ["Rate", f"{rate*100 if rate < 1 else rate:.1f}% p.a."],
                 ["Tenure", f"{tenure} mos"],
                 ["EMI", f"INR {emi:,.2f}"],
             ]
             loan_table = Table(loan_data, colWidths=[120, 330])
             loan_table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey), ("BACKGROUND", (0,0), (0,-1), colors.whitesmoke)]))
             elements.append(loan_table)
-        
+
         doc.build(elements)
-        log.append(f"✅ Generated PDF: {filename}")
+        pdf_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        log.append(f"✅ Generated PDF (MongoDB): {filename}")
     except Exception as e:
         print(f"Error generating PDF: {e}")
-        filepath = filepath.replace(".pdf", ".txt")
-        with open(filepath, "w") as f: f.write(f"Sanction Letter\nName: {cust_name}\nAmount: {principal}")
+        pdf_b64 = base64.b64encode(f"Sanction Letter\nName: {cust_name}\nAmount: {principal}".encode()).decode("utf-8")
 
     if is_approved:
         msg = (f"📜 **Your Sanction Letter is Ready!**\n\n"
@@ -159,27 +154,22 @@ async def sanction_agent_node(state: dict):
         phase = "loan_rejected"
     
     updates = {
-        "sanction_pdf": filepath, 
-        "selected_lender_id": selected_lender_id,  # ✅ Persist lender info
-        "selected_lender_name": selected_lender_name,  # ✅ Persist lender info
-        "selected_interest_rate": selected_rate,  # ✅ Persist lender info
+        "sanction_pdf": filename,       # non-empty marker so router knows sanction was generated
+        "sanction_pdf_b64": pdf_b64,    # actual PDF bytes stored in MongoDB, no disk needed
+        "selected_lender_id": selected_lender_id,
+        "selected_lender_name": selected_lender_name,
+        "selected_interest_rate": selected_rate,
         "messages": [AIMessage(content=msg)],
         "action_log": log,
         "options": options,
         "current_phase": phase,
         "customer_data": customer
     }
-    
-    # Save to DB
-    try:
-        await SessionManager.save_document(session_id, "sanction_letter", filepath, {"type": letter_label}, 1.0)
-    except: pass
-    
+
     try:
         await SessionManager.save_session(session_id, updates)
     except: pass
 
-    # Send email notification with the generated attachment
     try:
         from api.core.email_service import get_email_service
         email_service = await get_email_service()
@@ -188,9 +178,8 @@ async def sanction_agent_node(state: dict):
             loan_terms={**terms, "principal": principal, "rate": rate, "tenure": tenure, "emi": emi},
             decision=decision,
             session_id=session_id,
-            attachment_path=filepath
         )
-        print(f"📧 [SANCTION AGENT] Email notification sent to {customer.get('email')}: {email_sent}")
+        print(f"📧 [SANCTION AGENT] Email sent to {customer.get('email')}: {email_sent}")
     except Exception as email_err:
         print(f"⚠️ [SANCTION AGENT] Failed to send email: {email_err}")
 
@@ -226,8 +215,8 @@ async def sanction_agent_node(state: dict):
             "next_emi_date": first_emi_due.strftime("%Y-%m-%d"),
             "payments_made": 0,
             "remaining_balance": round(principal, 2),
-            "pdf_path": filepath,
-            # ✅ NEW: Include selected lender information
+            "pdf_filename": filename,
+            # pdf bytes stored in session document via sanction_pdf_b64, not duplicated here
             "lender_id": selected_lender_id,
             "lender_name": selected_lender_name,
             "lender_rate": selected_rate,

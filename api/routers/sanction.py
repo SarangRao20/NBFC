@@ -1,8 +1,8 @@
 """Sanction Router — Step 16 (Closing & Generation)."""
 
-import os
+import base64
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from api.schemas.sanction import SanctionResponse, ESignResponse
 from api.services import sanction_service
 from api.core.exceptions import SessionNotFoundError
@@ -38,23 +38,22 @@ async def accept_esign(session_id: str):
 @router.get("/{session_id}/download-letter",
             summary="Download Sanction/Rejection Letter")
 async def download_letter(session_id: str):
-    """Download the generated sanction or rejection letter PDF."""
+    """Download the generated sanction or rejection letter PDF from MongoDB."""
     result = await sanction_service.get_letter_file(session_id)
     if result is None:
         raise SessionNotFoundError(session_id)
-    
-    file_path = result.get("file_path")
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Letter file not found")
-    
+
+    pdf_b64 = result.get("pdf_b64", "")
+    if not pdf_b64:
+        raise HTTPException(status_code=404, detail="Letter not yet generated")
+
     filename = result.get("filename", f"letter_{session_id}.pdf")
-    return FileResponse(
-        path=file_path,
-        filename=filename,
+    pdf_bytes = base64.b64decode(pdf_b64)
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": "application/pdf",
             "Cache-Control": "no-cache, no-store, must-revalidate",
         }
     )

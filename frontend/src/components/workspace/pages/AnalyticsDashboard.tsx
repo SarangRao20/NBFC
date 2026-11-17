@@ -8,6 +8,11 @@ export default function AnalyticsDashboard() {
   const [history, setHistory] = useState<any[]>([]);
 
   const creditScore = user?.creditScore || 785;
+  const scoreBarWidth = Math.min(100, Math.round((creditScore / 900) * 100));
+  const scoreTier = creditScore >= 800 ? 'Top 5% · Tier-1 Prime'
+    : creditScore >= 750 ? 'Top 15% · Strong Prime'
+    : creditScore >= 700 ? 'Standard · Moderate Risk'
+    : 'Below Average · High Risk';
 
   useEffect(() => {
     if (user?.phone) {
@@ -69,14 +74,14 @@ export default function AnalyticsDashboard() {
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-white/60 font-medium">
-               <span>Tier-1 Excellent</span>
-               <span className="text-emerald-400">Top 5%</span>
+               <span>{scoreTier.split(' · ')[1]}</span>
+               <span className="text-emerald-400">{scoreTier.split(' · ')[0]}</span>
             </div>
             <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-               <div className="h-full bg-emerald-500 w-[85%] rounded-full" />
+               <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${scoreBarWidth}%` }} />
             </div>
           </div>
-          <p className="text-xs text-white/40 mt-4">Updated via CIBIL/Experian API 2 mins ago.</p>
+          <p className="text-xs text-white/40 mt-4">Score range 300–900 · Bureau: CIBIL / Experian</p>
         </div>
 
         {/* Pre-approved Capital Card */}
@@ -113,7 +118,7 @@ export default function AnalyticsDashboard() {
           </div>
           <div className="flex justify-between items-center text-xs text-white/60 mb-2">
              <span>Next Repayment</span>
-             <span className="text-white font-medium">₹{Math.round((loanDetails.requestedAmount * 1.105)/loanDetails.tenureMonths).toLocaleString('en-IN')}</span>
+             <span className="text-white font-medium">₹{(loanDetails.monthlyEmi ?? (() => { const r = (loanDetails.interestRate ?? 10.5) / 100 / 12; const n = loanDetails.tenureMonths; return r === 0 || n === 0 ? Math.round(loanDetails.requestedAmount / n) : Math.round(loanDetails.requestedAmount * r * Math.pow(1+r,n) / (Math.pow(1+r,n)-1)); })()).toLocaleString('en-IN')}</span>
           </div>
           <div className="flex justify-between items-center text-xs text-white/40">
              <span>Due Date</span>

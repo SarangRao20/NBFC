@@ -462,6 +462,8 @@ async def chat_with_agent(session_id: str, user_message: str, history: list[dict
             "disbursement_id": final_state.get("disbursement_id", ""),
             "disbursement_date": final_state.get("disbursement_date", ""),
             "net_disbursement_amount": final_state.get("net_disbursement_amount", 0),
+            # Last 5 trace spans for the frontend timeline (not all — keeps payload small)
+            "trace_events": (final_state.get("trace_events") or [])[-5:],
         })
         print(f"📊 [DEBUG] Response keys: {list(response_data.keys())}")
         print(f"📊 [DEBUG] eligible_offers in response: {len(response_data.get('eligible_offers', []))}")

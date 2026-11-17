@@ -1,6 +1,6 @@
 """Sanction Service — compile terms + generate PDF (Step 16)."""
 
-import os
+import io, os, base64
 from datetime import datetime
 from api.core.state_manager import get_session, update_session, advance_phase
 from api.config import get_settings
@@ -54,7 +54,7 @@ async def generate_sanction(session_id: str) -> dict:
         if not reasons:
             reasons.append("Underwriting evaluation completed with rejection status")
     filename = f"{cust_id}_{letter_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    filepath = os.path.join(settings.SANCTION_DIR, filename)
+    pdf_b64 = ""
 
     try:
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
@@ -62,7 +62,8 @@ async def generate_sanction(session_id: str) -> dict:
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.pagesizes import letter as page_letter
 
-        doc = SimpleDocTemplate(filepath, pagesize=page_letter,
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=page_letter,
                                 rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
         styles = getSampleStyleSheet()
         elements = []
@@ -175,19 +176,16 @@ async def generate_sanction(session_id: str) -> dict:
         elements.append(Paragraph(terms_text, styles["Normal"]))
 
         doc.build(elements)
+        pdf_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     except ImportError:
-        # Fallback: plain text
-        filepath = filepath.replace(".pdf", ".txt")
-        with open(filepath, "w") as f:
-            f.write(f"{letter_type.upper()} LETTER — {cust_name}\n"
-                    f"Status: {'Approved' if is_approved else 'Rejected'}\n"
-                    f"Amount: {principal}\nEMI: {emi}\n")
+        pdf_b64 = base64.b64encode(
+            f"{letter_type.upper()} LETTER — {cust_name}\nStatus: {'Approved' if is_approved else 'Rejected'}\nAmount: {principal}\nEMI: {emi}\n".encode()
+        ).decode("utf-8")
 
-    await update_session(session_id, {"sanction_pdf": filepath})
+    await update_session(session_id, {"sanction_pdf": filename, "sanction_pdf_b64": pdf_b64})
     await advance_phase(session_id, "sanction_generated")
 
-    # Send email notification
     try:
         email_sent = await email_service.send_loan_application_notification(
             customer, terms, decision, session_id
@@ -196,10 +194,10 @@ async def generate_sanction(session_id: str) -> dict:
     except Exception as e:
         print(f"⚠️ Email notification failed: {e}")
 
-    # Cache the result
     await cache.set_session(session_id, {
         **state,
-        "sanction_pdf": filepath,
+        "sanction_pdf": filename,
+        "sanction_pdf_b64": pdf_b64,
         "letter_type": letter_type,
         "email_sent": email_sent
     })
@@ -244,7 +242,7 @@ async def generate_sanction(session_id: str) -> dict:
         "loan_issued_at": disbursed_at.isoformat(),
         "first_emi_due_date": first_emi_due.date().isoformat(),
         "emi_schedule": emi_schedule,
-        "pdf_path": filepath,
+        "pdf_filename": filename,
         "email_sent": email_sent
     }
     await loan_applications_collection.insert_one(loan_record)
@@ -252,10 +250,10 @@ async def generate_sanction(session_id: str) -> dict:
     print(f"📊 Loan application persisted: {cust_name} ({loan_record['status']}) - {decision}")
 
     return {
-        "sanction_pdf_path": filepath,
+        "sanction_pdf_path": filename,
         "letter_type": letter_type,
         "loan_terms": terms,
-        "message": f"{letter_type} letter generated: {filepath}",
+        "message": f"{letter_type} letter generated and stored in MongoDB",
         "email_sent": email_sent
     }
 
@@ -297,19 +295,17 @@ async def process_esign_acceptance(session_id: str) -> dict:
 
 
 async def get_letter_file(session_id: str) -> dict:
-    """Get the file path and details for download."""
+    """Get the PDF bytes from MongoDB for download."""
     state = await get_session(session_id)
     if not state:
         return None
 
-    sanction_pdf = state.get("sanction_pdf", "")
-    if not sanction_pdf or not os.path.exists(sanction_pdf):
+    pdf_b64 = state.get("sanction_pdf_b64", "")
+    filename = state.get("sanction_pdf", f"letter_{session_id}.pdf")
+    if not pdf_b64:
         return None
-    
-    filename = os.path.basename(sanction_pdf)
-    
+
     return {
-        "file_path": sanction_pdf,
+        "pdf_b64": pdf_b64,
         "filename": filename,
-        "message": f"Letter ready for download: {filename}"
     }
