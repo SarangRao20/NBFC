@@ -260,6 +260,12 @@ export default function GenUiApplication() {
         ];
         if (chatRes.data.next_agent) graphTraces.push(`→ ${chatRes.data.next_agent}`);
         if (chatRes.data.loan_terms?.emi) graphTraces.push(`EMI ₹${Math.round(chatRes.data.loan_terms.emi).toLocaleString('en-IN')}/mo`);
+        // Append trace spans as human-readable timing labels
+        (chatRes.data.trace_events || []).forEach((span: any) => {
+          if (span.node && span.duration_ms != null) {
+            graphTraces.push(`${span.node} ${span.duration_ms}ms${span.success === false ? ' ✗' : ''}`);
+          }
+        });
 
         const lowerText = text.toLowerCase();
         const explicitlyWantsSlider = lowerText.includes('slider') || lowerText.includes('configure') || lowerText.includes('adjust slider');
