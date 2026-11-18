@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, ShieldCheck, Cpu, Zap, Lock, ChevronRight, BarChart3, Globe2, Fingerprint, BookOpen, Menu, X as CloseIcon } from 'lucide-react';
+
+import SwarmCursor from './ui/SwarmCursor';
 import AuthModal from './auth/AuthModal';
 import { useLoanStore } from '../store/useLoanStore';
 
@@ -96,38 +98,56 @@ const LandingPage = () => {
 
       <main className="relative z-10 pt-20">
         {/* Hero Section */}
-        <section className="relative pt-32 pb-24 md:pt-48 md:pb-32 px-6">
-          <div className="container mx-auto max-w-5xl text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-8 animate-fade-in opacity-0" style={{ animationDelay: '0.1s', animationFillMode: 'forwards' }}>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-medium tracking-widest text-white/70 uppercase">System v2.0 Live</span>
+        <SwarmCursor
+          count={600}
+          size={2.4}
+          spread={110}
+          swirl={0.65}
+          tail={0.55}
+          trail={0.7}
+          wander={0.45}
+          depth={0.75}
+          speed={1.1}
+          color="#ffffff"
+          accentColor="#34d399"
+          clickEffect="burst"
+          idle="roam"
+          intro={true}
+          style={{ width: '100%' }}
+        >
+          <section className="relative pt-32 pb-24 md:pt-48 md:pb-32 px-6">
+            <div className="container mx-auto max-w-5xl text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-8 animate-fade-in opacity-0" style={{ animationDelay: '0.1s', animationFillMode: 'forwards' }}>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs font-medium tracking-widest text-white/70 uppercase">System v2.0 Live</span>
+              </div>
+
+              <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-medium tracking-tight mb-8 leading-[1.1] animate-slide-up opacity-0" style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}>
+                Deterministic lending.<br />
+                <span className="text-white/40">Zero human latency.</span>
+              </h1>
+
+              <p className="text-lg md:text-xl text-white/50 max-w-2xl mx-auto mb-12 font-light tracking-wide leading-relaxed animate-slide-up opacity-0" style={{ animationDelay: '0.3s', animationFillMode: 'forwards' }}>
+                FinServe orchestrates capital deployment through autonomous StateGraph engines, evaluating risk with cryptographic precision in sub-450ms.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up opacity-0" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
+                <Button size="lg" onClick={handleOpenAuth} className="w-full sm:w-auto min-w-[200px]">
+                  Initialize Protocol
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full sm:w-auto min-w-[200px]"
+                  onClick={() => window.location.href = '/docs'}
+                >
+                  <BookOpen className="w-4 h-4 mr-2" />
+                  View Documentation
+                </Button>
+              </div>
             </div>
-            
-            <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-medium tracking-tight mb-8 leading-[1.1] animate-slide-up opacity-0" style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}>
-              Deterministic lending.<br />
-              <span className="text-white/40">Zero human latency.</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-white/50 max-w-2xl mx-auto mb-12 font-light tracking-wide leading-relaxed animate-slide-up opacity-0" style={{ animationDelay: '0.3s', animationFillMode: 'forwards' }}>
-              FinServe orchestrates capital deployment through autonomous StateGraph engines, evaluating risk with cryptographic precision in sub-450ms.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up opacity-0" style={{ animationDelay: '0.4s', animationFillMode: 'forwards' }}>
-              <Button size="lg" onClick={handleOpenAuth} className="w-full sm:w-auto min-w-[200px]">
-                Initialize Protocol
-              </Button>
-               <Button 
-                size="lg" 
-                variant="outline" 
-                className="w-full sm:w-auto min-w-[200px]"
-                onClick={() => window.location.href = '/docs'}
-              >
-                <BookOpen className="w-4 h-4 mr-2" />
-                View Documentation
-              </Button>
-            </div>
-          </div>
-        </section>
+          </section>
+        </SwarmCursor>
 
         {/* Bento Grid Features */}
         <section id="platform" className="py-24 px-6 border-t border-white/[0.05]">
